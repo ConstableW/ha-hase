@@ -1,20 +1,10 @@
-"""Pure trigger-template matching: tokenize a message, fuzzy-match a
-compiled trigger's literal segments against it, let placeholders
-greedily consume whatever's between them.
-
-Deliberately self-contained - no import from custom_components.hase
-anywhere in this package, not even its already-pure parts, so `core/`
-never depends on the legacy integration module's internals. The
-approach mirrors spellbook.py's proven matcher (tokenize_with_spans,
-fuzzy_threshold, _compile_trigger, _match_segments); that module stays
-untouched, this is a from-scratch reimplementation for the new
-engine's own command schema.
-"""
+"""Shared HA-independent trigger matching and conservative ambiguity helpers."""
 from __future__ import annotations
 
 import difflib
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
@@ -42,10 +32,7 @@ def resolve_localized(value: str | dict[str, str] | None, lang: str) -> str | No
     the exact language, falling back to English, falling back to
     whatever single variant is defined - a language gap never
     invalidates the entry, it just degrades to the best available
-    text. Ported verbatim from spellbook.py's proven original (kept
-    here instead of imported from it - core/ stays independent of
-    that module's internals, see core/matching.py's own module
-    docstring)."""
+    text."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -83,7 +70,7 @@ def compile_trigger(trigger_text: str) -> list[Segment] | None:
     if literal:
         segments.append(("lit", literal))
 
-    for prev, cur in zip(segments, segments[1:]):
+    for prev, cur in pairwise(segments):
         if prev[0] == "ph" and cur[0] == "ph":
             return None
     return segments
@@ -206,3 +193,49 @@ def match_segments(
     matched_text = text[span_start:span_end] if span_start is not None else ""
     score = sum(ratios) / len(ratios) if ratios else 1.0
     return SegmentMatch(captures=captures, matched_text=matched_text, is_exact=exact, score=score)
+
+
+_OPPOSITE_ACTION_PAIRS: list[tuple[set[str], set[str]]] = [
+    (
+        {"an", "ein", "einschalten", "anschalten", "entzünde", "entzündet",
+         "start", "starten", "hochfahren", "on"},
+        {"aus", "ausschalten", "lösche", "löscht", "löschen", "stopp", "stoppen",
+         "anhalten", "herunterfahren", "off", "stop"},
+    ),
+    (
+        {"öffne", "öffnet", "öffnen", "open"},
+        {"schließe", "schließt", "schließen", "close"},
+    ),
+    (
+        {"lauter", "höher", "hoch", "increase", "raise", "louder", "up"},
+        {"leiser", "niedriger", "runter", "decrease", "lower", "quieter", "down"},
+    ),
+    (
+        {"verriegeln", "verriegelt", "sperren", "lock"},
+        {"entriegeln", "entriegelt", "entsperren", "unlock"},
+    ),
+]
+
+
+# "Licht {area} auf 80 Prozent stellen" doesn't contain any literal
+# on/off word, but setting a light to a nonzero brightness is an "on"
+# action just as much as "einschalten" is - without this, the exact
+# on-vs-off tie this guard exists for (e.g. middle_earth.yaml's
+# "entzündet ... auf 100 Prozent stellen" vs "löscht ... ausschalten")
+# would never register as opposite, defeating the guard's purpose.
+_PERCENT_SET_RE = re.compile(r"\bauf\s+\d+\s*(?:prozent|percent|%)\b", re.IGNORECASE)
+
+
+def outputs_are_opposite(output_a: str, output_b: str) -> bool:
+    words_a = set(re.findall(r"\w+", output_a.lower()))
+    words_b = set(re.findall(r"\w+", output_b.lower()))
+    if _PERCENT_SET_RE.search(output_a):
+        words_a.add("an")
+    if _PERCENT_SET_RE.search(output_b):
+        words_b.add("an")
+    for group_x, group_y in _OPPOSITE_ACTION_PAIRS:
+        if (words_a & group_x and words_b & group_y) or (
+            words_a & group_y and words_b & group_x
+        ):
+            return True
+    return False

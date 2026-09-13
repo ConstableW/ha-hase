@@ -23,16 +23,28 @@ from homeassistant.components.conversation import (
     ConversationEntity,
     ConversationInput,
 )
-from homeassistant.components.conversation import ConversationResult as HAConversationResult
+from homeassistant.components.conversation import (
+    ConversationResult as HAConversationResult,
+)
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .providers.code27.backend import Code27ConversationBackend
-from .const import (CONF_ENTRY_KIND, CONF_SPELLBOOKER_ALLOWED_AREAS, CONF_SPELLBOOKER_BOOK, CONF_SPELLBOOKER_NO_MATCH_RESPONSE, CONF_SPELLBOOKER_PROFILE_ID, CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS, CONF_SPELLBOOKER_QUERIES_UNRESTRICTED, CONF_SPELLBOOKER_UNRESTRICTED, DOMAIN, ENTRY_KIND_SPELLBOOKER, SUBENTRY_TYPE_SATELLITE)
-from .providers.code27.const import (MANUFACTURER)
+from .const import (
+    CONF_ENTRY_KIND,
+    CONF_SPELLBOOKER_ALLOWED_AREAS,
+    CONF_SPELLBOOKER_BOOK,
+    CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
+    CONF_SPELLBOOKER_PROFILE_ID,
+    CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS,
+    CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
+    CONF_SPELLBOOKER_UNRESTRICTED,
+    DOMAIN,
+    ENTRY_KIND_SPELLBOOKER,
+    SUBENTRY_TYPE_SATELLITE,
+)
 from .core.executor import ActionExecutor
 from .core.models import (
     AreaPolicy,
@@ -44,10 +56,12 @@ from .core.models import (
 )
 from .core.router import DEFAULT_NO_MATCH_RESPONSE, AgentConfig, SpellbookRouter
 from .core.spellbook_engine import EngineSpellbook
+from .providers.code27.backend import Code27ConversationBackend
+from .providers.code27.const import MANUFACTURER
+from .spellbook_loader import async_get_spellbook
 from .spellbooker_ha import (
     HaServiceCaller,
     HaTargetResolver,
-    async_get_spellbooker_book,
     resolve_source_area_id,
 )
 
@@ -251,7 +265,7 @@ class SpellbookerConversationEntity(ConversationEntity):
             # conflated.
             book = _EMPTY_SATELLITE_BOOK
         else:
-            book = await async_get_spellbooker_book(self.hass, book_id)
+            book = await async_get_spellbook(self.hass, book_id)
             if book is None:
                 # A book was explicitly configured (book_id is set)
                 # but couldn't load - missing file, unparseable YAML,

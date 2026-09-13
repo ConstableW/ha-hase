@@ -1,10 +1,6 @@
-"""Etappe 5: _handle_vacuum_clean_action / _handle_light_all_action now
-call through Code27FrontendAdapter (core.executor.ActionExecutor)
-instead of Home Assistant directly. These tests prove the
-ExecutionResult -> activity-log/speech message mapping is exactly what
-callers saw before the migration - not the executor logic itself,
-which Etappe 4's test_core_engine.py already covers thoroughly with
-the same fakes-based approach.
+"""Preserved frontend result-to-speech regressions through generic execute().
+
+Adapter/resolver/executor integration is covered by test_unified_spellbooks.
 """
 import importlib.util
 import sys
@@ -45,17 +41,16 @@ class FakeAdapter:
     what it was asked to do and returns a pre-set ExecutionResult."""
 
     _next_result: ExecutionResult | None = None
-    _calls: list = []
+    _calls: list = []  # noqa: RUF012 - shared call recorder reset in setUp.
 
     def __init__(self, hass):
         pass
 
-    async def clean_vacuum_area(self, area_alias):
-        FakeAdapter._calls.append(("vacuum", area_alias))
-        return FakeAdapter._next_result
-
-    async def set_all_lights(self, on):
-        FakeAdapter._calls.append(("lights", on))
+    async def execute(self, draft, **kwargs):
+        if draft.operation == "vacuum.clean_area":
+            FakeAdapter._calls.append(("vacuum", draft.target.value))
+        else:
+            FakeAdapter._calls.append(("lights", draft.arguments["on"]))
         return FakeAdapter._next_result
 
 
@@ -143,7 +138,7 @@ class LightAllCutoverTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.bridge, "_output_speech", AsyncMock()), \
              patch.object(self.bridge, "_log_activity"):
             await self.bridge._handle_light_all_action(
-                self.hass, self.entry, self.coordinator, "light_all_on", None, None
+                self.hass, self.entry, self.coordinator, True, None, None
             )
         self.assertEqual(FakeAdapter._calls, [("lights", True)])
 
@@ -152,7 +147,7 @@ class LightAllCutoverTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.bridge, "_output_speech", AsyncMock()), \
              patch.object(self.bridge, "_log_activity"):
             await self.bridge._handle_light_all_action(
-                self.hass, self.entry, self.coordinator, "light_all_off", None, None
+                self.hass, self.entry, self.coordinator, False, None, None
             )
         self.assertEqual(FakeAdapter._calls, [("lights", False)])
 
@@ -161,7 +156,7 @@ class LightAllCutoverTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.bridge, "_output_speech", AsyncMock()) as speak, \
              patch.object(self.bridge, "_log_activity"):
             await self.bridge._handle_light_all_action(
-                self.hass, self.entry, self.coordinator, "light_all_on", None, None
+                self.hass, self.entry, self.coordinator, True, None, None
             )
         speak.assert_awaited_once()
         self.assertIn("service_call_rejected", speak.call_args.args[3])

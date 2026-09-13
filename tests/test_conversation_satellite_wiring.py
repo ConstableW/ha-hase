@@ -119,7 +119,7 @@ class FakeBackend:
 
 
 def _load_conversation_module(**extra_adapters):
-    adapters = dict(
+    adapters = dict(  # noqa: C408 - keyword mapping keeps the injected symbols readable.
         ConversationEntity=FakeConversationEntity,
         ConversationInput=object,
         HAConversationResult=lambda **kw: N(**kw),
@@ -146,7 +146,7 @@ def _load_conversation_module(**extra_adapters):
         SpellbookRouter=SpellbookRouter,
         HaServiceCaller=lambda hass: FakeServiceCaller(),
         HaTargetResolver=lambda hass: FakeTargetResolver(),
-        async_get_spellbooker_book=None,  # overridden per-test below
+        async_get_spellbook=None,  # overridden per-test below
         resolve_source_area_id=lambda hass, device_id: None,
         Code27ConversationBackend=FakeBackend,
         # const.py values, verbatim - a relative import, stripped by
@@ -245,7 +245,7 @@ class ScopedPolicyMigrationTests(unittest.IsolatedAsyncioTestCase):
 
     def _make_entity_and_capture_policy(self, options):
         conversation = _load_conversation_module(
-            async_get_spellbooker_book=AsyncStub(returns=_fake_book()),
+            async_get_spellbook=AsyncStub(returns=_fake_book()),
         )
         hass = N(data={}, config=N(language="de"))
         entry = N(entry_id="e-migrate", title="Gondor", data={"entry_kind": "spellbooker"}, options=options)
@@ -327,7 +327,7 @@ class SatelliteSessionIdentityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_satellites_same_parent_same_profile_get_different_agent_entry_ids(self):
         conversation = _load_conversation_module(
-            async_get_spellbooker_book=AsyncStub(returns=_fake_book()),
+            async_get_spellbook=AsyncStub(returns=_fake_book()),
         )
         coordinator = N(entry=N(entry_id="code27-1"))
         entity_a = self._make_entity(conversation, "sat-a", coordinator)
@@ -369,7 +369,7 @@ class SatelliteModeWiringTests(unittest.IsolatedAsyncioTestCase):
     ConfigSubentry - "which backend" is simply "whichever entry this
     was constructed with", never a separately stored/selected field."""
 
-    def _make_entity(self, conversation, backend_entry_id="code27-1", coordinator=N(), subentry_data=None):
+    def _make_entity(self, conversation, backend_entry_id="code27-1", coordinator=N(), subentry_data=None):  # noqa: B008 - shared read-only default stub, explicit None tests absence.
         hass = N(
             data={"hase": {backend_entry_id: coordinator}} if coordinator is not None else {"hase": {}},
             config=N(language="de"),
@@ -396,10 +396,10 @@ class SatelliteModeWiringTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_satellite_config_resolves_a_real_backend_when_coordinator_present(self):
         conversation = _load_conversation_module(
-            async_get_spellbooker_book=AsyncStub(returns=_fake_book()),
+            async_get_spellbook=AsyncStub(returns=_fake_book()),
         )
         coordinator = N(entry=N(entry_id="code27-1"))
-        entity, hass, entry = self._make_entity(conversation, coordinator=coordinator)
+        entity, _hass, _entry = self._make_entity(conversation, coordinator=coordinator)
 
         captured = {}
         real_handle = entity._router.handle
@@ -424,9 +424,9 @@ class SatelliteModeWiringTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_backend_coordinator_leaves_backend_none_not_a_silent_downgrade(self):
         conversation = _load_conversation_module(
-            async_get_spellbooker_book=AsyncStub(returns=_fake_book()),
+            async_get_spellbook=AsyncStub(returns=_fake_book()),
         )
-        entity, hass, entry = self._make_entity(conversation, coordinator=None)
+        entity, _hass, _entry = self._make_entity(conversation, coordinator=None)
 
         captured = {}
         real_handle = entity._router.handle
@@ -476,7 +476,7 @@ class SatelliteNoLocalBookTests(unittest.IsolatedAsyncioTestCase):
         return entity, hass, backend_entry
 
     async def test_no_local_book_never_hard_errors_and_reaches_the_backend(self):
-        conversation = _load_conversation_module(async_get_spellbooker_book=None)
+        conversation = _load_conversation_module(async_get_spellbook=None)
         coordinator = N(entry=N(entry_id="code27-1"))
         entity, _hass, _entry = self._make_entity(conversation, coordinator)
 
@@ -499,7 +499,7 @@ class SatelliteNoLocalBookTests(unittest.IsolatedAsyncioTestCase):
 class SatelliteBrokenBookFailsClosedTests(unittest.IsolatedAsyncioTestCase):
     """#13 (external audit): a SATELLITE with a CONCRETELY configured
     book that fails to load (deleted file, parse error, every command
-    invalid - anything async_get_spellbooker_book returns None for)
+    invalid - anything async_get_spellbook returns None for)
     must fail closed with a real conversation error - never silently
     treated the same as "no book configured", which would forward the
     turn to the CODE27 backend as if the misconfiguration didn't
@@ -523,10 +523,10 @@ class SatelliteBrokenBookFailsClosedTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_configured_but_unloadable_book_fails_closed_never_reaches_backend(self):
         conversation = _load_conversation_module(
-            # Simulates a deleted/broken book file: async_get_spellbooker_book
+            # Simulates a deleted/broken book file: async_get_spellbook
             # returns None for a book_id that IS set, as spellbooker_ha.py's
             # real function does when the file no longer exists or fails to load.
-            async_get_spellbooker_book=AsyncStub(returns=None),
+            async_get_spellbook=AsyncStub(returns=None),
         )
         coordinator = N(entry=N(entry_id="code27-1"))
         entity, _hass, _entry = self._make_entity(conversation, coordinator)

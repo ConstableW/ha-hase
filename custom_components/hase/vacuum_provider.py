@@ -1,7 +1,6 @@
 """Vacuum providers: declarative descriptions of how to discover a robot
-vacuum's rooms and how to start cleaning one, used by the "vacuum_clean"
-spellbook action (see spellbook.py's `action` field and bridge.py's
-_handle_vacuum_clean_action).
+vacuum's rooms and how to start cleaning one, used by the shared
+`vacuum.clean_area` operation through HaServiceCaller.
 
 Why this exists as its own pluggable layer rather than code27 just calling
 `roborock.get_maps` / `vacuum.send_command` directly: every vacuum brand's
@@ -17,7 +16,7 @@ Provider files are discovered the same way spellbooks are: bundled under
 vacuum_providers/*.yaml next to this file, and user-authored under
 <config>/hase_vacuum_providers/*.yaml (user directory wins on an id
 collision). All installed providers are tried when resolving a
-"vacuum_clean" action - a house can mix vacuum brands.
+"vacuum.clean_area" operation - a house can mix vacuum brands.
 
 Schema (see vacuum_providers/roborock.yaml for the reference example):
   id, name:      like a spellbook's.
@@ -211,11 +210,11 @@ def _load_provider(raw: dict) -> VacuumProvider | None:
     )
 
 
-def _spellbook_style_dirs(hass: "HomeAssistant") -> list[Path]:
+def _spellbook_style_dirs(hass: HomeAssistant) -> list[Path]:
     return [BUILTIN_DIR, Path(hass.config.path(USER_SUBDIR))]
 
 
-def _list_provider_files(hass: "HomeAssistant") -> dict[str, Path]:
+def _list_provider_files(hass: HomeAssistant) -> dict[str, Path]:
     files: dict[str, Path] = {}
     for directory in _spellbook_style_dirs(hass):
         if not directory.is_dir():
@@ -233,7 +232,7 @@ def _list_provider_files(hass: "HomeAssistant") -> dict[str, Path]:
     return files
 
 
-async def async_list_providers(hass: "HomeAssistant") -> list[VacuumProvider]:
+async def async_list_providers(hass: HomeAssistant) -> list[VacuumProvider]:
     """All installed, valid vacuum providers - a house can mix brands, so
     (unlike spellbooks, which are one-selected-at-a-time) every provider
     found is returned and all of them are tried when resolving an area."""

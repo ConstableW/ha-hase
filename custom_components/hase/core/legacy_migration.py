@@ -1,16 +1,8 @@
-"""Converts a legacy custom_components.hase.spellbook-format YAML
-dict into the new engine's typed command shape - for the small
-fraction of entries that actually declare a structured `action`
-(light_all_on/off, vacuum_clean). Everything else (plain free-text
-`output`, forwarded to Assist by bridge.py today) is reported as
-unsupported rather than silently wrapped into an ActionRequest - that
-would be exactly the free-text-in-a-typed-wrapper backdoor Etappe 1
-ruled out.
+"""Offline conversion utility for historical action shortcuts.
 
-Deliberately reads the raw YAML dict directly instead of importing
-custom_components.hase.spellbook - core/ stays independent of that
-module's internals (same reasoning as core/matching.py). The legacy
-file itself is untouched; this only ever reads it.
+Never a production loader. Unknown actions and output-only entries remain
+reported by this typed-subset audit utility. Converted typed entries preserve
+optional output; it never becomes an executable action.
 """
 from __future__ import annotations
 
@@ -19,10 +11,7 @@ from typing import Any
 
 from .spellbook_engine import EngineSpellbook, load_spellbook_from_dict
 
-# The only three action values custom_components.hase.providers.code27.spellbook's
-# own _VALID_ACTIONS ever allowed - kept as a local, independent
-# constant rather than imported, for the same reason as everything
-# else in this module.
+# Historical conversion vocabulary, never runtime dispatch.
 _LIGHT_ALL_ON = "light_all_on"
 _LIGHT_ALL_OFF = "light_all_off"
 _VACUUM_CLEAN = "vacuum_clean"
@@ -78,6 +67,7 @@ def migrate_legacy_spellbook(book_id: str, raw: dict[str, Any]) -> MigrationResu
                 "id": spell_id,
                 "trigger": trigger,
                 "catchphrase": catchphrase,
+                "output": raw_command.get("output"),
                 "operation": "light.set_power",
                 "target": {"kind": "all_allowed"},
                 "arguments": {"on": action == _LIGHT_ALL_ON},
@@ -92,6 +82,7 @@ def migrate_legacy_spellbook(book_id: str, raw: dict[str, Any]) -> MigrationResu
                 "id": spell_id,
                 "trigger": trigger,
                 "catchphrase": catchphrase,
+                "output": raw_command.get("output"),
                 "operation": "vacuum.clean_area",
                 "target": {"kind": "area_name", "capture": "area"},
                 "arguments": {},

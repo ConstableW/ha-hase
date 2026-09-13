@@ -1,0 +1,298 @@
+# HASE spellbook: frontend-independent semantic commands.
+id: potter_verse
+name: Potterverse
+commands:
+- id: lumos
+  trigger: lumos {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase: Lumos.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+- id: nox
+  trigger: nox {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase: Nox.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+- id: lumos_maxima_all
+  trigger: lumos maxima
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': true
+  catchphrase: Lumos Maxima.
+- id: nox_maxima_all
+  trigger: nox maxima
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': false
+  catchphrase: Nox Maxima.
+- id: diffindo
+  trigger: diffindo {area}
+  operation: media_player.skip_track
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    forward: true
+  catchphrase: Diffindo.
+  output:
+    de: nächster Titel im {area}
+    en: Next track in {area}
+- id: reparifarge
+  trigger: reparifarge {area}
+  operation: media_player.skip_track
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    forward: false
+  catchphrase: Reparifarge.
+  output:
+    de: vorheriger Titel im {area}
+    en: Previous track in {area}
+- trigger: lumos maxima {area}
+  output:
+    de: Licht {area} auf 100 Prozent stellen
+    en: Set the light in {area} to 100 percent
+  catchphrase: Lumos Maxima.
+  id: potter_verse_03
+- trigger: lumos minima {area}
+  output:
+    de: Licht {area} auf 20 Prozent stellen
+    en: Set the light in {area} to 20 percent
+  catchphrase: Lumos Minima.
+  id: potter_verse_04
+- trigger:
+    de: lumos {area} auf {value} prozent
+    en: lumos {area} to {value} percent
+  output:
+    de: Licht {area} auf {value} Prozent stellen
+    en: Set the light in {area} to {value} percent
+  catchphrase: Lumos.
+  id: potter_verse_07
+- trigger: lumos solem {area}
+  output:
+    de: Licht {area} auf warmweiß stellen
+    en: Set the light in {area} to warm white
+  catchphrase: Lumos Solem.
+  id: potter_verse_08
+- trigger:
+    de: colovaria {area} auf {color}
+    en: colovaria {area} to {color}
+  output:
+    de: Licht {area} auf {color} stellen
+    en: Set the light in {area} to {color}
+  catchphrase: Colovaria.
+  id: potter_verse_09
+- trigger: accio {target}
+  output:
+    de: '{target} einschalten'
+    en: Turn on {target}
+  catchphrase: Accio.
+  id: potter_verse_10
+- trigger: expelliarmus {target}
+  output:
+    de: '{target} ausschalten'
+    en: Turn off {target}
+  catchphrase: Expelliarmus.
+  id: potter_verse_11
+- trigger: reparo {target}
+  output:
+    de: '{target} neu starten'
+    en: Restart {target}
+  catchphrase: Reparo.
+  id: potter_verse_12
+- trigger: engorgio {target}
+  output:
+    de: '{target} auf volle Leistung stellen'
+    en: Set {target} to full power
+  catchphrase: Engorgio.
+  id: potter_verse_13
+- trigger: reducio {target}
+  output:
+    de: '{target} auf minimale Leistung stellen'
+    en: Set {target} to minimum power
+  catchphrase: Reducio.
+  id: potter_verse_14
+- trigger: aguamenti {target}
+  output:
+    de: '{target} einschalten'
+    en: Turn on {target}
+  catchphrase: Aguamenti.
+  id: potter_verse_15
+- trigger: alohomora {target}
+  output:
+    de: '{target} öffnen'
+    en: Open {target}
+  catchphrase: Alohomora.
+  id: potter_verse_16
+- trigger: colloportus {target}
+  output:
+    de: '{target} schließen'
+    en: Close {target}
+  catchphrase: Colloportus.
+  id: potter_verse_17
+- trigger: immobulus {target}
+  output:
+    de: '{target} stoppen'
+    en: Stop {target}
+  catchphrase: Immobulus.
+  id: potter_verse_18
+- trigger: wingardium leviosa {target}
+  output:
+    de: '{target} hochfahren'
+    en: Raise {target}
+  catchphrase: Wingardium Leviosa.
+  id: potter_verse_19
+- trigger: descendo {target}
+  output:
+    de: '{target} herunterfahren'
+    en: Lower {target}
+  catchphrase: Descendo.
+  id: potter_verse_20
+- trigger: sonorus {area}
+  output:
+    de: Musik {area} lauter
+    en: Increase the volume for {area}
+  catchphrase: Sonorus.
+  id: potter_verse_21
+- trigger: quietus {area}
+  output:
+    de: Musik {area} leiser
+    en: Decrease the volume for {area}
+  catchphrase: Quietus.
+  id: potter_verse_22
+- trigger: muffliato {area}
+  output:
+    de: Musik {area} pausieren
+    en: Pause the music in {area}
+  catchphrase: Muffliato.
+  id: potter_verse_23
+- trigger: renervate {area}
+  output:
+    de: Musik {area} fortsetzen
+    en: Resume the music in {area}
+  catchphrase: Renervate.
+  id: potter_verse_24
+- trigger: scourgify {target}
+  output:
+    de: '{target} starten'
+    en: Start {target}
+  catchphrase: Scourgify.
+  id: potter_verse_27
+- trigger: tergeo {target}
+  output:
+    de: '{target} anhalten'
+    en: Stop {target}
+  catchphrase: Tergeo.
+  id: potter_verse_28
+- trigger: incendio {area}
+  output:
+    de: Temperatur in {area} erhöhen
+    en: Increase the temperature in {area}
+  catchphrase: Incendio.
+  id: potter_verse_29
+- trigger: glacius {area}
+  output:
+    de: Temperatur in {area} verringern
+    en: Decrease the temperature in {area}
+  catchphrase: Glacius.
+  id: potter_verse_30
+- trigger: anapneo {area}
+  output:
+    de: Lüftung in {area} einschalten
+    en: Turn on the ventilation in {area}
+  catchphrase: Anapneo.
+  id: potter_verse_31
+- trigger: aparecium {area}
+  output:
+    de: Wie warm ist es in {area}
+    en: What's the temperature in {area}
+  id: potter_verse_32
+- trigger: finite incantatem {area}
+  output:
+    de: Alle Geräte im Bereich {area} ausschalten
+    en: Turn off all devices in {area}
+  catchphrase: Finite Incantatem.
+  id: potter_verse_33
+- trigger: priori incantatem {area}
+  output:
+    de: Vorherige Szene in {area} aktivieren
+    en: Activate the previous scene in {area}
+  catchphrase: Priori Incantatem.
+  id: potter_verse_34
+- trigger: expecto patronum {area}
+  output:
+    de: Gemütliche Szene in {area} aktivieren
+    en: Activate the cozy scene in {area}
+  catchphrase: Expecto Patronum.
+  id: potter_verse_35
+- trigger: protego {area}
+  output:
+    de: Alarm in {area} scharfschalten
+    en: Arm the alarm in {area}
+  catchphrase: Protego.
+  id: potter_verse_36
+- trigger: protego totalum {area}
+  output:
+    de: Alle Schlösser in {area} verriegeln
+    en: Lock all locks in {area}
+  catchphrase: Protego Totalum.
+  id: potter_verse_37
+- trigger: finite {target}
+  output:
+    de: Alarm bei {target} deaktivieren
+    en: Deactivate the alarm at {target}
+  catchphrase: Finite.
+  id: potter_verse_38
+- trigger: homenum revelio {area}
+  output:
+    de: Ist jemand im Bereich {area}
+    en: Is anyone in {area}
+  id: potter_verse_39
+- trigger: point me {target}
+  output:
+    de: Wo befindet sich {target}
+    en: Where is {target}
+  id: potter_verse_40
+- trigger: specialis revelio {target}
+  output:
+    de: Wie ist der Status von {target}
+    en: What is the status of {target}
+  id: potter_verse_41
+- trigger: revelio {area}
+  output:
+    de: Was ist in {area} aktiv
+    en: What is active in {area}
+  id: potter_verse_42
+- trigger: legilimens {target}
+  output:
+    de: Was macht {target} gerade
+    en: What is {target} currently doing
+  id: potter_verse_43
+- trigger: meteolojinx recanto {area}
+  output:
+    de: Wie ist das Wetter in {area}
+    en: What's the weather like in {area}
+  id: potter_verse_44
+- trigger: tempus
+  output:
+    de: Wie spät ist es
+    en: What time is it
+  id: potter_verse_45

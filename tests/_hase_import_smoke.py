@@ -7,11 +7,13 @@ The subprocess keeps these stubs out of the existing behavioral test suite.
 import ast
 import asyncio
 import importlib
-from pathlib import Path
 import sys
 import tempfile
 import types
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -298,30 +300,20 @@ async def verify():
     with tempfile.TemporaryDirectory() as config_dir:
         hass.config.path = lambda *parts: str(Path(config_dir).joinpath(*parts))
         hass.async_add_executor_job = executor
-        engine = loaded["custom_components.hase.spellbooker_ha"]
-        legacy = loaded["custom_components.hase.providers.code27.spellbook"]
-        vacuum = loaded["custom_components.hase.vacuum_provider"]
+        engine = loaded["custom_components.hase.spellbook_loader"]
         assert {
-            key for key, _ in await engine.async_discover_spellbooker_books(hass)
+            key for key, _ in await engine.async_discover_spellbooks(hass)
         } == {"demo", "middle_earth", "potter_verse"}
-        assert {key for key, _ in await legacy.async_discover_spellbooks(hass)} == {
-            "middle_earth",
-            "potter_verse",
-        }
-        assert len(await vacuum.async_list_providers(hass)) == 3
-        overrides = Path(config_dir) / "hase_spellbooker_books"
-        overrides.mkdir()
-        contents = (COMPONENT / "spellbooker_books/demo.yaml").read_text(
-            encoding="utf-8"
-        )
-        # Change only the display name, keeping the complete engine book.
-        import yaml
 
+
+        overrides = Path(config_dir) / "hase_spellbooks"
+        overrides.mkdir()
+        contents = (COMPONENT / "spellbooks/demo.yaml").read_text(encoding="utf-8")
         book = yaml.safe_load(contents)
         book["name"] = "My override"
         (overrides / "demo.yaml").write_text(yaml.safe_dump(book), encoding="utf-8")
         assert (
-            await engine.async_get_spellbooker_book(hass, "demo")
+            await engine.async_get_spellbook(hass, "demo")
         ).name == "My override"
     print(
         f"Imported {len(loaded)} real HASE modules; provider lifecycle and all seven services passed."

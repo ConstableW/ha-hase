@@ -1,0 +1,85 @@
+# HASE spellbook: frontend-independent semantic commands.
+id: demo
+name: Spellbooker Demo
+commands:
+- id: light_on
+  trigger: licht {area} an
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase: Mach ich.
+- id: light_off
+  trigger: licht {area} aus
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase: Erledigt.
+- id: get_state
+  trigger: wie ist der zustand von {entity}
+  operation: entity.get_state
+  target:
+    kind: entity_name
+    capture: entity
+- id: activate
+  trigger: aktiviere licht {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase: Aktiviert.
+- id: deactivate
+  trigger: deaktiviere licht {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase: Deaktiviert.
+- id: lights_all_on
+  trigger: alle lichter an
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': true
+  catchphrase: Ganz Zwergstadt erstrahlt.
+- id: lights_all_off
+  trigger: alle lichter aus
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': false
+  catchphrase: Alles dunkel.
+- id: clean_room
+  trigger: reinige {area}
+  operation: vacuum.clean_area
+  target:
+    kind: area_name
+    capture: area
+  catchphrase: Wird gereinigt.
+- id: next_track
+  trigger: naechster titel
+  operation: media_player.skip_track
+  target:
+    kind: all_allowed
+  arguments:
+    forward: true
+  catchphrase: Naechster Titel.
+- id: previous_track
+  trigger: voriger titel
+  operation: media_player.skip_track
+  target:
+    kind: all_allowed
+  arguments:
+    forward: false
+  catchphrase: Voriger Titel.

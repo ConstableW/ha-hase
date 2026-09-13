@@ -30,13 +30,12 @@ from .const import (
     SPELLBOOKER_MODE_SPELLBOOK_ONLY,
     SUBENTRY_TYPE_SATELLITE,
 )
-from .spellbooker_ha import async_discover_spellbooker_books
-
 from .providers.code27.config_flow import (
     Code27FlowMixin,
     Code27OptionsFlow,
     SatelliteSubentryFlow,
 )
+from .spellbook_loader import async_discover_spellbooks
 
 
 class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
@@ -67,7 +66,7 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
         """A standalone SPELLBOOK_ONLY Spellbooker conversation agent -
         no device, no backend, always its own top-level entry. Satellites are configured as subentries on the CODE27 provider entry."""
         errors: dict[str, str] = {}
-        book_choices = await async_discover_spellbooker_books(self.hass)
+        book_choices = await async_discover_spellbooks(self.hass)
         if user_input is not None:
             if not book_choices:
                 errors["base"] = "no_spellbook_available"
@@ -183,7 +182,7 @@ class SpellbookerOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         options = self._config_entry.options
-        book_choices = await async_discover_spellbooker_books(self.hass)
+        book_choices = await async_discover_spellbooks(self.hass)
 
         if user_input is not None:
             if not user_input.get(CONF_SPELLBOOKER_UNRESTRICTED) and not user_input.get(

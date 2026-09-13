@@ -55,7 +55,7 @@
       "pairing_request_failed": "Could not request a pairing code from the device.",
       "invalid_pairing_code": "That pairing code was not accepted. Check the code shown on the device and try again.",
       "areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted\".",
-      "no_spellbook_available": "No spellbook found. Add a file under spellbooker_books/ or hase_spellbooker_books/ first.",
+      "no_spellbook_available": "No spellbook found. Add a file under spellbooks/ or hase_spellbooks/ first.",
       "invalid_profile_id": "Enter the character slot as a plain number, e.g. \"1\".",
       "queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\"."
     },
@@ -83,7 +83,7 @@
           "bridge_tts_enabled": "Speak Assist's reply out loud on the device",
           "bridge_ai_cleanup_enabled": "Clean up phrasing with an AI Task before sending to Assist",
           "bridge_ai_task_entity_id": "AI Task entity",
-          "bridge_vacuum_enabled": "Allow spellbook \"vacuum_clean\" commands to trigger room-level vacuuming",
+          "bridge_vacuum_enabled": "Allow spellbook commands to vacuum a specific room. Disabled by default. Supported vacuums are configured through the shared vacuum provider files.",
           "bridge_history_cleanup_enabled": "Remove Assist communication from history",
           "remote_recovery_enabled": "Recover the device's LAN address via CODE27's cloud after a DHCP change"
         },
@@ -98,7 +98,7 @@
           "bridge_tts_enabled": "Speaks Assist's reply out loud through the character's own voice, using the device's TTS preview feature. Independent of \"Send Assist's reply back into the chat\" above - enable either, both, or neither.",
           "bridge_ai_cleanup_enabled": "A simple built-in filter already strips common filler phrases (\"can you please ask it to...\") before sending to Assist. Enabling this additionally runs the command through the AI Task entity below first for a smarter rewrite - useful for a local model via e.g. Ollama, no cloud required.",
           "bridge_ai_task_entity_id": "Which AI Task entity to use for the optional rewrite above. Only used if the cleanup option is enabled.",
-          "bridge_vacuum_enabled": "A spellbook command can be marked with action \"vacuum_clean\" to resolve a spoken area to a vacuum's room and start cleaning just that room, instead of being forwarded to Assist as text. Off by default since it triggers a real device. Which vacuum brands are supported is configured separately via vacuum provider files, not here.",
+          "bridge_vacuum_enabled": "Allow spellbook commands to vacuum a specific room. Disabled by default. Supported vacuums are configured through the shared vacuum provider files.",
           "bridge_history_cleanup_enabled": "Only applies to a message that actually resolved to a recognized codeword/spellbook command (plain conversation is never touched). After the command has run (and been spoken/relayed, if those are enabled - independent of this option), removes the technical exchange - your command and the character's own automatic reaction to it - from CODE27's chat history, on-device and in its cloud backup. So the character's memory/context only ever sees real conversation, not \"Kitchen light on\", \"Done\" clutter. Best-effort: it identifies the character's reply by polling for the next message after yours, so it can occasionally leave one in place (e.g. if something else was said at the same moment) rather than risk deleting the wrong message.",
           "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else."
         }

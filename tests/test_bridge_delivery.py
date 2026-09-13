@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "hase"
 def load_source(name, **adapters):
     provider = ROOT / "providers" / "code27"
     source_path = ROOT / f"{name}.py"
-    if name in {"api", "coordinator", "bridge", "spellbook", "websocket_client", "entity", "media_player"}:
+    if name in {"api", "coordinator", "bridge", "entity_correction", "frontend", "websocket_client", "entity", "media_player"}:
         source_path = provider / f"{name}.py"
     paths = [source_path]
     if name == "const":
@@ -41,9 +41,13 @@ def load_source(name, **adapters):
     )]
     module = types.ModuleType(f"code27_test_{name}")
     module.__file__ = str(source_path)
+    if name == "bridge" and "engine" in globals():
+        module.__dict__.update(spellbook_loader=loader, spellbook_engine=engine,
+                               ActionDraft=models.ActionDraft, ActionTarget=models.ActionTarget,
+                               ExecutionStatus=models.ExecutionStatus)
     module.__dict__.update(adapters)
     sys.modules[module.__name__] = module
-    exec(compile(tree, module.__file__, "exec"), module.__dict__)
+    exec(compile(tree, module.__file__, "exec"), module.__dict__)  # noqa: S102 - trusted repository source in isolated test harness.
     return module
 
 
@@ -108,7 +112,26 @@ coordinator_module = load_source(
     Code27Error=api.Code27Error, Code27AuthError=api.Code27AuthError,
     Code27ConnectionError=api.Code27ConnectionError, CONF_HOST="host",
 )
-spellbook = load_source("spellbook")
+# Import the HA-independent core normally; only HA boundaries are adapted.
+import importlib
+import importlib.util
+
+core_spec = importlib.util.spec_from_file_location(
+    "hase_spellbook_core", ROOT / "core/__init__.py",
+    submodule_search_locations=[str(ROOT / "core")],
+)
+if core_spec.name not in sys.modules:
+    core_module = importlib.util.module_from_spec(core_spec)
+    sys.modules[core_spec.name] = core_module
+    core_spec.loader.exec_module(core_module)
+engine = importlib.import_module("hase_spellbook_core.spellbook_engine")
+matching = importlib.import_module("hase_spellbook_core.matching")
+models = importlib.import_module("hase_spellbook_core.models")
+spellbook = load_source("entity_correction", fuzzy_threshold=matching.fuzzy_threshold,
+                        tokenize_with_spans=matching.tokenize_with_spans)
+loader = load_source("spellbook_loader", EngineSpellbook=engine.EngineSpellbook,
+                     load_spellbook_from_path=engine.load_spellbook_from_path)
+
 bridge = load_source(
     "bridge", **constants, spellbook=spellbook, callback=lambda f: f,
     PendingCorrection=coordinator_module.PendingCorrection,
@@ -237,9 +260,10 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.c.pending_correction = coordinator_module.PendingCorrection("old off", "old")
         self.entry.options["bridge_spellbook"] = "test"
         book = N(name="test")
-        match = ("Licht Buero einschalten", None, "lumos", "lumos", True, {}, None)
-        with patch.object(spellbook, "async_get_spellbook", AsyncMock(return_value=book)), \
-             patch.object(spellbook, "match_spellbook", return_value=match), \
+        match = N(output="Licht Buero einschalten", catchphrase=None, trigger_text="lumos",
+                  matched_text="lumos", is_exact=True, captures={}, action_draft=None)
+        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
+             patch.object(engine, "find_command", return_value=match), \
              patch.object(bridge, "_forward_to_assist", AsyncMock(return_value=(None, None, "new"))) as forward, \
              patch.object(bridge, "_log_activity"):
             await bridge._handle_bridge_message(self.hass, self.entry, self.c, "lumos Buero", None)
@@ -254,7 +278,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         # log explaining why every spellbook command for this entry
         # stopped working.
         self.entry.options["bridge_spellbook"] = "ghost_book"
-        with patch.object(spellbook, "async_get_spellbook", AsyncMock(return_value=None)), \
+        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=None)), \
              patch.object(bridge, "_LOGGER") as logger, \
              patch.object(bridge, "_log_activity"):
             await bridge._handle_bridge_message(self.hass, self.entry, self.c, "Computer test", None)

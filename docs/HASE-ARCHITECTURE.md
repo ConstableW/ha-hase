@@ -6,7 +6,8 @@ Exactly one integration lives under `custom_components/hase`.
 ## Boundaries
 
 - `core/`: matching, typed operations, executor interfaces, router, policies, sessions and clarifications. No Home Assistant or provider imports.
-- `spellbooker_ha.py`: Home Assistant service caller, target resolver, source-area resolution and engine-book discovery.
+- `spellbooker_ha.py`: Home Assistant service caller, target resolver, source-area resolution.
+- `spellbook_loader.py`: shared discovery/loading of `spellbooks/`, for every frontend.
 - `vacuum_provider.py`, `vacuum_providers/`: generic Home Assistant vacuum adapters, shared by engine actions and the CODE27 frontend.
 - `conversation.py`: HA ConversationEntity for standalone agents and satellite subentries. Composes the existing router with the CODE27 backend when a satellite is used.
 - `config_flow.py`: HASE registration, setup menu, standalone agent configuration/options, provider flow composition.
@@ -19,11 +20,12 @@ There is one provider runtime per CODE27 config entry. Satellites use their owni
 
 | Format | Bundled directory | User directory under HA config |
 |---|---|---|
-| Engine books | `custom_components/hase/spellbooker_books/` | `hase_spellbooker_books/` |
-| CODE27 bridge books | `custom_components/hase/providers/code27/spellbooks/` | `hase_spellbooks/` |
+| HASE spellbooks | `custom_components/hase/spellbooks/` | `hase_spellbooks/` |
 | Generic vacuum profiles | `custom_components/hase/vacuum_providers/` | `hase_vacuum_providers/` |
 
-The two book formats remain distinct. Identical book IDs do not imply interchangeable contents. User files override bundled files according to the existing loaders. There is no fallback to old `code27_*` directories.
+One schema and one matcher serve every frontend. CODE27 consumes typed commands through ActionDraft/ActionExecutor and output-only commands through Assist. Satellite matching ignores output-only commands before ranking. Typed execution errors never fall back to output. YAML contains no frontend markers. User files override bundled IDs through the shared loader.
+
+See [Etappe 8](spellbook-engine/etappe-8-unified-spellbooks.md) for inventory, policy and migration details.
 
 ## Public API
 

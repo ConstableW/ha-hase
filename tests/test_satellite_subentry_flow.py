@@ -89,8 +89,7 @@ def _load_flow_module(book_choices):
         CONF_HOST="host", CONF_PORT="port",
         Code27Client=None, Code27ConnectionError=Exception, Code27Error=Exception,
         async_get_clientsession=lambda h: None,
-        async_discover_spellbooks=None,
-        async_discover_spellbooker_books=fake_discover_books,
+        async_discover_spellbooks=fake_discover_books,
     )
 
 

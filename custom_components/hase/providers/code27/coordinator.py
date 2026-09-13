@@ -25,9 +25,16 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from ...const import DOMAIN
+from ...core.models import ActionDraft
 from .api import Code27AuthError, Code27Client, Code27ConnectionError, Code27Error
-from ...const import (DOMAIN)
-from .const import (CONF_REMOTE_RECOVERY_ENABLED, DEFAULT_AMBIENT_BRIGHTNESS, DEFAULT_AMBIENT_RGB, LIGHT_EFFECT_STATIC, LIGHT_EFFECT_TO_TYPE)
+from .const import (
+    CONF_REMOTE_RECOVERY_ENABLED,
+    DEFAULT_AMBIENT_BRIGHTNESS,
+    DEFAULT_AMBIENT_RGB,
+    LIGHT_EFFECT_STATIC,
+    LIGHT_EFFECT_TO_TYPE,
+)
 from .websocket_client import Code27WebSocket
 
 _LOGGER = logging.getLogger(__name__)
@@ -92,8 +99,11 @@ class PendingCorrection:
     # "which one did you mean" choice (see bridge.py's
     # _begin_spell_choice_correction) rather than an entity/area name
     # correction - each is (resolved_command, catchphrase, trigger_text).
-    spell_option_a: tuple[str, str | None, str] | None = None
-    spell_option_b: tuple[str, str | None, str] | None = None
+    spell_wording_a: str | None = None
+    spell_wording_b: str | None = None
+    typed_draft: ActionDraft | None = None
+    spell_option_a: tuple[ActionDraft | str, str | None, str] | None = None
+    spell_option_b: tuple[ActionDraft | str, str | None, str] | None = None
 
     def is_expired(self, timeout_seconds: float) -> bool:
         return time.monotonic() - self.created_at > timeout_seconds
@@ -352,9 +362,8 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         # Prefer timestamps so a newer state can reset the version counter.
         for key in ("updated_at_ms", "version"):
             left, right = incoming.get(key), current.get(key)
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-                if left != right:
-                    return left < right
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and left != right:
+                return left < right
         return False
 
     def _handle_music_push(self, field: str, data: dict) -> None:

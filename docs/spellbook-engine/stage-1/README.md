@@ -1,5 +1,7 @@
 > Historischer Stand vor dem HASE-Rebrand. Aktuelle Pfade und Verantwortlichkeiten: [HASE-Architektur](../../HASE-ARCHITECTURE.md).
 
+> Historischer Stand. Die Zusammenführung ist in [Etappe 8](../etappe-8-unified-spellbooks.md) dokumentiert: ein kanonischer Bestand, keine getrennten Laufzeitformate.
+
 # Spellbook Engine – Etappe 1
 
 Stand: 10. September 2026. Implementierungsvertrag v1 für die nächste Etappe; keine Änderung am Laufzeitcode. Grundlage sind der lokale Code und die im Gespräch beschlossenen Architekturkorrekturen. Das extern bearbeitete HTML wurde nicht erneut eingelesen.

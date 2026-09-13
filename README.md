@@ -17,8 +17,8 @@ Siehe [Cutover und Live-Abnahme](docs/HASE-CUTOVER.md) und [Architektur](docs/HA
 
 Nach „Integration hinzufügen → HASE“ entweder ein CODE27-Gerät verbinden oder einen
 Spellbook-only-Agent erstellen. Für den Agent ein Engine-Book und getrennte Bereiche für
-Aktionen und Abfragen wählen. Engine-Bücher liegen in `custom_components/hase/spellbooker_books/`
-oder `<config>/hase_spellbooker_books/`.
+Aktionen und Abfragen wählen. Engine-Bücher liegen in `custom_components/hase/spellbooks/`
+oder `<config>/hase_spellbooks/`.
 
 Satelliten werden am CODE27-Geräte-Entry als Subentry hinzugefügt. Name, aktiven Character-Slot,
 optionales Engine-Book und Bereichsrichtlinien einstellen. Ohne lokales Buch geht die Anfrage
@@ -151,7 +151,7 @@ Options-Dialog mit dem Abfrageintervall und der Assist-Bridge:
 | Antwort laut aussprechen | Spricht Assists Antwort (bzw. eine Spellbook-Catchphrase) über die TTS-Vorschau des Geräts in der Stimme des aktiven Charakters |
 | KI-Bereinigung aktivieren | Optional: lässt eine `ai_task`-Entität (z. B. ein lokales Ollama-Modell) den Befehl vor dem Senden an Assist umformulieren – siehe [Zweistufige Befehls-Bereinigung](#zweistufige-befehls-bereinigung-optional) |
 | KI-Task-Entität | Welche `ai_task`-Entität für die Bereinigung genutzt wird |
-| Vacuum-Aktion aktivieren | Standardmäßig **aus**; erlaubt Spellbook-Befehlen mit `action: vacuum_clean` echtes, raumgenaues Saugen auszulösen – siehe [Vacuum-Area-Resolver](#vacuum-area-resolver) |
+| Vacuum-Aktion aktivieren | Standardmäßig **aus**; erlaubt Spellbook-Befehlen mit `operation: vacuum.clean_area` echtes, raumgenaues Saugen auszulösen – siehe [Vacuum-Area-Resolver](#vacuum-area-resolver) |
 
 Das Abfrageintervall ist **pro Gerät** (Config Entry) gespeichert – hast du
 mehrere CODE27-Geräte, hat jedes seine eigenen Optionen.
@@ -336,8 +336,8 @@ Nox Wohnzimmer               -> "Licht Wohnzimmer ausschalten"   "Nox."
 Computer Licht Küche an      -> "Licht Küche einschalten"        "Bestätigt."
 ```
 
-Zwei Bridge-Spellbooks liegen bei (`custom_components/hase/providers/code27/spellbooks/`):
-Potterverse und Middle-earth. Eigene Spellbooks als YAML-Datei in
+Drei gemeinsame HASE-Spellbooks liegen bei (`custom_components/hase/spellbooks/`):
+Potterverse, Middle-earth und Demo. Eigene Spellbooks als YAML-Datei in
 `<config>/hase_spellbooks/` ablegen – werden automatisch erkannt, kein
 Neustart nötig (YAML wird bei jeder Nachricht neu eingelesen, nur an Python-
 Dateien geänderte Fixes brauchen einen echten Neustart).
@@ -358,26 +358,13 @@ aktiv nach, statt versehentlich das Gegenteil des Gemeinten zu tun:
 Die nächste Antwort wird gegen beide Formulierungen abgeglichen – ein klar
 erkennbares Wort daraus reicht (z. B. nur "lösche" oder nur "entzünde").
 
-**`action`-Feld:** Ein Spellbook-Eintrag kann statt eines reinen Assist-Texts
-ein `action` deklarieren, das die Bridge selbst behandelt statt den Text an
-Assist weiterzugeben:
+**Gemeinsame semantische Befehle:** Bücher verwenden `operation`, `target` und `arguments`, optional `output`. Typisierte Befehle laufen durch den gemeinsamen Executor. Reine Output-Befehle gehen bei CODE27 an Assist und sind für Satellite-Ausführung unsichtbar. Sind beide vorhanden, gilt ausschließlich die Operation; Fehler führen niemals zum Output-Fallback. Frontend-Marker gehören nicht ins YAML.
 
-| Action | Wirkung |
-|---|---|
-| `vacuum_clean` | Löst einen gesprochenen Bereich auf einen Saugroboter-Raum auf – siehe [Vacuum-Area-Resolver](#vacuum-area-resolver) |
-| `light_all_on` / `light_all_off` | Schaltet **alle** Lichter im Haus, unabhängig vom Bereich |
-
-`light_all_on`/`light_all_off` existiert, weil sich trotz ausführlichem
-Testen (Deutsch und Englisch, auch das offiziell dokumentierte
-"everywhere"-Schlüsselwort) **kein** funktionierendes Assist-Sprachmuster für
-"alle Lichter, kein bestimmter Bereich" finden ließ – jede Formulierung kam
-als "Gerät/Bereich/Etage nicht gefunden" zurück. Diese Action ruft daher
-`light.turn_on`/`light.turn_off` direkt mit dem klassischen `entity_id: "all"`
-auf, ohne den Umweg über Assist.
+Globale Beleuchtung verwendet `light.set_power`, `target: {kind: all_allowed}` und `arguments: {"on": true}` (oder `false`). Registry-/Exposure-Prüfung und Bereichspolicy bestimmen die erlaubten Ziele. Sauger verwenden `vacuum.clean_area` mit einem Bereichsziel. Details: [Etappe 8](docs/spellbook-engine/etappe-8-unified-spellbooks.md).
 
 ### Vacuum-Area-Resolver
 
-Ein Spellbook-Eintrag mit `action: vacuum_clean` (z. B. "Reinigt die Hallen
+Ein Spellbook-Eintrag mit `operation: vacuum.clean_area` (z. B. "Reinigt die Hallen
 von {area}") löst den gesprochenen Bereich auf einen Saugroboter-Raum auf und
 startet die Reinigung nur dieses einen Raums. Standardmäßig **aus** (Option
 "Vacuum-Aktion aktivieren" – ein echter physischer Seiteneffekt, kein reiner

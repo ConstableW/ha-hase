@@ -23,7 +23,6 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import Code27Client, Code27ConnectionError, Code27Error
 from ...const import (
     CONF_SPELLBOOKER_ALLOWED_AREAS,
     CONF_SPELLBOOKER_BOOK,
@@ -33,6 +32,8 @@ from ...const import (
     CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
     CONF_SPELLBOOKER_UNRESTRICTED,
 )
+from ...spellbook_loader import async_discover_spellbooks
+from .api import Code27Client, Code27ConnectionError, Code27Error
 from .const import (
     CONF_BRIDGE_ACK_PHRASE,
     CONF_BRIDGE_AGENT_ID,
@@ -60,8 +61,6 @@ from .const import (
     SPELLBOOK_MODE_FALLBACK,
     SPELLBOOK_MODE_STRICT,
 )
-from .spellbook import async_discover_spellbooks
-from ...spellbooker_ha import async_discover_spellbooker_books
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -262,7 +261,7 @@ class SatelliteSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         errors: dict[str, str] = {}
-        book_choices = await async_discover_spellbooker_books(self.hass)
+        book_choices = await async_discover_spellbooks(self.hass)
         is_reconfigure = self.source == "reconfigure"
         existing = self._get_reconfigure_subentry() if is_reconfigure else None
         existing_data = existing.data if existing is not None else {}

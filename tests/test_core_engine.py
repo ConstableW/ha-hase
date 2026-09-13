@@ -29,7 +29,7 @@ def _next_request_id() -> str:
     return f"test-req-{next(_request_ids)}"
 
 HASE_ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "hase"
-DEMO_BOOK_PATH = HASE_ROOT / "spellbooker_books" / "demo.yaml"
+DEMO_BOOK_PATH = HASE_ROOT / "spellbooks" / "demo.yaml"
 
 
 def _load_core_package():
@@ -316,7 +316,7 @@ class SpellbookEngineTests(unittest.TestCase):
         # fuzzy-match against "mittelerde" and silently turn off every
         # light in the house instead of just the named area.
         book = spellbook_engine.load_spellbook_from_path(
-            HASE_ROOT / "spellbooker_books" / "middle_earth.yaml"
+            HASE_ROOT / "spellbooks" / "middle_earth.yaml"
         )
         self.assertIsNotNone(book)
         result = spellbook_engine.match(book, "löscht die feuer von Gondor", "de")
@@ -335,7 +335,7 @@ class SpellbookEngineTests(unittest.TestCase):
         # on what should have been recognized as an unsupported
         # per-area brightness command.
         book = spellbook_engine.load_spellbook_from_path(
-            HASE_ROOT / "spellbooker_books" / "potter_verse.yaml"
+            HASE_ROOT / "spellbooks" / "potter_verse.yaml"
         )
         self.assertIsNotNone(book)
         result = spellbook_engine.match(book, "lumos maxima Küche", "de")
@@ -345,6 +345,91 @@ class SpellbookEngineTests(unittest.TestCase):
             # acceptable - it fails safely at target resolution. What
             # must never happen is the whole-house action winning.
             self.assertNotEqual(result.action_draft.target, ActionTarget("all_allowed", None))
+
+
+class OutputOnlyCommandTests(unittest.TestCase):
+    """Etappe 7: a command with `output` instead of/alongside `operation`
+    - the unified-schema field that lets a single spellbook file also
+    serve CODE27's bridge (free text forwarded to Assist), which this
+    engine itself never acts on. See EngineCommand's own docstring."""
+
+    def test_output_only_command_loads_successfully(self):
+        book = spellbook_engine.load_spellbook_from_text(
+            "b",
+            "name: B\ncommands:\n  - id: x\n    trigger: \"mach das licht aus\"\n    "
+            "output: \"Licht aus\"\n",
+        )
+        self.assertIsNotNone(book)
+        self.assertEqual(len(book.commands), 1)
+        self.assertIsNone(book.commands[0].operation)
+        self.assertEqual(book.commands[0].output, "Licht aus")
+
+    def test_output_only_command_never_produces_a_match(self):
+        # This engine has no concept of executing free text (Etappe 1's
+        # backdoor rule) - an output-only command must be invisible to
+        # match(), not silently wrapped into an ActionDraft.
+        book = spellbook_engine.load_spellbook_from_text(
+            "b",
+            "name: B\ncommands:\n  - id: x\n    trigger: \"mach das licht aus\"\n    "
+            "output: \"Licht aus\"\n",
+        )
+        result = spellbook_engine.match(book, "mach das licht aus", "de")
+        self.assertIsInstance(result, EngineNoMatch)
+
+    def test_command_with_neither_operation_nor_output_is_skipped(self):
+        book = spellbook_engine.load_spellbook_from_text(
+            "mixed",
+            "name: Mixed\ncommands:\n"
+            "  - id: bad\n    trigger: \"hallo\"\n"
+            "  - id: good\n    trigger: \"hallo wieder\"\n    operation: light.set_power\n"
+            "    target: {kind: all_allowed}\n    arguments: {on: true}\n",
+        )
+        self.assertIsNotNone(book)
+        self.assertEqual(len(book.commands), 1)
+        self.assertEqual(book.commands[0].spell_id, "good")
+
+    def test_book_of_only_output_commands_still_loads(self):
+        # The "every command invalid -> load failure" rule must not
+        # misfire here: every command in this book loaded successfully
+        # (as output-only), so this is a legitimate book, not a broken
+        # one - unlike test_adjacent_placeholders_command_is_skipped_not_fatal's
+        # single bad command, nothing here was actually rejected.
+        book = spellbook_engine.load_spellbook_from_text(
+            "b",
+            "name: B\ncommands:\n"
+            "  - id: a\n    trigger: \"eins\"\n    output: \"one\"\n"
+            "  - id: b\n    trigger: \"zwei\"\n    output: \"two\"\n",
+        )
+        self.assertIsNotNone(book)
+        self.assertEqual(len(book.commands), 2)
+
+    def test_invalid_output_field_is_skipped(self):
+        book = spellbook_engine.load_spellbook_from_text(
+            "mixed",
+            "name: Mixed\ncommands:\n"
+            "  - id: bad\n    trigger: \"hallo\"\n    output: 5\n"
+            "  - id: good\n    trigger: \"hallo wieder\"\n    output: \"hi\"\n",
+        )
+        self.assertIsNotNone(book)
+        self.assertEqual(len(book.commands), 1)
+        self.assertEqual(book.commands[0].spell_id, "good")
+
+    def test_operation_and_output_can_coexist_on_one_command(self):
+        # Not required by the schema, but not forbidden either - a book
+        # author documenting a human-readable fallback description
+        # alongside a typed action must not be rejected.
+        book = spellbook_engine.load_spellbook_from_text(
+            "b",
+            "name: B\ncommands:\n  - id: x\n    trigger: \"licht an\"\n    "
+            "operation: light.set_power\n    target: {kind: all_allowed}\n    "
+            "arguments: {on: true}\n    output: \"Alle Lichter an\"\n",
+        )
+        self.assertIsNotNone(book)
+        command = book.commands[0]
+        self.assertEqual(command.operation, "light.set_power")
+        self.assertEqual(command.output, "Alle Lichter an")
+        result = spellbook_engine.match(book, "licht an", "de")
+        self.assertIsInstance(result, EngineMatch)
 
 
 class FakeResolver:
@@ -1546,7 +1631,6 @@ class LegacyMigrationTests(unittest.TestCase):
 
     def test_localized_trigger_survives_migration(self):
         result = migrate_legacy_spellbook("t", self.raw)
-        command = next(c for c in result.book.commands if c.spell_id == "lights_on")
         matched = spellbook_engine.match(result.book, "entzuende die feuer von mittelerde", "de")
         self.assertIsInstance(matched, EngineMatch)
 
@@ -1563,13 +1647,13 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(reasons["broken_vacuum"], "vacuum_clean_missing_area_placeholder")
 
     def test_real_production_spellbooks_match_the_etappe_1_inventory(self):
-        import yaml as _yaml
-
         total_supported = 0
         total_unsupported = 0
-        for path in sorted((HASE_ROOT / "providers" / "code27" / "spellbooks").glob("*.yaml")):
-            raw = _yaml.safe_load(path.read_text(encoding="utf-8"))
-            result = migrate_legacy_spellbook(path.stem, raw)
+        import json
+        inventory = json.loads((HASE_ROOT.parents[1] / "docs/spellbook-engine/migration-inventory.json").read_text(encoding="utf-8"))
+        for theme, entries in inventory["sources"].items():
+            raw = {"name": theme, "commands": entries["legacy"]}
+            result = migrate_legacy_spellbook(theme, raw)
             total_supported += len(result.book.commands) if result.book else 0
             total_unsupported += len(result.unsupported)
         # Updated 2026-09-10: star_trek.yaml (2 direct actions, 3

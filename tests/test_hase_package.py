@@ -2,10 +2,10 @@
 
 import ast
 import json
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 import yaml
 
@@ -49,6 +49,7 @@ class HasePackageTests(unittest.TestCase):
             [sys.executable, "-B", str(ROOT / "tests/_hase_import_smoke.py")],
             cwd=ROOT,
             capture_output=True,
+            check=False,
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -67,6 +68,9 @@ class HasePackageTests(unittest.TestCase):
                 "notify",
                 "notify_clear",
                 "speak",
+                "get_diary_entry", "get_diary_entries", "get_memory_cards",
+                "update_memory_card", "set_character_voice", "send_chat_image",
+                "upload_music", "delete_music_file",
             },
         )
         for value in services.values():
@@ -100,8 +104,7 @@ class HasePackageTests(unittest.TestCase):
 
     def test_resource_inventory_not_empty_after_move(self):
         expected = {
-            "providers/code27/spellbooks": {"middle_earth", "potter_verse"},
-            "spellbooker_books": {"demo", "middle_earth", "potter_verse"},
+            "spellbooks": {"demo", "middle_earth", "potter_verse"},
             "vacuum_providers": {"dreame_vacuum", "roborock", "xiaomi_miio"},
         }
         for directory, names in expected.items():

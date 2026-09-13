@@ -19,7 +19,7 @@ import difflib
 import logging
 import re
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
@@ -27,12 +27,32 @@ from homeassistant.core import Context, Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 
-from . import spellbook
-from .frontend import Code27FrontendAdapter
-from ...const import (DOMAIN)
-from .const import (CONF_BRIDGE_ACK_PHRASE, CONF_BRIDGE_AGENT_ID, CONF_BRIDGE_AI_CLEANUP_ENABLED, CONF_BRIDGE_AI_TASK_ENTITY_ID, CONF_BRIDGE_CODEWORD, CONF_BRIDGE_ENABLED, CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, CONF_BRIDGE_HISTORY_CLEANUP_ENABLED, CONF_BRIDGE_RELAY_RESPONSE, CONF_BRIDGE_SPELLBOOK, CONF_BRIDGE_SPELLBOOK_MODE, CONF_BRIDGE_TTS_ENABLED, CONF_BRIDGE_VACUUM_ENABLED, CONF_MACHINE_ID, CORRECTION_TIMEOUT_SECONDS, DEFAULT_SPELLBOOK_MODE, SPELLBOOK_MODE_STRICT)
-from ...core.models import ExecutionStatus
+from ... import spellbook_loader
+from ...const import DOMAIN
+from ...core import spellbook_engine
+from ...core.models import ActionDraft, ActionTarget, ExecutionStatus
+from . import entity_correction as spellbook
+from .const import (
+    CONF_BRIDGE_ACK_PHRASE,
+    CONF_BRIDGE_AGENT_ID,
+    CONF_BRIDGE_AI_CLEANUP_ENABLED,
+    CONF_BRIDGE_AI_TASK_ENTITY_ID,
+    CONF_BRIDGE_CODEWORD,
+    CONF_BRIDGE_ENABLED,
+    CONF_BRIDGE_ENTITY_CORRECTION_ENABLED,
+    CONF_BRIDGE_HISTORY_CLEANUP_ENABLED,
+    CONF_BRIDGE_RELAY_RESPONSE,
+    CONF_BRIDGE_SPELLBOOK,
+    CONF_BRIDGE_SPELLBOOK_MODE,
+    CONF_BRIDGE_TTS_ENABLED,
+    CONF_BRIDGE_VACUUM_ENABLED,
+    CONF_MACHINE_ID,
+    CORRECTION_TIMEOUT_SECONDS,
+    DEFAULT_SPELLBOOK_MODE,
+    SPELLBOOK_MODE_STRICT,
+)
 from .coordinator import EVENT_USER_MESSAGE, Code27Coordinator, PendingCorrection
+from .frontend import Code27FrontendAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,6 +168,7 @@ _MESSAGES = {
         "vacuum_cleaning_started": 'Reinigung von „{room}" gestartet ({vacuum})',
         "vacuum_error": "Fehler beim Ansteuern des Saugroboters: {error}",
         "light_all_done": "Alle Lichter {state} geschaltet",
+        "typed_action_error": "Aktion fehlgeschlagen: {error}",
         "light_all_error": "Fehler beim Schalten aller Lichter: {error}",
     },
     "en": {
@@ -203,6 +224,7 @@ _MESSAGES = {
         "vacuum_cleaning_started": 'Started cleaning "{room}" ({vacuum})',
         "vacuum_error": "Error commanding the vacuum: {error}",
         "light_all_done": "Switched all lights {state}",
+        "typed_action_error": "Action failed: {error}",
         "light_all_error": "Error switching all lights: {error}",
     },
 }
@@ -249,7 +271,7 @@ def _strip_filler(text: str) -> str:
 _STOPWORDS = {
     "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
     "und", "auf", "im", "in", "am", "an", "zu", "bitte", "mal",
-    "the", "a", "an", "to", "and", "on", "in", "at", "of", "please",
+    "the", "a", "to", "and", "on", "at", "of", "please",
 }
 
 
@@ -375,7 +397,7 @@ def _parse_codewords(raw: str | None) -> list[str]:
     return [w.strip() for w in raw.split(",") if w.strip()]
 
 
-# Relocated to spellbook.py (shared with the spellbook trigger matcher);
+# Shared pure matching primitives; entity correction imports these as well.
 # imported here under their original names so _find_codeword_match below
 # doesn't need to change.
 _fuzzy_threshold = spellbook.fuzzy_threshold
@@ -610,10 +632,10 @@ async def _is_explicit_command(
         return True
     book_id = entry.options.get(CONF_BRIDGE_SPELLBOOK)
     if book_id:
-        book = await spellbook.async_get_spellbook(hass, book_id)
+        book = await spellbook_loader.async_get_spellbook(hass, book_id)
         if book is not None:
             lang = _current_request(hass, entry, coordinator).language.lower()[:2]
-            return spellbook.match_spellbook(book, text, lang) is not None
+            return spellbook_engine.find_command(book, text, lang) is not None
     return False
 
 
@@ -643,7 +665,7 @@ async def _handle_bridge_message(
 
     spellbook_id = entry.options.get(CONF_BRIDGE_SPELLBOOK)
     if spellbook_id:
-        book = await spellbook.async_get_spellbook(hass, spellbook_id)
+        book = await spellbook_loader.async_get_spellbook(hass, spellbook_id)
         if book is None:
             # A configured spellbook that no longer resolves (file
             # removed, renamed, or never existed) used to fail this
@@ -660,50 +682,24 @@ async def _handle_bridge_message(
             )
         if book is not None:
             lang = _current_request(hass, entry, coordinator).language.lower()[:2]
-            match = spellbook.match_spellbook(book, text, lang)
-            if isinstance(match, spellbook.SpellAmbiguity):
+            match = spellbook_engine.find_command(book, text, lang)
+            if isinstance(match, spellbook_engine.CommandAmbiguity):
                 await _begin_spell_choice_correction(hass, entry, coordinator, match, entity_id)
                 return
             if match is not None:
-                (
-                    command, catchphrase, trigger_text, matched_text, is_exact, captures, action,
-                ) = match
-                if action == "vacuum_clean":
+                command, catchphrase = match.output, match.catchphrase
+                trigger_text, matched_text = match.trigger_text, match.matched_text
+                is_exact, captures = match.is_exact, match.captures
+                if match.action_draft is not None:
                     _log_activity(
-                        hass,
-                        entry,
-                        _msg(
-                            hass,
-                            "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
-                            book=book.name,
-                            trigger=trigger_text,
-                            matched=matched_text,
-                            command=f"vacuum_clean({captures.get('area', '')})",
-                        ),
-                        entity_id,
+                        hass, entry,
+                        _msg(hass, "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
+                             book=book.name, trigger=trigger_text, matched=matched_text,
+                             command=match.action_draft.operation), entity_id,
                     )
-                    if entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False):
-                        await _handle_vacuum_clean_action(
-                            hass, entry, coordinator, captures.get("area", ""), catchphrase, entity_id
-                        )
-                    else:
-                        _log_activity(hass, entry, _msg(hass, "vacuum_action_disabled"), entity_id)
-                    return
-                if action in ("light_all_on", "light_all_off"):
-                    _log_activity(
-                        hass,
-                        entry,
-                        _msg(
-                            hass,
-                            "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
-                            book=book.name,
-                            trigger=trigger_text,
-                            matched=matched_text,
-                            command=action,
-                        ),
-                        entity_id,
+                    await _handle_typed_action(
+                        hass, entry, coordinator, match.action_draft, entity_id,
                     )
-                    await _handle_light_all_action(hass, entry, coordinator, action, catchphrase, entity_id)
                     return
                 if is_exact:
                     _log_activity(
@@ -769,7 +765,7 @@ async def _handle_bridge_message(
     match = _find_codeword_match(text, codewords)
     if match is None:
         return
-    idx, end_idx, matched_text, word = match
+    _idx, end_idx, matched_text, word = match
 
     command = text[end_idx:].strip(" ,:.-!–—")
     if not command:
@@ -826,23 +822,29 @@ async def _ask_correction(
     )
 
 
+def _choice_wording(candidate: spellbook_engine.CommandMatch, language: str) -> str:
+    """Output can help identify a choice; execution still uses the stored draft."""
+    text = spellbook_engine.resolve_localized(candidate.command.output, language)
+    return text.format(**candidate.captures) if text else candidate.spoken_trigger
+
+
 async def _begin_spell_choice_correction(
     hass: HomeAssistant,
     entry: ConfigEntry,
     coordinator: Code27Coordinator,
-    ambiguity: spellbook.SpellAmbiguity,
+    ambiguity: spellbook_engine.CommandAmbiguity,
     entity_id: str | None,
 ) -> None:
     """Two same-specificity spellbook triggers matched this message
     almost equally well but resolve to opposite actions (see
-    spellbook.SpellAmbiguity) - ask which one was meant instead of
+    spellbook_engine.CommandAmbiguity) - ask which one was meant instead of
     guessing. Reuses the same "at most one open dialog" PendingCorrection
     as entity-name correction, just with spell_option_a/b set instead of
     failed_phrase/tried_candidates - see _consume_spell_choice_reply for
     the other half of this dialog."""
     request = _current_request(hass, entry, coordinator)
-    _, _, trigger_a = ambiguity.option_a
-    _, _, trigger_b = ambiguity.option_b
+    trigger_a = ambiguity.option_a.spoken_trigger
+    trigger_b = ambiguity.option_b.spoken_trigger
     _log_activity(
         hass,
         entry,
@@ -855,8 +857,12 @@ async def _begin_spell_choice_correction(
         original_command="",
         failed_phrase="",
         entity_id=entity_id,
-        spell_option_a=ambiguity.option_a,
-        spell_option_b=ambiguity.option_b,
+        spell_wording_a=_choice_wording(ambiguity.option_a, request.language),
+        spell_wording_b=_choice_wording(ambiguity.option_b, request.language),
+        spell_option_a=(ambiguity.option_a.action_draft or ambiguity.option_a.output,
+                        ambiguity.option_a.catchphrase, trigger_a),
+        spell_option_b=(ambiguity.option_b.action_draft or ambiguity.option_b.output,
+                        ambiguity.option_b.catchphrase, trigger_b),
     )
     await _output_speech(
         hass,
@@ -984,6 +990,13 @@ async def _retry_with_candidate(
     if verified is None or verified[0].casefold() != candidate.casefold():
         coordinator.pending_correction = None
         _log_activity(hass, entry, _msg(hass, "correction_gave_up"), entity_id)
+        return
+    if pending.typed_draft is not None:
+        draft = replace(pending.typed_draft,
+                        target=ActionTarget(pending.typed_draft.target.kind, candidate))
+        await _handle_typed_action(
+            hass, entry, coordinator, draft, entity_id, correction_pending=pending,
+        )
         return
     retried_command = pending.original_command.replace(pending.failed_phrase, candidate, 1)
     _log_activity(
@@ -1139,16 +1152,16 @@ async def _consume_spell_choice_reply(
         coordinator.pending_correction = None
         return True
 
-    command_a, catchphrase_a, trigger_a = pending.spell_option_a
-    command_b, catchphrase_b, trigger_b = pending.spell_option_b
+    command_a, _catchphrase_a, trigger_a = pending.spell_option_a
+    command_b, _catchphrase_b, trigger_b = pending.spell_option_b
     lowered = stripped.lower()
     score_a = max(
         difflib.SequenceMatcher(None, lowered, trigger_a.lower()).ratio(),
-        difflib.SequenceMatcher(None, lowered, command_a.lower()).ratio(),
+        difflib.SequenceMatcher(None, lowered, (pending.spell_wording_a or (command_a if isinstance(command_a, str) else trigger_a)).lower()).ratio(),
     )
     score_b = max(
         difflib.SequenceMatcher(None, lowered, trigger_b.lower()).ratio(),
-        difflib.SequenceMatcher(None, lowered, command_b.lower()).ratio(),
+        difflib.SequenceMatcher(None, lowered, (pending.spell_wording_b or (command_b if isinstance(command_b, str) else trigger_b)).lower()).ratio(),
     )
 
     if abs(score_a - score_b) < _SPELL_CHOICE_PICK_MARGIN:
@@ -1172,6 +1185,9 @@ async def _consume_spell_choice_reply(
         _msg(hass, "spell_choice_picked", trigger=picked_trigger, command=picked_command),
         entity_id,
     )
+    if isinstance(picked_command, ActionDraft):
+        await _handle_typed_action(hass, entry, coordinator, picked_command, entity_id)
+        return True
     await _forward_to_assist(
         hass,
         entry,
@@ -1324,7 +1340,7 @@ async def _ai_cleanup(
         if not isinstance(text, str):
             return command
         cleaned = text.strip().strip('"')
-    except Exception as err:  # Cancellation must propagate on entry unload.
+    except Exception as err:  # noqa: BLE001 - cleanup failure preserves the original command.
         reason = f"timeout after {_AI_CLEANUP_TIMEOUT:g}s" if isinstance(err, TimeoutError) else str(err)
         _LOGGER.warning("%s: AI Task cleanup failed: %s", LOGBOOK_NAME, reason)
         _log_activity(hass, entry, _msg(hass, "ai_cleanup_error", error=reason), entity_id)
@@ -1524,6 +1540,60 @@ async def _forward_to_assist(
     return speech, response, command
 
 
+async def _handle_typed_action(
+    hass, entry, coordinator, draft: ActionDraft, entity_id, *, correction_pending=None,
+) -> None:
+    """Execute the original draft once. Rendering never changes its semantics."""
+    _COMMAND_RECOGNIZED.set(True)
+    if draft.operation == "vacuum.clean_area" and not entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False):
+        _log_activity(hass, entry, _msg(hass, "vacuum_action_disabled"), entity_id)
+        return
+    request = _current_request(hass, entry, coordinator)
+    execution = await Code27FrontendAdapter(hass).execute(draft)
+    if (execution.reason_code == "target_not_found"
+            and draft.target.kind in ("area_name", "entity_name")
+            and entry.options.get(CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, False)):
+        pending = correction_pending
+        tried = pending.tried_candidates if pending is not None else []
+        failed_phrase = pending.failed_phrase if pending is not None else draft.target.value
+        if pending is not None:
+            tried.append(draft.target.value)
+        include_areas = draft.target.kind == "area_name"
+        found = spellbook.find_correction_candidate(hass, failed_phrase, tried, include_areas)
+        if found is not None:
+            if pending is None:
+                pending = PendingCorrection(
+                    original_command=draft.operation, failed_phrase=failed_phrase,
+                    slot=request.slot, language=request.language, entity_id=entity_id,
+                    include_areas=include_areas, catchphrase=draft.catchphrase,
+                    typed_draft=draft,
+                )
+            pending.last_suggested = found[0]
+            coordinator.pending_correction = pending
+            await _ask_correction(hass, entry, coordinator, found[0], entity_id)
+            return
+    if correction_pending is not None:
+        coordinator.pending_correction = None
+    if draft.operation == "vacuum.clean_area" and draft.target.kind == "area_name":
+        await _handle_vacuum_clean_action(
+            hass, entry, coordinator, draft.target.value, draft.catchphrase, entity_id,
+            execution=execution,
+        )
+        return
+    if draft.operation == "light.set_power" and draft.target.kind == "all_allowed":
+        await _handle_light_all_action(
+            hass, entry, coordinator, draft.arguments.get("on"),
+            draft.catchphrase, entity_id, execution=execution,
+        )
+        return
+    if execution.status is ExecutionStatus.SUCCESS:
+        speech = draft.catchphrase or str(execution.data.get("state") or "OK.")
+    else:
+        speech = _msg(hass, "typed_action_error", error=execution.reason_code)
+    _log_activity(hass, entry, speech, entity_id)
+    await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
+
+
 async def _handle_vacuum_clean_action(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1531,23 +1601,15 @@ async def _handle_vacuum_clean_action(
     area_alias: str,
     catchphrase: str | None,
     entity_id: str | None,
+    *, execution=None,
 ) -> None:
-    """Resolve a "vacuum_clean" spellbook command's captured {area} and
-    start cleaning just that room.
-
-    Since Etappe 5, execution goes through core.executor.ActionExecutor
-    via providers.code27.frontend.Code27FrontendAdapter - the same shared path
-    HA-Voice frontends use - instead of calling Home Assistant directly.
-    The native-vacuum.clean_area-then-provider-fallback two-tier logic
-    and the "never guess between multiple matching rooms" rule (a wrong
-    room is a real physical mistake, not just a bad reply) now live in
-    spellbooker_ha.py's HaServiceCaller.clean_vacuum_area, proven
-    identical via Etappe 4's tests. This function's only job left is
-    mapping the returned ExecutionResult back onto the exact same
-    activity-log/speech messages callers saw before the migration."""
+    """Map a typed vacuum result to the established activity and speech messages."""
     _COMMAND_RECOGNIZED.set(True)
     request = _current_request(hass, entry, coordinator)
-    execution = await Code27FrontendAdapter(hass).clean_vacuum_area(area_alias)
+    if execution is None:
+        execution = await Code27FrontendAdapter(hass).execute(
+            ActionDraft("vacuum.clean_area", ActionTarget("area_name", area_alias), {}, catchphrase),
+        )
 
     if execution.status is ExecutionStatus.INVALID and execution.reason_code == "target_not_found":
         _log_activity(hass, entry, _msg(hass, "vacuum_area_unresolved", area=area_alias), entity_id)
@@ -1586,27 +1648,19 @@ async def _handle_light_all_action(
     hass: HomeAssistant,
     entry: ConfigEntry,
     coordinator: Code27Coordinator,
-    action: str,
+    on: bool,
     catchphrase: str | None,
     entity_id: str | None,
+    *, execution=None,
 ) -> None:
-    """action: "light_all_on"/"light_all_off".
-
-    Since Etappe 5, execution goes through core.executor.ActionExecutor
-    (light.set_power + target all_allowed) via
-    providers.code27.frontend.Code27FrontendAdapter, instead of calling
-    light.turn_on/turn_off directly with the legacy entity_id: "all"
-    sentinel. CODE27's own frontend is unrestricted (see
-    providers/code27/frontend.py), so "all_allowed" still reaches every exposed
-    light - same effective reach as the old sentinel, confirmed live
-    against testzwerg. No working Assist sentence for "all lights, no
-    area" was ever found on this HA version (see the git history of
-    this function for that investigation) - that's why this bypasses
-    Assist's NLU for just this one command rather than depending on a
-    sentence that doesn't work."""
+    """Map a typed global lighting result to the established activity and speech messages."""
     _COMMAND_RECOGNIZED.set(True)
     request = _current_request(hass, entry, coordinator)
-    execution = await Code27FrontendAdapter(hass).set_all_lights(on=action == "light_all_on")
+    if execution is None:
+        execution = await Code27FrontendAdapter(hass).execute(
+            ActionDraft("light.set_power", ActionTarget("all_allowed"),
+                        {"on": on}, catchphrase),
+        )
 
     if execution.status is not ExecutionStatus.SUCCESS:
         _LOGGER.warning("%s: light_all action failed: %s", LOGBOOK_NAME, execution.reason_code)
@@ -1618,7 +1672,7 @@ async def _handle_light_all_action(
     lang = request.language.lower()
     on_word = "an" if lang.startswith("de") else "on"
     off_word = "aus" if lang.startswith("de") else "off"
-    state_word = on_word if action == "light_all_on" else off_word
+    state_word = on_word if on else off_word
     _log_activity(hass, entry, _msg(hass, "light_all_done", state=state_word), entity_id)
     speech = catchphrase or _msg(hass, "light_all_done", state=state_word)
     await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
@@ -1657,7 +1711,7 @@ async def async_speak_text(
         # through a newly selected character, or change the user's selection.
         try:
             active = await coordinator.client.get_current_slot()
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - unverifiable slot must suppress speech.
             _LOGGER.debug("Cannot verify character for bridge speech: %s", err)
             return
         if not isinstance(active, dict) or active.get("slot_number") != expected_slot or coordinator.stopping:
@@ -1695,7 +1749,8 @@ async def async_speak_text(
                 await asyncio.sleep(_TTS_POLL_INTERVAL)
                 try:
                     state = (await coordinator.client.get_tts_audition_state()).get("state")
-                except Exception:  # noqa: BLE001 - a missed poll shouldn't abort the wait
+                except Exception as err:  # noqa: BLE001 - a missed poll should not abort the wait
+                    _LOGGER.debug("TTS status poll failed: %s", err)
                     continue
                 state = (state or "").upper()
                 if state == "ENDED":

@@ -17,7 +17,7 @@ See the [cutover checklist](docs/HASE-CUTOVER.md) and [architecture](docs/HASE-A
 
 In “Add integration → HASE”, connect a CODE27 device or create a standalone Spellbook-only agent.
 Select an engine book and separate area policies for actions and queries. Engine books live in
-`custom_components/hase/spellbooker_books/` or `<config>/hase_spellbooker_books/`.
+`custom_components/hase/spellbooks/` or `<config>/hase_spellbooks/`.
 
 Add satellites as subentries on their CODE27 device entry. Configure a name, active character
 slot, optional engine book and area policies. An empty book selection delegates to CODE27;
@@ -150,7 +150,7 @@ dialog with the polling interval and the Assist bridge:
 | Speak the reply out loud | Speaks Assist's reply (or a spellbook catchphrase) through the device's TTS preview, in the active character's voice |
 | Enable AI cleanup | Optional: lets an `ai_task` entity (e.g. a local Ollama model) rephrase the command before it's sent to Assist – see [Two-stage command cleanup](#two-stage-command-cleanup-optional) |
 | AI Task entity | Which `ai_task` entity to use for the cleanup |
-| Enable vacuum action | **Off** by default; allows spellbook commands with `action: vacuum_clean` to trigger real, room-level vacuuming – see [Vacuum area resolver](#vacuum-area-resolver) |
+| Enable vacuum action | **Off** by default; allows spellbook commands with `operation: vacuum.clean_area` to trigger real, room-level vacuuming – see [Vacuum area resolver](#vacuum-area-resolver) |
 
 The polling interval is stored **per device** (config entry) – if you have
 multiple CODE27 devices, each has its own options.
@@ -326,9 +326,8 @@ Nox living room               -> "turn off the light in living room"  "Nox."
 Computer light kitchen on     -> "turn on the light in kitchen"       "Confirmed."
 ```
 
-Two bridge spellbooks ship with the integration
-(`custom_components/hase/providers/code27/spellbooks/`): Potterverse and
-Middle-earth. Drop your own spellbook YAML files into
+Three shared HASE spellbooks ship with the integration
+(`custom_components/hase/spellbooks/`): Potterverse, Middle-earth and Demo. Drop your own spellbook YAML files into
 `<config>/hase_spellbooks/` – they're picked up automatically, no restart
 needed (YAML is re-read on every message; only changes to Python files need
 a real restart).
@@ -349,25 +348,13 @@ risking doing the exact opposite of what was meant:
 The next reply is matched against both phrasings – one clearly recognizable
 word from either is enough (e.g. just "extinguish" or just "light").
 
-**The `action` field:** A spellbook entry can declare an `action` instead of
-plain Assist text, which the bridge handles itself rather than forwarding
-the text to Assist:
+**Shared semantic commands:** Books use `operation`, `target` and `arguments`, optionally `output`. Typed commands run through the shared executor. Output-only commands go to Assist from CODE27 and remain invisible to Satellite execution. If both exist, typed wins; an execution error never forwards output. No frontend labels belong in YAML.
 
-| Action | Effect |
-|---|---|
-| `vacuum_clean` | Resolves a spoken area to a vacuum's room – see [Vacuum area resolver](#vacuum-area-resolver) |
-| `light_all_on` / `light_all_off` | Turns **all** lights in the house on/off, regardless of area |
-
-`light_all_on`/`light_all_off` exists because, despite extensive testing
-(German and English, including the officially documented "everywhere"
-keyword), **no** working Assist sentence for "all lights, no specific area"
-could be found – every phrasing came back as "device/area/floor not found".
-This action instead calls `light.turn_on`/`light.turn_off` directly with the
-classic `entity_id: "all"` sentinel, bypassing Assist entirely.
+Global lighting is `light.set_power`, `target: {kind: all_allowed}`, and `arguments: {"on": true}` (or `false`). Targets must pass registry/exposure checks and the frontend's area policy. Vacuum uses `vacuum.clean_area` with an area target. See [Etappe 8](docs/spellbook-engine/etappe-8-unified-spellbooks.md).
 
 ### Vacuum area resolver
 
-A spellbook entry with `action: vacuum_clean` (e.g. "clean the halls of
+A spellbook entry with `operation: vacuum.clean_area` (e.g. "clean the halls of
 {area}") resolves the spoken area to a vacuum's room and starts cleaning
 just that one room. Off by default (the "Enable vacuum action" option – a
 real physical side effect, not just a text command).

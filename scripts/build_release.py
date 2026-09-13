@@ -28,6 +28,9 @@ def build() -> Path:
         ROOT / "docs" / name
         for name in ("HASE-ARCHITECTURE.md", "HASE-CUTOVER.md", "HASE-VALIDATION.md")
     )
+    files.extend(ROOT / "docs/spellbook-engine" / name for name in (
+        "etappe-8-unified-spellbooks.md", "migration-inventory.json",
+    ))
     for directory in ("docs/branding", "docs/screenshots"):
         files.extend(p for p in (ROOT / directory).rglob("*.png") if p.is_file())
     # Existing README media remains available, marked as pre-rebrand examples.

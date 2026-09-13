@@ -8,7 +8,8 @@ import test_bridge_delivery as support
 N = support.N
 api = support.api
 coord = support.coordinator_module
-book = support.spellbook
+book = support.engine
+loader = support.loader
 
 
 class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
@@ -193,9 +194,9 @@ class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
             Code27Client=lambda *args: self.client, Code27Coordinator=lambda *args: self.c)
         self.entry.data = {"host": "test", "port": 8081, "user_id": "u", "local_secret": "s"}
         with patch.object(coord, "ConfigEntryAuthFailed", AuthFailed, create=True), \
-             patch.object(coord, "UpdateFailed", UpdateFailed, create=True):
-            with self.assertRaises(AuthFailed):
-                await init.async_setup_entry(self.hass, self.entry)
+             patch.object(coord, "UpdateFailed", UpdateFailed, create=True), \
+             self.assertRaises(AuthFailed):
+            await init.async_setup_entry(self.hass, self.entry)
         self.client.get_system.assert_awaited_once()
 
 
@@ -310,24 +311,24 @@ class SpellbookTests(unittest.TestCase):
                {"trigger": {"de": "hello {area}", "en": "hello {target}"}, "output": "{area}"}]
         for raw in bad:
             with self.subTest(raw=raw):
-                self.assertIsNone(book._load_command(raw))
+                self.assertIsNone(book._load_command("test", raw))
 
     def test_invalid_metadata_cannot_break_discovery(self):
         for id, name in [([], "valid"), ({}, "valid"), ("valid", []), ("", "valid")]:
-            self.assertFalse(book._valid_book_metadata({"id": id, "name": name, "commands": []}))
+            self.assertIsNone(book.load_spellbook_from_dict("test", {"id": id, "name": name, "commands": []}))
 
     def test_valid_localized_template_still_matches(self):
-        command = book._load_command({"trigger": "lumos {area}",
+        command = book._load_command("test", {"trigger": "lumos {area}",
                                      "output": {"de": "Licht {area} an", "en": "Light {area} on"}})
-        spell = book.Spellbook("test", "Test", [command])
-        self.assertEqual(book.match_spellbook(spell, "lumos Küche", "de")[0], "Licht Küche an")
+        spell = book.EngineSpellbook("test", "Test", [command])
+        self.assertEqual(book.find_command(spell, "lumos Küche", "de").output, "Licht Küche an")
 
     def test_bad_command_does_not_hide_valid_command_in_same_file(self):
-        path = N(read_text=lambda **kw: "yaml")
+        path = N(stem="test", read_text=lambda **kw: "yaml")
         raw = {"id": "test", "name": "Test", "commands": [
             {"trigger": 7, "output": "bad"}, {"trigger": "hello", "output": "valid"}]}
         with patch.object(book, "yaml", N(safe_load=lambda text: raw), create=True):
-            loaded = book._load_spellbook_file(path)
+            loaded = book.load_spellbook_from_path(path)
         self.assertEqual(len(loaded.commands), 1)
 
 
@@ -336,6 +337,7 @@ class SpellbookDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         class File:
             def __init__(self, name):
                 self.name = name
+                self.stem = name
             def read_text(self, **kwargs):
                 return self.name
             def __lt__(self, other):
@@ -346,17 +348,17 @@ class SpellbookDiscoveryTests(unittest.IsolatedAsyncioTestCase):
                "good": {"id": "good", "name": "Good", "commands": []}}
         async def execute(function):
             return function()
-        with patch.object(book, "_spellbook_dirs", return_value=[directory]), \
+        with patch.object(loader, "_book_dirs", return_value=[directory]), \
              patch.object(book, "yaml", N(safe_load=lambda text: raw[text]), create=True):
-            result = await book.async_discover_spellbooks(N(async_add_executor_job=execute))
+            result = await loader.async_discover_spellbooks(N(async_add_executor_job=execute))
         self.assertEqual(result, [("good", "Good")])
 
     async def test_file_deleted_during_lookup_is_not_a_bridge_error(self):
-        path = N(stat=Mock(side_effect=FileNotFoundError()))
+        path = N(stem="gone", read_text=Mock(side_effect=FileNotFoundError()))
         async def execute(function):
             return function()
-        with patch.object(book, "_list_spellbook_files", return_value={"gone": path}):
-            result = await book.async_get_spellbook(N(async_add_executor_job=execute), "gone")
+        with patch.object(loader, "_list_book_files", return_value={"gone": path}):
+            result = await loader.async_get_spellbook(N(async_add_executor_job=execute), "gone")
         self.assertIsNone(result)
 
 

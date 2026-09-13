@@ -55,7 +55,7 @@
       "pairing_request_failed": "Es konnte kein Pairing-Code vom Gerät angefordert werden.",
       "invalid_pairing_code": "Der Pairing-Code wurde nicht akzeptiert. Prüfe den Code auf dem Gerät und versuche es erneut.",
       "areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich oder aktiviere \"Uneingeschränkt\".",
-      "no_spellbook_available": "Kein Spellbook gefunden. Lege zuerst eine Datei unter spellbooker_books/ oder hase_spellbooker_books/ an.",
+      "no_spellbook_available": "Kein Spellbook gefunden. Lege zuerst eine Datei unter spellbooks/ oder hase_spellbooks/ an.",
       "invalid_profile_id": "Gib den Charakter-Slot als reine Zahl ein, z. B. \"1\".",
       "queries_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich für Abfragen, oder aktiviere \"Abfragen uneingeschränkt\"."
     },
@@ -83,7 +83,7 @@
           "bridge_tts_enabled": "Assist-Antwort auf dem Gerät laut aussprechen",
           "bridge_ai_cleanup_enabled": "Formulierung vor dem Senden an Assist per AI Task bereinigen",
           "bridge_ai_task_entity_id": "AI-Task-Entity",
-          "bridge_vacuum_enabled": "Spellbook-Befehle mit \"vacuum_clean\" erlauben, raumgenaues Saugen auszulösen",
+          "bridge_vacuum_enabled": "Spellbook-Befehle dürfen einen bestimmten Raum saugen lassen. Standardmäßig deaktiviert. Unterstützte Saugroboter werden über die gemeinsamen Vacuum-Provider-Dateien konfiguriert.",
           "bridge_history_cleanup_enabled": "Assist-Kommunikation aus Historie entfernen",
           "remote_recovery_enabled": "LAN-Adresse des Geräts nach einem DHCP-Wechsel über die CODE27-Cloud wiederfinden"
         },
@@ -98,7 +98,7 @@
           "bridge_tts_enabled": "Spricht Assists Antwort mit der Stimme des Charakters laut aus, über die TTS-Vorschau-Funktion des Geräts. Unabhängig von \"Assist-Antwort zurück in den Chat schicken\" oben – beliebig einzeln, zusammen oder gar nicht aktivierbar.",
           "bridge_ai_cleanup_enabled": "Ein einfacher eingebauter Filter entfernt schon gängige Floskeln (\"kannst du bitte fragen, ob...\") vor dem Senden an Assist. Mit dieser Option zusätzlich wird der Befehl vorher noch durch die unten gewählte AI-Task-Entity geschickt für eine klügere Umformulierung – eignet sich gut für ein lokales Modell z. B. über Ollama, keine Cloud nötig.",
           "bridge_ai_task_entity_id": "Welche AI-Task-Entity für die optionale Umformulierung oben genutzt wird. Nur relevant, wenn die Bereinigung aktiviert ist.",
-          "bridge_vacuum_enabled": "Ein Spellbook-Befehl kann mit action \"vacuum_clean\" markiert werden, um einen gesprochenen Bereich auf den Raum eines Saugroboters aufzulösen und nur diesen Raum zu reinigen, statt als Text an Assist weitergegeben zu werden. Standardmäßig aus, da ein echtes Gerät ausgelöst wird. Welche Saugroboter-Marken unterstützt werden, wird separat über Vacuum-Provider-Dateien konfiguriert, nicht hier.",
+          "bridge_vacuum_enabled": "Spellbook-Befehle dürfen einen bestimmten Raum saugen lassen. Standardmäßig deaktiviert. Unterstützte Saugroboter werden über die gemeinsamen Vacuum-Provider-Dateien konfiguriert.",
           "bridge_history_cleanup_enabled": "Gilt nur für eine Nachricht, die tatsächlich als erkannter Codewort-/Spellbook-Befehl aufgelöst wurde (normale Unterhaltung wird nie angefasst). Nachdem der Befehl gelaufen ist (und ausgesprochen/in den Chat übertragen wurde, falls das aktiviert ist - unabhängig von dieser Option), wird der technische Austausch - dein Befehl und die automatische Reaktion des Charakters darauf - aus CODE27s Chat-Verlauf entfernt, sowohl auf dem Gerät als auch im Cloud-Backup. So sieht das Gedächtnis/der Kontext des Charakters nur echte Unterhaltung, nicht \"Küchenlicht an\", \"Erledigt\"-Kram. Best-effort: die Antwort des Charakters wird per Polling als nächste Nachricht nach deiner eigenen identifiziert - dadurch bleibt gelegentlich eine Nachricht stehen (z. B. wenn zeitgleich etwas anderes gesagt wurde), statt riskiert zu werden, die falsche zu löschen.",
           "remote_recovery_enabled": "Standardmäßig aus. Bekommt dein CODE27 eine neue LAN-IP (z.B. nach einem Router-Neustart) und diese Integration erreicht es nicht mehr, kann sie mit dieser Option einmalig die eigene Cloud von CODE27 (codie-remote.prod.code27.co – ein Drittanbieter, nicht von Home Assistant oder dieser Integration kontrolliert) nach der aktuellen Adresse des Geräts fragen, lokal prüfen, dass es wirklich dieses Gerät ist, und den gespeicherten Host automatisch aktualisieren. Chat, Bilder und alle anderen Funktionen bleiben davon unabhängig immer im lokalen Netzwerk – die Cloud wird ausschließlich gefragt \"wo steht mein Gerät gerade?\", sonst nichts."
         }

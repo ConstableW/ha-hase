@@ -1,5 +1,7 @@
 # Inventar des Ausgangsstands
 
+> Historischer Stand. Die Zusammenführung ist in [Etappe 8](../etappe-8-unified-spellbooks.md) dokumentiert: ein kanonischer Bestand, keine getrennten Laufzeitformate.
+
 Automatisch aus den vorhandenen YAML-Command-Blöcken extrahiert; ein Eintrag pro Triggerblock, Sprachvarianten zusammengefasst. Keine Laufzeit-Kompatibilitätszusage.
 
 ## Ausführungspfade

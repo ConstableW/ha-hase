@@ -11,15 +11,17 @@ weren't exercised against a running instance as part of Etappe 2.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from dataclasses import dataclass
-
 from . import vacuum_provider
-from .core.executor import ResolvedEntity, ResolvedTargets, TargetNotFound, VacuumCleanOutcome
+from .core.executor import (
+    ResolvedEntity,
+    ResolvedTargets,
+    TargetNotFound,
+    VacuumCleanOutcome,
+)
 from .core.models import ActionTarget
-from .core.spellbook_engine import EngineSpellbook, load_spellbook_from_path
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -30,64 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 # constant (VacuumEntityFeature.CLEAN_AREA in current HA core).
 _VACUUM_CLEAN_AREA_FEATURE = 16384
 
-BUILTIN_BOOK_DIR = Path(__file__).parent / "spellbooker_books"
-USER_BOOK_SUBDIR = "hase_spellbooker_books"
-
-
-# ---------------------------------------------------------------------------
-# Book discovery/loading - mirrors spellbook.py's async_discover_spellbooks/
-# async_get_spellbook pattern, against core/spellbook_engine.py's own
-# format instead of the legacy one. No mtime caching yet (the v1 catalog
-# is tiny; add it if/when that stops being true).
-# ---------------------------------------------------------------------------
-
-
-def _book_dirs(hass: "HomeAssistant") -> list[Path]:
-    return [BUILTIN_BOOK_DIR, Path(hass.config.path(USER_BOOK_SUBDIR))]
-
-
-def _list_book_files(hass: "HomeAssistant") -> dict[str, Path]:
-    files: dict[str, Path] = {}
-    for directory in _book_dirs(hass):
-        try:
-            if not directory.is_dir():
-                continue
-            paths = sorted(directory.glob("*.yaml")) + sorted(directory.glob("*.yml"))
-        except OSError as err:
-            _LOGGER.warning("spellbooker: could not scan %s: %s", directory, err)
-            continue
-        for path in paths:
-            book = load_spellbook_from_path(path)
-            if book is not None:
-                files[book.id] = path
-    return files
-
-
-async def async_discover_spellbooker_books(hass: "HomeAssistant") -> list[tuple[str, str]]:
-    def _discover() -> list[tuple[str, str]]:
-        results: list[tuple[str, str]] = []
-        for book_id, path in _list_book_files(hass).items():
-            book = load_spellbook_from_path(path)
-            if book is not None:
-                results.append((book_id, book.name))
-        results.sort(key=lambda item: item[1].lower())
-        return results
-
-    return await hass.async_add_executor_job(_discover)
-
-
-async def async_get_spellbooker_book(hass: "HomeAssistant", book_id: str) -> EngineSpellbook | None:
-    if not book_id:
-        return None
-
-    def _load() -> EngineSpellbook | None:
-        path = _list_book_files(hass).get(book_id)
-        return load_spellbook_from_path(path) if path is not None else None
-
-    return await hass.async_add_executor_job(_load)
-
-
-def resolve_source_area_id(hass: "HomeAssistant", device_id: str | None) -> str | None:
+def resolve_source_area_id(hass: HomeAssistant, device_id: str | None) -> str | None:
     """The HA area of the device that actually sent this turn (a voice
     satellite, typically) - Core has no notion of "Samwise" or any
     other concrete device, it only ever sees this normalized area id
@@ -147,7 +92,7 @@ class HaTargetResolver:
     (entity-correction), out of scope here; a Spellbooker agent that
     can't find a target reports that plainly instead."""
 
-    def __init__(self, hass: "HomeAssistant") -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
 
     async def resolve(self, target: ActionTarget, *, domain_filter: str | None):
@@ -178,7 +123,9 @@ class HaTargetResolver:
         return TargetNotFound()
 
     def _resolve_sync(self, target: ActionTarget, domain_filter: str | None):
-        from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+        from homeassistant.components.homeassistant.exposed_entities import (
+            async_should_expose,
+        )
         from homeassistant.helpers import area_registry as ar
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er
@@ -208,7 +155,15 @@ class HaTargetResolver:
 
         def exposed_entries():
             for entry in entity_registry.entities.values():
-                if entry.disabled_by is not None or hass.states.get(entry.entity_id) is None:
+                state = hass.states.get(entry.entity_id)
+                if entry.disabled_by is not None or state is None:
+                    continue
+                # Preserve the removed lighting path's eligibility filters.
+                # Queries must still be able to report an unavailable state.
+                if domain_filter == "light" and (
+                    getattr(entry, "hidden_by", None) is not None
+                    or state.state in ("unavailable", "unknown")
+                ):
                     continue
                 if domain_filter and entry.entity_id.split(".", 1)[0] != domain_filter:
                     continue
@@ -266,6 +221,12 @@ class HaTargetResolver:
             entities = tuple(
                 ResolvedEntity(entry.entity_id, area_id_of(entry)) for entry in exposed_entries()
             )
+            if not entities:
+                _LOGGER.debug(
+                    "all_allowed: no eligible %s entities among %d registry entries; "
+                    "check live state, disabled/hidden status, conversation exposure and groups",
+                    domain_filter or "*", len(entity_registry.entities),
+                )
             return ResolvedTargets(entities)
 
         return TargetNotFound()
@@ -277,7 +238,7 @@ class HaTargetResolver:
 
 
 class HaServiceCaller:
-    def __init__(self, hass: "HomeAssistant") -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
 
     async def set_light_power(
@@ -383,7 +344,9 @@ class HaServiceCaller:
         return VacuumCleanOutcome(status="started", vacuum_entity_id=match.vacuum_entity_id, room_name=match.room_name)
 
     async def _try_native_clean_area(self, area_id: str, *, context: object | None = None) -> str | None:
-        from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+        from homeassistant.components.homeassistant.exposed_entities import (
+            async_should_expose,
+        )
         from homeassistant.exceptions import ServiceValidationError
         from homeassistant.helpers import entity_registry as er
 
@@ -440,7 +403,7 @@ class HaServiceCaller:
 
 @dataclass(frozen=True)
 class _VacuumRoomMatch:
-    provider: "vacuum_provider.VacuumProvider"
+    provider: vacuum_provider.VacuumProvider
     vacuum_entity_id: str
     map_name: str
     segment_id: str
@@ -448,7 +411,7 @@ class _VacuumRoomMatch:
 
 
 async def _discover_vacuum_rooms(
-    hass: "HomeAssistant", provider: "vacuum_provider.VacuumProvider", area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
 ) -> list[_VacuumRoomMatch]:
     source = provider.discover.get("source", "service")
     if source == "service":
@@ -459,9 +422,11 @@ async def _discover_vacuum_rooms(
 
 
 async def _discover_vacuum_rooms_service(
-    hass: "HomeAssistant", provider: "vacuum_provider.VacuumProvider", area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
 ) -> list[_VacuumRoomMatch]:
-    from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+    from homeassistant.components.homeassistant.exposed_entities import (
+        async_should_expose,
+    )
     from homeassistant.helpers import entity_registry as er
 
     registry = er.async_get(hass)
@@ -519,9 +484,11 @@ async def _discover_vacuum_rooms_service(
 
 
 async def _discover_vacuum_rooms_entity_attributes(
-    hass: "HomeAssistant", provider: "vacuum_provider.VacuumProvider", area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
 ) -> list[_VacuumRoomMatch]:
-    from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+    from homeassistant.components.homeassistant.exposed_entities import (
+        async_should_expose,
+    )
     from homeassistant.helpers import entity_registry as er
 
     registry = er.async_get(hass)
@@ -563,7 +530,7 @@ async def _discover_vacuum_rooms_entity_attributes(
 
 
 async def _switch_vacuum_map(
-    hass: "HomeAssistant", match: _VacuumRoomMatch, *, context: object | None = None
+    hass: HomeAssistant, match: _VacuumRoomMatch, *, context: object | None = None
 ) -> None:
     from homeassistant.helpers import entity_registry as er
 
