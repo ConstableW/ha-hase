@@ -1,0 +1,398 @@
+# Potterverse - a bundled CODE27 spellbook, and the reference example for
+# writing your own (drop a file like this into
+# <config>/hase_spellbooks/*.yaml and it shows up in the dropdown next
+# to this one).
+#
+# Schema:
+#   id:       stable identifier, used internally and as the file's id
+#             across the two spellbook directories (bundled + yours).
+#   name:     display name shown in the options-flow dropdown.
+#   version:  informational only, bump it if you like when you edit.
+#   commands: a list of {trigger, output, catchphrase} entries.
+#
+#     trigger:     the incantation the bridge listens for, e.g.
+#                   "lumos {area}". Matching is fuzzy/typo-tolerant on the
+#                   literal words, same as the bridge's own codeword.
+#                   A pure incantation (just the spell word(s) plus
+#                   placeholders) is one plain string - spell words don't
+#                   get translated. If a trigger needs a natural-language
+#                   connector word (e.g. "auf ... prozent" / "to ...
+#                   percent"), write it as {de: "...", en: "..."} instead,
+#                   so it's recognized in either language.
+#     output:      the natural-language Assist command the trigger
+#                   resolves to, e.g. "Licht {area} einschalten". Can be a
+#                   plain string (used regardless of device language) or
+#                   {de: ..., en: ...} - only entries that actually differ
+#                   by language need the mapping form.
+#     catchphrase: optional. Spoken/relayed instead of Assist's real reply
+#                   when Assist confirms it actually executed the action
+#                   (not for a query, not on an error). Omit it entirely
+#                   for status/query commands - see the Statusabfragen /
+#                   Wetter section below for why.
+#
+#   Every {placeholder} used in output/catchphrase must also appear in
+#   trigger.
+#
+#   Command order in this file doesn't matter for matching - commands are
+#   always tried most-specific-first (by literal word count), so e.g.
+#   "lumos maxima {area}" is always tried before plain "lumos {area}"
+#   regardless of where each is written below.
+#
+# The device's own system language (not Home Assistant's UI language)
+# picks de vs. en per Code27, live, no restart needed.
+
+id: potter_verse
+name: "Potterverse"
+version: 1
+
+commands:
+
+  # ── Licht, Dimmen, Lichtfarben ────────────────────────────────────
+  #
+  # CORRECTED 2026-09-09 against the real production instance
+  # (homezwerg.local) - the note that used to be here ("deliberately NOT
+  # 'Licht {area} ein/ausschalten'") was verified against testzwerg only
+  # and turned out to be backwards for production: bare "{area}
+  # einschalten"/"{area} ausschalten" fails there with "das habe ich
+  # nicht verstanden" (no_intent_match) on every area tested (Kinderzimmer
+  # Jan/Anika, Küche, Sessel, Zwergstadt), while "Licht {area}
+  # ein/ausschalten" resolves correctly every time. "Licht {area} auf N
+  # Prozent stellen" (domain word AND the "stellen" verb both present) is
+  # likewise confirmed working; the old "{area} auf N Prozent" (no
+  # "stellen", no domain word) is not. Assist only ever recognizes
+  # {area} as a Home Assistant area here, never as an arbitrary entity
+  # name - "Licht {name-of-a-single-device}" does not work, only "Licht
+  # {area}". Individual-device spells further down (accio, expelliarmus,
+  # reparo, engorgio, reducio, immobulus, descendo, sonorus, quietus,
+  # silencio, muffliato, scourgify, tergeo) rely on plain {target} on/off
+  # and are known-unreliable for the same reason - CODE27 here is steered
+  # by area, not by individual entity name.
+
+  - trigger: "lumos {area}"
+    output:
+      de: "Licht {area} einschalten"
+      en: "Turn on the light in {area}"
+    catchphrase: "Lumos."
+
+  - trigger: "nox {area}"
+    output:
+      de: "Licht {area} ausschalten"
+      en: "Turn off the light in {area}"
+    catchphrase: "Nox."
+
+  - trigger: "lumos maxima {area}"
+    output:
+      de: "Licht {area} auf 100 Prozent stellen"
+      en: "Set the light in {area} to 100 percent"
+    catchphrase: "Lumos Maxima."
+
+  - trigger: "lumos minima {area}"
+    output:
+      de: "Licht {area} auf 20 Prozent stellen"
+      en: "Set the light in {area} to 20 percent"
+    catchphrase: "Lumos Minima."
+
+  # Whole-house, no {area} - deliberately a separate bare trigger rather
+  # than making {area} optional on "lumos/nox maxima" above: a placeholder
+  # must consume at least one token, so "Lumos Maxima" alone can never
+  # satisfy "lumos maxima {area}" and there's no collision between the two.
+  #
+  # action: light_all_on/off, not a plain output text - live testing found
+  # no working Assist sentence for "all lights, no area" on this HA
+  # version (German or English, including the documented "everywhere"
+  # keyword all failed), so this calls light.turn_on/off directly with
+  # the legacy entity_id: "all" instead (confirmed still working live).
+  - trigger: "lumos maxima"
+    action: light_all_on
+    catchphrase: "Lumos Maxima."
+
+  - trigger: "nox maxima"
+    action: light_all_off
+    catchphrase: "Nox Maxima."
+
+  # Demonstrates a bilingual trigger: "auf ... prozent" only works for
+  # German speech, so English needs its own connector phrasing too.
+  - trigger:
+      de: "lumos {area} auf {value} prozent"
+      en: "lumos {area} to {value} percent"
+    output:
+      de: "Licht {area} auf {value} Prozent stellen"
+      en: "Set the light in {area} to {value} percent"
+    catchphrase: "Lumos."
+
+  - trigger: "lumos solem {area}"
+    output:
+      de: "Licht {area} auf warmweiß stellen"
+      en: "Set the light in {area} to warm white"
+    catchphrase: "Lumos Solem."
+
+  # Two placeholders need a literal word between them ("auf"/"to") -
+  # otherwise the matcher can't tell where {area} ends and {color}
+  # begins.
+  - trigger:
+      de: "colovaria {area} auf {color}"
+      en: "colovaria {area} to {color}"
+    output:
+      de: "Licht {area} auf {color} stellen"
+      en: "Set the light in {area} to {color}"
+    catchphrase: "Colovaria."
+
+  # ── Geräte und Steckdosen ──────────────────────────────────────────
+
+  - trigger: "accio {target}"
+    output:
+      de: "{target} einschalten"
+      en: "Turn on {target}"
+    catchphrase: "Accio."
+
+  - trigger: "expelliarmus {target}"
+    output:
+      de: "{target} ausschalten"
+      en: "Turn off {target}"
+    catchphrase: "Expelliarmus."
+
+  - trigger: "reparo {target}"
+    output:
+      de: "{target} neu starten"
+      en: "Restart {target}"
+    catchphrase: "Reparo."
+
+  - trigger: "engorgio {target}"
+    output:
+      de: "{target} auf volle Leistung stellen"
+      en: "Set {target} to full power"
+    catchphrase: "Engorgio."
+
+  - trigger: "reducio {target}"
+    output:
+      de: "{target} auf minimale Leistung stellen"
+      en: "Set {target} to minimum power"
+    catchphrase: "Reducio."
+
+  - trigger: "aguamenti {target}"
+    output:
+      de: "{target} einschalten"
+      en: "Turn on {target}"
+    catchphrase: "Aguamenti."
+
+  # ── Türen, Schlösser, Abdeckungen ──────────────────────────────────
+
+  - trigger: "alohomora {target}"
+    output:
+      de: "{target} öffnen"
+      en: "Open {target}"
+    catchphrase: "Alohomora."
+
+  - trigger: "colloportus {target}"
+    output:
+      de: "{target} schließen"
+      en: "Close {target}"
+    catchphrase: "Colloportus."
+
+  - trigger: "immobulus {target}"
+    output:
+      de: "{target} stoppen"
+      en: "Stop {target}"
+    catchphrase: "Immobulus."
+
+  # ── Rollläden und Jalousien ─────────────────────────────────────────
+
+  - trigger: "wingardium leviosa {target}"
+    output:
+      de: "{target} hochfahren"
+      en: "Raise {target}"
+    catchphrase: "Wingardium Leviosa."
+
+  - trigger: "descendo {target}"
+    output:
+      de: "{target} herunterfahren"
+      en: "Lower {target}"
+    catchphrase: "Descendo."
+
+  # ── Mediensteuerung, Lautstärke ─────────────────────────────────────
+  # CORRECTED 2026-09-09 against production: {target} (bare entity name)
+  # never resolved reliably here, same finding as the Licht section above.
+  # For media_player this needs an {area}, not a {target} - and it turns
+  # out play/pause/volume and track-skip use two DIFFERENT confirmed
+  # sentence shapes, not one:
+  #   - play/pause/volume: "Musik {area} <verb>" (area BEFORE the verb)
+  #   - next/previous track: "<verb phrase> im {area}" (area AFTER, with
+  #     "im" - "nächster Titel im {area}" / "vorheriger Titel im {area}")
+  # Mute ("Musik {area} stummschalten", "stummschalten im {area}", "Musik
+  # {area} stumm") was tried several ways and never resolved - dropped
+  # rather than shipping a spell with no working target sentence.
+
+  - trigger: "sonorus {area}"
+    output:
+      de: "Musik {area} lauter"
+      en: "Increase the volume for {area}"
+    catchphrase: "Sonorus."
+
+  - trigger: "quietus {area}"
+    output:
+      de: "Musik {area} leiser"
+      en: "Decrease the volume for {area}"
+    catchphrase: "Quietus."
+
+  - trigger: "muffliato {area}"
+    output:
+      de: "Musik {area} pausieren"
+      en: "Pause the music in {area}"
+    catchphrase: "Muffliato."
+
+  - trigger: "renervate {area}"
+    output:
+      de: "Musik {area} fortsetzen"
+      en: "Resume the music in {area}"
+    catchphrase: "Renervate."
+
+  - trigger: "diffindo {area}"
+    output:
+      de: "nächster Titel im {area}"
+      en: "Next track in {area}"
+    catchphrase: "Diffindo."
+
+  - trigger: "reparifarge {area}"
+    output:
+      de: "vorheriger Titel im {area}"
+      en: "Previous track in {area}"
+    catchphrase: "Reparifarge."
+
+  # ── Reinigung ─────────────────────────────────────────────────────
+
+  - trigger: "scourgify {target}"
+    output:
+      de: "{target} starten"
+      en: "Start {target}"
+    catchphrase: "Scourgify."
+
+  - trigger: "tergeo {target}"
+    output:
+      de: "{target} anhalten"
+      en: "Stop {target}"
+    catchphrase: "Tergeo."
+
+  # ── Heizung, Klima ────────────────────────────────────────────────
+
+  - trigger: "incendio {area}"
+    output:
+      de: "Temperatur in {area} erhöhen"
+      en: "Increase the temperature in {area}"
+    catchphrase: "Incendio."
+
+  - trigger: "glacius {area}"
+    output:
+      de: "Temperatur in {area} verringern"
+      en: "Decrease the temperature in {area}"
+    catchphrase: "Glacius."
+
+  - trigger: "anapneo {area}"
+    output:
+      de: "Lüftung in {area} einschalten"
+      en: "Turn on the ventilation in {area}"
+    catchphrase: "Anapneo."
+
+  # Query, not action - no catchphrase, same convention as Statusabfragen
+  # below. No "Luftfeuchtigkeit"/"humidity" counterpart: confirmed against
+  # a real production instance that HA's built-in German (and English)
+  # sentence grammar has no working area-humidity query at all - every
+  # phrasing tried returns an error, so there is no valid output text a
+  # spellbook entry could ever resolve to.
+  - trigger: "aparecium {area}"
+    output:
+      de: "Wie warm ist es in {area}"
+      en: "What's the temperature in {area}"
+
+  # ── Szenen und Modi ───────────────────────────────────────────────
+
+  - trigger: "finite incantatem {area}"
+    output:
+      de: "Alle Geräte im Bereich {area} ausschalten"
+      en: "Turn off all devices in {area}"
+    catchphrase: "Finite Incantatem."
+
+  - trigger: "priori incantatem {area}"
+    output:
+      de: "Vorherige Szene in {area} aktivieren"
+      en: "Activate the previous scene in {area}"
+    catchphrase: "Priori Incantatem."
+
+  - trigger: "expecto patronum {area}"
+    output:
+      de: "Gemütliche Szene in {area} aktivieren"
+      en: "Activate the cozy scene in {area}"
+    catchphrase: "Expecto Patronum."
+
+  # ── Alarm, Sicherheit ─────────────────────────────────────────────
+
+  - trigger: "protego {area}"
+    output:
+      de: "Alarm in {area} scharfschalten"
+      en: "Arm the alarm in {area}"
+    catchphrase: "Protego."
+
+  - trigger: "protego totalum {area}"
+    output:
+      de: "Alle Schlösser in {area} verriegeln"
+      en: "Lock all locks in {area}"
+    catchphrase: "Protego Totalum."
+
+  - trigger: "finite {target}"
+    output:
+      de: "Alarm bei {target} deaktivieren"
+      en: "Deactivate the alarm at {target}"
+    catchphrase: "Finite."
+
+  # No "riddikulus {target}" here - acknowledging a CODE27 notification
+  # ("Hinweis") isn't something Assist can do at all (it's not an HA
+  # concept, there's no matching intent), so it can never work as a
+  # spellbook entry that gets forwarded to Assist. The bridge already has
+  # a purpose-built mechanism for exactly this, completely independent of
+  # spellbooks: add "Riddikulus" to the "Acknowledge phrase(s)"
+  # (bridge_ack_phrase) option in the CODE27 options flow. That's checked
+  # before any spellbook and calls the acknowledge action directly, with
+  # the same fuzzy/typo tolerance as everywhere else in the bridge.
+
+  # ── Anwesenheit ───────────────────────────────────────────────────
+  # Status/Abfrage-Zauber unten: absichtlich KEINE Catchphrase - Assist
+  # liefert QUERY_ANSWER statt ACTION_DONE, also soll die echte Antwort
+  # gesprochen werden, nicht eine Floskel, die eine Aktion vortäuscht.
+
+  - trigger: "homenum revelio {area}"
+    output:
+      de: "Ist jemand im Bereich {area}"
+      en: "Is anyone in {area}"
+
+  - trigger: "point me {target}"
+    output:
+      de: "Wo befindet sich {target}"
+      en: "Where is {target}"
+
+  # ── Statusabfragen ────────────────────────────────────────────────
+
+  - trigger: "specialis revelio {target}"
+    output:
+      de: "Wie ist der Status von {target}"
+      en: "What is the status of {target}"
+
+  - trigger: "revelio {area}"
+    output:
+      de: "Was ist in {area} aktiv"
+      en: "What is active in {area}"
+
+  - trigger: "legilimens {target}"
+    output:
+      de: "Was macht {target} gerade"
+      en: "What is {target} currently doing"
+
+  # ── Wetter, Informationsabfragen ──────────────────────────────────
+
+  - trigger: "meteolojinx recanto {area}"
+    output:
+      de: "Wie ist das Wetter in {area}"
+      en: "What's the weather like in {area}"
+
+  - trigger: "tempus"
+    output:
+      de: "Wie spät ist es"
+      en: "What time is it"

@@ -1,0 +1,1 @@
+"""Companion providers for HASE."""

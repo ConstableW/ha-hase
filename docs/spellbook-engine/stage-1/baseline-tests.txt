@@ -1,0 +1,101 @@
+test_burst_outside_latest_window_recovers_full_day (test_bridge_delivery.ApiTests.test_burst_outside_latest_window_recovers_full_day) ... ok
+test_initially_empty_history_recovers_multiple_new_days (test_bridge_delivery.ApiTests.test_initially_empty_history_recovers_multiple_new_days) ... ok
+test_midnight_includes_previous_day (test_bridge_delivery.ApiTests.test_midnight_includes_previous_day) ... ok
+test_normal_poll_keeps_small_window (test_bridge_delivery.ApiTests.test_normal_poll_keeps_small_window) ... ok
+test_send_returns_server_message_id (test_bridge_delivery.ApiTests.test_send_returns_server_message_id) ... ok
+test_ambiguous_send_suppresses_one_matching_echo (test_bridge_delivery.DeliveryTests.test_ambiguous_send_suppresses_one_matching_echo) ... ok
+test_burst_delivers_every_message_once (test_bridge_delivery.DeliveryTests.test_burst_delivers_every_message_once) ... ok
+test_device_queues_are_independent (test_bridge_delivery.DeliveryTests.test_device_queues_are_independent) ... ok
+test_empty_baseline_then_first_message (test_bridge_delivery.DeliveryTests.test_empty_baseline_then_first_message) ... ok
+test_event_listener_filters_device_and_tracks_work (test_bridge_delivery.DeliveryTests.test_event_listener_filters_device_and_tracks_work) ... ok
+test_late_poll_cannot_replace_new_slot (test_bridge_delivery.DeliveryTests.test_late_poll_cannot_replace_new_slot) ... ok
+test_name_wrapper_and_abort_still_work (test_bridge_delivery.DeliveryTests.test_name_wrapper_and_abort_still_work) ... ok
+test_new_codeword_command_replaces_pending_action (test_bridge_delivery.DeliveryTests.test_new_codeword_command_replaces_pending_action) ... ok
+test_new_spell_cancels_correction (test_bridge_delivery.DeliveryTests.test_new_spell_cancels_correction) ... ERROR
+test_own_output_suppressed_but_same_text_from_user_allowed (test_bridge_delivery.DeliveryTests.test_own_output_suppressed_but_same_text_from_user_allowed) ... ok
+test_poll_waits_until_send_id_is_registered (test_bridge_delivery.DeliveryTests.test_poll_waits_until_send_id_is_registered) ... ok
+test_same_device_requests_are_serialized (test_bridge_delivery.DeliveryTests.test_same_device_requests_are_serialized) ... ok
+test_stop_waits_for_websocket_cleanup (test_bridge_delivery.DeliveryTests.test_stop_waits_for_websocket_cleanup) ... ok
+test_switch_and_return_do_not_replay_inactive_history (test_bridge_delivery.DeliveryTests.test_switch_and_return_do_not_replay_inactive_history) ... ok
+test_unload_cancels_ai_before_assist (test_bridge_delivery.DeliveryTests.test_unload_cancels_ai_before_assist) ... ok
+test_unload_cancels_inflight_poll (test_bridge_delivery.DeliveryTests.test_unload_cancels_inflight_poll) ... ok
+test_unrelated_sentence_is_not_a_correction_candidate (test_bridge_delivery.DeliveryTests.test_unrelated_sentence_is_not_a_correction_candidate) ... ok
+test_only_exposed_present_enabled_entities_and_their_areas (test_bridge_safety.ExposureTests.test_only_exposed_present_enabled_entities_and_their_areas) ... ok
+test_ai_provider_failure_falls_back (test_bridge_safety.SafetyTests.test_ai_provider_failure_falls_back) ... CODE27 Assist-Bridge: AI Task cleanup failed: provider unavailable
+ok
+test_ai_timeout_still_reaches_assist_with_original (test_bridge_safety.SafetyTests.test_ai_timeout_still_reaches_assist_with_original) ... CODE27 Assist-Bridge: AI Task cleanup failed: timeout after 0.01s
+ok
+test_cancelled_ai_does_not_fall_through_to_assist (test_bridge_safety.SafetyTests.test_cancelled_ai_does_not_fall_through_to_assist) ... ok
+test_correction_cannot_be_confirmed_from_other_slot (test_bridge_safety.SafetyTests.test_correction_cannot_be_confirmed_from_other_slot) ... ok
+test_correction_keeps_original_language_and_resets_context (test_bridge_safety.SafetyTests.test_correction_keeps_original_language_and_resets_context) ... ok
+test_event_slot_and_language_override_current_snapshot (test_bridge_safety.SafetyTests.test_event_slot_and_language_override_current_snapshot) ... ok
+test_existing_ai_guards_remain_active (test_bridge_safety.SafetyTests.test_existing_ai_guards_remain_active) ... CODE27 Assist-Bridge: AI cleanup result 'Licht K�che' looks unrelated to input 'Licht K�che aus', discarding
+CODE27 Assist-Bridge: AI cleanup result 'Licht K�che aus \u2600' looks unrelated to input 'Licht K�che aus', discarding
+CODE27 Assist-Bridge: AI cleanup result 'Licht K�che auf 70 Prozent' looks unrelated to input 'Licht K�che aus', discarding
+ok
+test_malformed_or_empty_ai_output_falls_back (test_bridge_safety.SafetyTests.test_malformed_or_empty_ai_output_falls_back) ... ok
+test_origin_survives_queue_ai_and_character_changes (test_bridge_safety.SafetyTests.test_origin_survives_queue_ai_and_character_changes) ... ok
+test_revoked_pending_suggestion_is_not_retried (test_bridge_safety.SafetyTests.test_revoked_pending_suggestion_is_not_retried) ... ok
+test_tts_skipped_after_switch_chat_still_uses_origin (test_bridge_safety.SafetyTests.test_tts_skipped_after_switch_chat_still_uses_origin) ... ok
+test_tts_uses_expected_slot_voice_when_still_active (test_bridge_safety.SafetyTests.test_tts_uses_expected_slot_voice_when_still_active) ... ok
+test_valid_unicode_ai_output_and_entity_contract (test_bridge_safety.SafetyTests.test_valid_unicode_ai_output_and_entity_contract) ... ok
+test_failed_notify_can_be_cleaned_up (test_stage_three.CoordinatorTests.test_failed_notify_can_be_cleaned_up) ... ok
+test_failure_after_preview_stop_retries_master_switch (test_stage_three.CoordinatorTests.test_failure_after_preview_stop_retries_master_switch) ... ok
+test_notification_restore_failure_is_retryable (test_stage_three.CoordinatorTests.test_notification_restore_failure_is_retryable) ... ok
+test_older_http_does_not_replace_preexisting_push (test_stage_three.CoordinatorTests.test_older_http_does_not_replace_preexisting_push) ... ok
+test_parallel_acknowledgements_only_restore_once (test_stage_three.CoordinatorTests.test_parallel_acknowledgements_only_restore_once) ... ok
+test_push_does_not_reset_poll_or_mark_other_resources_healthy (test_stage_three.CoordinatorTests.test_push_does_not_reset_poll_or_mark_other_resources_healthy) ... ok
+test_push_during_full_poll_survives_late_http (test_stage_three.CoordinatorTests.test_push_during_full_poll_survives_late_http) ... ok
+test_setup_auth_error_reaches_home_assistant (test_stage_three.CoordinatorTests.test_setup_auth_error_reaches_home_assistant) ... ok
+test_stale_and_duplicate_push_rejected (test_stage_three.CoordinatorTests.test_stale_and_duplicate_push_rejected) ... ok
+test_identity_read_retry_does_not_pair_twice (test_stage_three.FlowTests.test_identity_read_retry_does_not_pair_twice) ... ok
+test_invalid_system_response_returns_verification_form (test_stage_three.FlowTests.test_invalid_system_response_returns_verification_form) ... ok
+test_matching_device_reauth_updates_and_reloads (test_stage_three.FlowTests.test_matching_device_reauth_updates_and_reloads) ... ok
+test_wrong_device_reauth_does_not_change_existing_entry (test_stage_three.FlowTests.test_wrong_device_reauth_does_not_change_existing_entry) ... ok
+test_all_401_shapes_are_auth_errors (test_stage_three.ResponseTests.test_all_401_shapes_are_auth_errors) ... ok
+test_invalid_body_not_in_exception (test_stage_three.ResponseTests.test_invalid_body_not_in_exception) ... ok
+test_invalid_list_members_rejected (test_stage_three.ResponseTests.test_invalid_list_members_rejected) ... ok
+test_malformed_envelopes_and_resource_shapes_are_domain_errors (test_stage_three.ResponseTests.test_malformed_envelopes_and_resource_shapes_are_domain_errors) ... ok
+test_valid_read_and_empty_write_acknowledgement (test_stage_three.ResponseTests.test_valid_read_and_empty_write_acknowledgement) ... ok
+test_bad_file_does_not_break_options_discovery (test_stage_three.SpellbookDiscoveryTests.test_bad_file_does_not_break_options_discovery) ... ok
+test_file_deleted_during_lookup_is_not_a_bridge_error (test_stage_three.SpellbookDiscoveryTests.test_file_deleted_during_lookup_is_not_a_bridge_error) ... ok
+test_bad_command_does_not_hide_valid_command_in_same_file (test_stage_three.SpellbookTests.test_bad_command_does_not_hide_valid_command_in_same_file) ... code27 spellbook: command missing trigger/output, skipping: {'trigger': 7, 'output': 'bad'}
+ok
+test_invalid_field_types_and_templates_are_skipped (test_stage_three.SpellbookTests.test_invalid_field_types_and_templates_are_skipped) ... code27 spellbook: command missing trigger/output, skipping: {'trigger': 7, 'output': 'test'}
+code27 spellbook: command missing trigger/output, skipping: {'trigger': {'de': []}, 'output': 'test'}
+code27 spellbook: command missing trigger/output, skipping: {'trigger': 'hello', 'output': {'de': 7}}
+code27 spellbook: command missing trigger/output, skipping: {'trigger': 'hello', 'output': 'test', 'catchphrase': []}
+code27 spellbook: invalid output template, skipping command
+code27 spellbook: invalid output template, skipping command
+code27 spellbook: invalid output template, skipping command
+code27 spellbook: command 'hello {area}' references placeholder(s) {'area'} in output not present in trigger, skipping command
+ok
+test_invalid_metadata_cannot_break_discovery (test_stage_three.SpellbookTests.test_invalid_metadata_cannot_break_discovery) ... ok
+test_valid_localized_template_still_matches (test_stage_three.SpellbookTests.test_valid_localized_template_still_matches) ... ok
+
+======================================================================
+ERROR: test_new_spell_cancels_correction (test_bridge_delivery.DeliveryTests.test_new_spell_cancels_correction)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Program Files\Python312\Lib\unittest\async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\unittest\async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\asyncio\base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\USERDATA\HA code27\tests\test_bridge_delivery.py", line 190, in test_new_spell_cancels_correction
+    await bridge._handle_bridge_message(self.hass, self.entry, self.c, "lumos Buero", None)
+  File "C:\USERDATA\HA code27\custom_components\code27\bridge.py", line 582, in _handle_bridge_message
+    (
+ValueError: not enough values to unpack (expected 7, got 6)
+
+----------------------------------------------------------------------
+Ran 60 tests in 0.403s
+
+FAILED (errors=1)

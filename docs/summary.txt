@@ -1,0 +1,69 @@
+HISTORICAL: pre-HASE CODE27 provider summary. Current project: HASE (ha-hase), HA domain hase. See HASE-ARCHITECTURE.md.
+
+CODE27 ↔ Home Assistant Integration
+
+I built a full Home Assistant integration for my CODE27. It talks directly to the device's own local REST/WebSocket API – no cloud detour, and nothing invented that the device's own web UI doesn't already do itself.
+
+What's in it
+Music controls and state
+Ambient light including color, effects and brightness
+Light scenes
+Character switching
+Alarms
+Notes
+Regular Home Assistant entities for the device functionality
+WebSocket push for music/light state, so there's no polling delay
+Its own pairing flow – Home Assistant gets its own local secret instead of hijacking a browser session
+Custom events for automations
+code27.notify to blink the CODE27 LEDs until acknowledged, which is particularly useful for Node-RED alerts
+A custom Home Assistant dashboard card with CODE27 branding, reactive glow matching the current light color, chat history and the main controls
+DE/EN support that automatically follows the Home Assistant UI language
+The killer feature: the Assist bridge
+
+CODE27 itself doesn't have function-calling for external systems, so normally the character can't actually control anything in Home Assistant.
+
+The bridge works around that by watching the normal CODE27 character chat for user-defined trigger words or phrases.
+
+You can freely configure one or multiple triggers in the integration settings – for example:
+
+"Home Assistant", "Computer", "Jarvis", or basically whatever you want.
+
+The trigger can appear anywhere in the message, not just at the start. Matching also tolerates small typos or mishearings - "Hildegard" still triggers if it comes back as "Hüldegard" or "Hilegard" - so it isn't brittle about exact spelling. When a trigger is found, the bridge takes everything after it, removes the trigger itself, and forwards the rest to a Home Assistant Assist pipeline that you select in the integration settings.
+
+For example:
+
+Me:
+"Home Assistant, can you please turn off the light at the desk?"
+
+The bridge sees:
+
+Trigger detected: "Home Assistant"
+Command: "can you please turn off the light at the desk?"
+
+That command is then sent directly to the selected Home Assistant Assist.
+
+From there, Home Assistant handles it exactly like any other Assist request. So I'm not translating CODE27 messages into a small collection of hardcoded service calls – anything the selected Assist understands and can control can potentially be used through CODE27.
+
+Home Assistant then performs the actual action and returns Assist's real response to the bridge.
+
+Optionally, the bridge can inject that response back into the CODE27 chat as well. The character sees what Home Assistant actually replied and reacts to the result naturally in its own words.
+
+So the complete chain is basically:
+
+Normal CODE27 chat → configured trigger detected → trigger removed → remaining text sent to selected HA Assist → Home Assistant performs the action → Assist returns the result → optionally injected back into CODE27 chat → character reacts
+
+The trigger words/phrases, the Assist pipeline and whether Assist's response is sent back into CODE27 are all configurable from the integration options.
+
+Since people don't talk to a companion character like a speaker - it's more "Hey, could you maybe ask Home Assistant if it'd be so kind as to turn off the desk light?" than a terse command - there's an optional two-stage cleanup before the text reaches Assist: a free regex pass strips common filler phrasing, and an optional second pass runs the remainder through a local AI Task entity (e.g. a tiny local Ollama model) to reduce it to something like "desk light off". Both are logged the same way, so you can see exactly what was sent to Assist and why.
+
+The screenshot below is a real trace from my device's Activity log. You can see the entire chain happening:
+
+what I said → trigger detected → command forwarded to Assist → Assist's real reply → the actual light switching off → the character reacting to the result in its own words
+
+So there's no fake success message baked into the persona. If Assist says something else, fails, or returns a different result, that's what gets sent back.
+
+The integration and custom dashboard card were built with AI assistance – including reverse-engineering the device's web bundle, building the integration and the card. Hard to avoid at this scope these days, and this kind of integration work is squarely in my professional wheelhouse anyway.
+
+Right now the whole thing lives in my private GitHub repo and I'm testing it on a separate Home Assistant test instance.
+
+If you guys are okay with it and there's interest in the community, I'm happy to clean it up for other users and share it. If you already have plans for HA or would prefer that I don't publish something based on the local CODE27 API, that's completely fine too – that's why I'm asking first rather than just throwing it on GitHub.

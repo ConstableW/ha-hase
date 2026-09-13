@@ -1,0 +1,612 @@
+{
+  "config": {
+    "step": {
+      "verify": {
+        "title": "Verify device",
+        "description": "Pairing succeeded. Submit to retry device verification."
+      },
+      "user": {
+        "title": "Set up HASE",
+        "description": "What do you want to set up?",
+        "menu_options": {
+          "code27_device": "Connect a CODE27 device",
+          "spellbooker": "Create a Spellbooker voice assistant"
+        }
+      },
+      "code27_device": {
+        "title": "Connect to CODE27",
+        "description": "Enter the local network address of your CODE27 device.",
+        "data": {
+          "host": "Host / IP address",
+          "port": "Port"
+        }
+      },
+      "spellbooker": {
+        "title": "Create a Spellbooker",
+        "description": "A standalone voice assistant that only understands commands from one spellbook - no CODE27 device required.",
+        "data": {
+          "name": "Name",
+          "spellbooker_book": "Spellbook",
+          "spellbooker_allowed_areas": "Allowed areas (actions)",
+          "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+          "spellbooker_no_match_response": "No-match response",
+          "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+          "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
+        },
+        "data_description": {
+          "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
+          "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
+          "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
+          "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+          "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
+        }
+      },
+      "pair": {
+        "title": "Pair with CODE27",
+        "description": "A 6-digit pairing code should now be shown on the CODE27's own screen. Enter it below to authorize Home Assistant.",
+        "data": {
+          "pairing_code": "Pairing code"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the device. Check the host/IP and that it's powered on.",
+      "unknown": "Unexpected error.",
+      "pairing_request_failed": "Could not request a pairing code from the device.",
+      "invalid_pairing_code": "That pairing code was not accepted. Check the code shown on the device and try again.",
+      "areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted\".",
+      "no_spellbook_available": "No spellbook found. Add a file under spellbooker_books/ or hase_spellbooker_books/ first.",
+      "invalid_profile_id": "Enter the character slot as a plain number, e.g. \"1\".",
+      "queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\"."
+    },
+    "abort": {
+      "wrong_device": "This address belongs to a different device. The existing entry was not changed.",
+      "invalid_identity": "The device did not provide a valid identity.",
+      "already_configured": "This CODE27 device is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CODE27 options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "bridge_enabled": "Enable Assist bridge",
+          "bridge_codeword": "Codeword(s)",
+          "bridge_spellbook": "Spellbook",
+          "bridge_spellbook_mode": "Spellbook mode",
+          "bridge_entity_correction_enabled": "Ask \"Did you mean...?\" on an unrecognized name",
+          "bridge_ack_phrase": "Acknowledge phrase(s)",
+          "bridge_agent_id": "Conversation agent",
+          "bridge_relay_response": "Send Assist's reply back into the chat",
+          "bridge_tts_enabled": "Speak Assist's reply out loud on the device",
+          "bridge_ai_cleanup_enabled": "Clean up phrasing with an AI Task before sending to Assist",
+          "bridge_ai_task_entity_id": "AI Task entity",
+          "bridge_vacuum_enabled": "Allow spellbook \"vacuum_clean\" commands to trigger room-level vacuuming",
+          "bridge_history_cleanup_enabled": "Remove Assist communication from history",
+          "remote_recovery_enabled": "Recover the device's LAN address via CODE27's cloud after a DHCP change"
+        },
+        "data_description": {
+          "bridge_codeword": "One or more comma-separated words, e.g. \"Homeassist, Computer\". When a message you type to your character contains any of them, everything after it is sent to Home Assistant's Assist as a command.",
+          "bridge_spellbook": "Optional. A spellbook maps fixed trigger phrases (e.g. \"Lumos Schreibtisch\") straight onto an Assist command, without needing the codeword above. Bundled spellbooks ship with the integration; you can also drop your own YAML files into a \"hase_spellbooks\" folder inside your Home Assistant config directory - both show up here. Leave as \"no spellbook\" to disable this and use only the codeword above.",
+          "bridge_spellbook_mode": "Only matters if a spellbook is selected above. \"Fall back to the codeword\" also checks the codeword flow when a message doesn't match any spellbook trigger, same as if no spellbook were selected. \"Spellbook only\" ignores everything that isn't a recognized spellbook trigger.",
+          "bridge_entity_correction_enabled": "When a resolved command names a device/area Assist doesn't recognize (a typo, a mishearing), fuzzy-search your entities (and areas, where that makes sense) for a likely match and ask \"Did you mean X?\" instead of just giving up. You can reply \"yes\"/\"no\", name a different device yourself, or just keep talking to end the dialog (it also times out on its own after a couple of minutes of silence). Off by default - only turn this on if you want the bridge to ask clarifying questions.",
+          "bridge_ack_phrase": "One or more comma-separated phrases, e.g. \"Alarm quittieren, Hinweis quittieren\". Saying/typing one of these to your character clears an active notification (same as the acknowledge button or notify_clear) - it is never sent to Assist. Checked before the codeword above, and only does anything while a notification is active. Leave empty to disable.",
+          "bridge_agent_id": "Leave empty to use Home Assistant's built-in conversation agent - not necessarily your preferred/favorite one in Settings → Voice assistants, which an empty selection here does not resolve.",
+          "bridge_relay_response": "Assist's response is always logged (System Log + this device's Activity feed) either way. If you also enable this, it's additionally sent into the character's chat as a new message - which the character will then react to on its own, so you'll get a second, separate reply from it. Off by default to avoid that.",
+          "bridge_tts_enabled": "Speaks Assist's reply out loud through the character's own voice, using the device's TTS preview feature. Independent of \"Send Assist's reply back into the chat\" above - enable either, both, or neither.",
+          "bridge_ai_cleanup_enabled": "A simple built-in filter already strips common filler phrases (\"can you please ask it to...\") before sending to Assist. Enabling this additionally runs the command through the AI Task entity below first for a smarter rewrite - useful for a local model via e.g. Ollama, no cloud required.",
+          "bridge_ai_task_entity_id": "Which AI Task entity to use for the optional rewrite above. Only used if the cleanup option is enabled.",
+          "bridge_vacuum_enabled": "A spellbook command can be marked with action \"vacuum_clean\" to resolve a spoken area to a vacuum's room and start cleaning just that room, instead of being forwarded to Assist as text. Off by default since it triggers a real device. Which vacuum brands are supported is configured separately via vacuum provider files, not here.",
+          "bridge_history_cleanup_enabled": "Only applies to a message that actually resolved to a recognized codeword/spellbook command (plain conversation is never touched). After the command has run (and been spoken/relayed, if those are enabled - independent of this option), removes the technical exchange - your command and the character's own automatic reaction to it - from CODE27's chat history, on-device and in its cloud backup. So the character's memory/context only ever sees real conversation, not \"Kitchen light on\", \"Done\" clutter. Best-effort: it identifies the character's reply by polling for the next message after yours, so it can occasionally leave one in place (e.g. if something else was said at the same moment) rather than risk deleting the wrong message.",
+          "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else."
+        }
+      },
+      "spellbooker": {
+        "title": "Spellbooker options",
+        "data": {
+          "spellbooker_book": "Spellbook",
+          "spellbooker_allowed_areas": "Allowed areas (actions)",
+          "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+          "spellbooker_no_match_response": "No-match response",
+          "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+          "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
+        },
+        "data_description": {
+          "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
+          "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
+          "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
+          "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+          "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
+        }
+      }
+    }
+  },
+  "selector": {
+    "bridge_spellbook_mode": {
+      "options": {
+        "fallback": "Fall back to the codeword",
+        "strict": "Spellbook only"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "music_mode_active": {
+        "name": "Music mode active"
+      },
+      "notification_active": {
+        "name": "Notification active"
+      },
+      "bluetooth_connected": {
+        "name": "Bluetooth connected"
+      },
+      "use_24_hour_time": {
+        "name": "24-hour time format"
+      }
+    },
+    "sensor": {
+      "ai_language": {
+        "name": "Assistant language"
+      },
+      "timezone": {
+        "name": "Timezone"
+      },
+      "build_type": {
+        "name": "Build type"
+      },
+      "active_character": {
+        "name": "Active character"
+      },
+      "active_alarms": {
+        "name": "Active alarms"
+      },
+      "memo_count": {
+        "name": "Memos"
+      },
+      "last_user_message": {
+        "name": "Last message you said"
+      },
+      "last_assistant_message": {
+        "name": "Last message the character said"
+      },
+      "character_overview": {
+        "name": "Character overview"
+      },
+      "music_storage": {
+        "name": "Music storage used"
+      },
+      "capabilities": {
+        "name": "Enabled capabilities"
+      }
+    },
+    "image": {
+      "character_portrait": {
+        "name": "Character {slot} portrait"
+      }
+    },
+    "light": {
+      "preview_light": {
+        "name": "Ambient color"
+      }
+    },
+    "switch": {
+      "alarm": {
+        "name": "Alarm"
+      }
+    },
+    "media_player": {
+      "music": {
+        "name": "Music"
+      }
+    },
+    "select": {
+      "light_project": {
+        "name": "Light scene"
+      },
+      "character_slot": {
+        "name": "Active character"
+      }
+    },
+    "todo": {
+      "memos": {
+        "name": "Notes & reminders"
+      }
+    },
+    "button": {
+      "play_sound": {
+        "name": "Play test sound"
+      },
+      "stop_sound": {
+        "name": "Stop sound"
+      },
+      "acknowledge_notification": {
+        "name": "Acknowledge notification"
+      }
+    }
+  },
+  "services": {
+    "create_alarm": {
+      "name": "Create alarm",
+      "description": "Creates a new alarm on the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to add the alarm to."
+        },
+        "hour": {
+          "name": "Hour",
+          "description": "Hour (0-23)."
+        },
+        "minute": {
+          "name": "Minute",
+          "description": "Minute (0-59)."
+        },
+        "label": {
+          "name": "Label",
+          "description": "Optional label for the alarm."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Days of the week the alarm repeats on. Leave empty for a one-off alarm."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the alarm is enabled right away."
+        }
+      }
+    },
+    "update_alarm": {
+      "name": "Update alarm",
+      "description": "Changes an existing alarm on the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry the alarm belongs to."
+        },
+        "alarm_id": {
+          "name": "Alarm ID",
+          "description": "The alarm's id, e.g. from the alarm switch entity's \"alarm_id\" attribute."
+        },
+        "hour": {
+          "name": "Hour",
+          "description": "Hour (0-23)."
+        },
+        "minute": {
+          "name": "Minute",
+          "description": "Minute (0-59)."
+        },
+        "label": {
+          "name": "Label",
+          "description": "Optional label for the alarm."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Days of the week the alarm repeats on. Leave empty for a one-off alarm."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the alarm is enabled."
+        }
+      }
+    },
+    "delete_alarm": {
+      "name": "Delete alarm",
+      "description": "Removes an alarm from the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry the alarm belongs to."
+        },
+        "alarm_id": {
+          "name": "Alarm ID",
+          "description": "The alarm's id, e.g. from the alarm switch entity's \"alarm_id\" attribute."
+        }
+      }
+    },
+    "send_chat_message": {
+      "name": "Send chat message",
+      "description": "Sends a text message into the CODE27 character's chat, as if you had typed it yourself.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to send the message to."
+        },
+        "message": {
+          "name": "Message",
+          "description": "The text to send."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Optional: which character slot to message. Defaults to the currently active character."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Optional: language code (e.g. 'en', 'de') the character should reply in. Defaults to the device's own setting."
+        }
+      }
+    },
+    "send_chat_image": {
+      "name": "Send chat image",
+      "description": "Sends an image (e.g. a camera snapshot), with an optional caption, into the CODE27 character's chat. The device rejects images over 1MB.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to send the image to."
+        },
+        "filename": {
+          "name": "File path",
+          "description": "Full path to the image file on this Home Assistant instance (e.g. from a camera.snapshot action). Must be under an allowed directory."
+        },
+        "message": {
+          "name": "Caption",
+          "description": "Optional text to send alongside the image."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Optional: which character slot to message. Defaults to the currently active character."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Optional: language code (e.g. 'en', 'de') the character should reply in."
+        }
+      }
+    },
+    "set_character_voice": {
+      "name": "Set character voice",
+      "description": "Permanently assigns a voice to a character slot (survives restarts) - separate from the one-off preview action. There is currently no way to list available voice/group IDs from the integration; find them via a live audition test or the device's own settings.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to change the voice on."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Which character slot to change the voice for."
+        },
+        "voice_id": {
+          "name": "Voice ID",
+          "description": "The voice's id within its group (e.g. '12')."
+        },
+        "group_key": {
+          "name": "Voice group",
+          "description": "Optional: the voice's group key. Leave empty to keep the character's current group."
+        }
+      }
+    },
+    "update_memory_card": {
+      "name": "Update memory card",
+      "description": "Edits a memory card's content or category. Warning: the device permanently marks the card as user-edited as soon as this is called, even if you set it back to its original content - there is no way to undo that marker.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to edit the memory card on."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "card_id": {
+          "name": "Card ID",
+          "description": "The memory card's id, from get_memory_cards."
+        },
+        "content": {
+          "name": "Content",
+          "description": "New content. Leave empty to only change the category."
+        },
+        "category": {
+          "name": "Category",
+          "description": "New category. Leave empty to only change the content."
+        }
+      }
+    },
+    "get_memory_cards": {
+      "name": "Get memory cards",
+      "description": "Reads a page of a character's memory cards. Returns response data - call with \"Response variable\" set, e.g. in a script or Developer Tools.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read memory cards from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "page": {
+          "name": "Page",
+          "description": "Page number, starting at 1."
+        },
+        "page_size": {
+          "name": "Page size",
+          "description": "Cards per page."
+        }
+      }
+    },
+    "get_diary_entries": {
+      "name": "Get diary entries",
+      "description": "Reads a page of a character's diary entries (read-only on this firmware). Returns response data - call with \"Response variable\" set.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read diary entries from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Required by the device alongside the character ID."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Optional: only entries for this date (YYYY-MM-DD)."
+        },
+        "page": {
+          "name": "Page",
+          "description": "Page number, starting at 1."
+        },
+        "page_size": {
+          "name": "Page size",
+          "description": "Entries per page."
+        }
+      }
+    },
+    "get_diary_entry": {
+      "name": "Get diary entry",
+      "description": "Reads one diary entry in full. Returns response data - call with \"Response variable\" set.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read the diary entry from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The diary entry's id, from get_diary_entries."
+        }
+      }
+    },
+    "upload_music": {
+      "name": "Upload music",
+      "description": "Uploads an audio file to the TF card, optionally playing it right away. Confirmed live to accept more than MP3 (e.g. WAV). Requires the device's music mode to be open on-screen to actually play.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to upload to."
+        },
+        "filename": {
+          "name": "File path",
+          "description": "Full path to the audio file on this Home Assistant instance. Must be under an allowed directory."
+        },
+        "play": {
+          "name": "Play after upload",
+          "description": "Start playing the uploaded file immediately once it's on the device."
+        }
+      }
+    },
+    "delete_music_file": {
+      "name": "Delete music file",
+      "description": "Removes a file from the TF card by its path. Confirmed live: deleting the file currently playing does not interrupt playback (the device streams from an already-loaded buffer) - useful for a rolling upload/play/delete workflow (e.g. an RFID-triggered automation) without growing storage use over time.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to delete the file from."
+        },
+        "path": {
+          "name": "Path",
+          "description": "The file's path on the device, e.g. from upload_music's response or the music storage sensor's file list."
+        }
+      }
+    },
+    "notify": {
+      "name": "Notify (blink LEDs)",
+      "description": "Blinks the LEDs in the given color until acknowledged (via the button entity or notify_clear). Useful for a persistent visual alert, e.g. from Node-RED.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to notify."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Optional note, only shown in the notification's attributes and the log - not spoken or displayed on the device."
+        },
+        "rgb_color": {
+          "name": "Color",
+          "description": "RGB color to blink in, defaults to red."
+        },
+        "speak_text": {
+          "name": "Speak text",
+          "description": "Optional: also speak this text out loud on the device (same as the speak action), right when the LEDs start blinking."
+        }
+      }
+    },
+    "notify_clear": {
+      "name": "Clear notification",
+      "description": "Stops the blinking started by the notify action, same as pressing the acknowledge button.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to clear the notification on."
+        }
+      }
+    },
+    "speak": {
+      "name": "Speak",
+      "description": "Speaks text out loud on the CODE27 device using the active character's voice, via the device's TTS preview feature. Does not touch the chat - use send_chat_message for that.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to speak on."
+        },
+        "text": {
+          "name": "Text",
+          "description": "The text to speak."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "satellite": {
+      "initiate_flow": {
+        "user": "Add satellite",
+        "reconfigure": "Reconfigure satellite"
+      },
+      "entry_type": "Satellite",
+      "step": {
+        "user": {
+          "title": "Add a Spellbooker Satellite",
+          "description": "Experimental. A voice assistant that tries its own spellbook first, then falls back to a real character conversation on this CODE27 device for anything that doesn't match. Reply correlation with the CODE27 device has not been verified against concurrent physical chat use on it - avoid relying on this for anything where a wrong or delayed reply would matter.",
+          "data": {
+            "name": "Name",
+            "spellbooker_profile_id": "Character slot",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Allowed areas (actions)",
+            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
+            "spellbooker_no_match_response": "No-match response"
+          },
+          "data_description": {
+            "spellbooker_profile_id": "The character slot number on this device to talk to (the same number shown in its own character-slot selector).",
+            "spellbooker_allowed_areas": "Which areas this assistant may act in - applies to the local spellbook AND to anything the CODE27 backend proposes. Ignored if \"Unrestricted actions\" is on.",
+            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
+            "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in.",
+            "spellbooker_no_match_response": "Unused while a book is selected below - a local non-match always goes to this device's own character instead."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure this Satellite",
+          "data": {
+            "name": "Name",
+            "spellbooker_profile_id": "Character slot",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Allowed areas (actions)",
+            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
+            "spellbooker_no_match_response": "No-match response"
+          },
+          "data_description": {
+            "spellbooker_profile_id": "The character slot number on this device to talk to (the same number shown in its own character-slot selector).",
+            "spellbooker_allowed_areas": "Which areas this assistant may act in - applies to the local spellbook AND to anything the CODE27 backend proposes. Ignored if \"Unrestricted actions\" is on.",
+            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
+            "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in.",
+            "spellbooker_no_match_response": "Unused while a book is selected below - a local non-match always goes to this device's own character instead."
+          }
+        }
+      },
+      "error": {
+        "areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted actions\".",
+        "queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\".",
+        "invalid_profile_id": "Enter the character slot as a plain number, e.g. \"1\"."
+      }
+    }
+  }
+}

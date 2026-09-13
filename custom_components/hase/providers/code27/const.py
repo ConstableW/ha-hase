@@ -1,0 +1,97 @@
+"""CODE27 protocol and device configuration constants."""
+
+CONF_USER_ID = "user_id"
+
+CONF_LOCAL_SECRET = "local_secret"
+
+CONF_MACHINE_ID = "machine_id"
+
+CONF_CHALLENGE_ID = "challenge_id"
+
+DEFAULT_PORT = 8081
+
+DEFAULT_SCAN_INTERVAL = 15
+
+MIN_SCAN_INTERVAL = 5
+
+MAX_SCAN_INTERVAL = 120
+
+CONF_SCAN_INTERVAL = "scan_interval"
+
+CONF_BRIDGE_ENABLED = "bridge_enabled"
+
+CONF_BRIDGE_CODEWORD = "bridge_codeword"
+
+CONF_BRIDGE_ACK_PHRASE = "bridge_ack_phrase"
+
+CONF_BRIDGE_AGENT_ID = "bridge_agent_id"
+
+CONF_BRIDGE_RELAY_RESPONSE = "bridge_relay_response"
+
+CONF_BRIDGE_TTS_ENABLED = "bridge_tts_enabled"
+
+CONF_BRIDGE_AI_CLEANUP_ENABLED = "bridge_ai_cleanup_enabled"
+
+CONF_BRIDGE_AI_TASK_ENTITY_ID = "bridge_ai_task_entity_id"
+
+CONF_BRIDGE_SPELLBOOK = "bridge_spellbook"
+
+CONF_BRIDGE_SPELLBOOK_MODE = "bridge_spellbook_mode"
+
+CONF_BRIDGE_ENTITY_CORRECTION_ENABLED = "bridge_entity_correction_enabled"
+
+CONF_BRIDGE_VACUUM_ENABLED = "bridge_vacuum_enabled"
+
+CONF_BRIDGE_HISTORY_CLEANUP_ENABLED = "bridge_history_cleanup_enabled"
+
+CONF_REMOTE_RECOVERY_ENABLED = "remote_recovery_enabled"
+
+SPELLBOOK_MODE_STRICT = "strict"
+
+SPELLBOOK_MODE_FALLBACK = "fallback"
+
+DEFAULT_SPELLBOOK_MODE = SPELLBOOK_MODE_FALLBACK
+
+CORRECTION_TIMEOUT_SECONDS = 120
+
+MUSIC_SOURCE_LOCAL_TF = "LOCAL_TF"
+
+MUSIC_SOURCE_BLUETOOTH = "BLUETOOTH"
+
+MUSIC_SOURCES = [MUSIC_SOURCE_LOCAL_TF, MUSIC_SOURCE_BLUETOOTH]
+
+ALARM_DAY_BITS = {
+    "sun": 1,
+    "mon": 2,
+    "tue": 4,
+    "wed": 8,
+    "thu": 16,
+    "fri": 32,
+    "sat": 64,
+}
+
+MANUFACTURER = "CODE27"
+
+MODEL = "CODIE"
+
+LIGHT_EFFECT_STATIC = "Statisch"
+
+LIGHT_EFFECT_BREATHE = "Atmen"
+
+LIGHT_EFFECT_PULSE = "Pulsieren"
+
+LIGHT_EFFECT_BLINK = "Blinken"
+
+LIGHT_EFFECT_CHASE = "Lauflicht"
+
+LIGHT_EFFECT_TO_TYPE = {
+    LIGHT_EFFECT_STATIC: "STATIC",
+    LIGHT_EFFECT_BREATHE: "BREATHE",
+    LIGHT_EFFECT_PULSE: "PULSE",
+    LIGHT_EFFECT_BLINK: "BLINK",
+    LIGHT_EFFECT_CHASE: "CHASE",
+}
+
+DEFAULT_AMBIENT_RGB = (255, 200, 120)
+
+DEFAULT_AMBIENT_BRIGHTNESS = 200

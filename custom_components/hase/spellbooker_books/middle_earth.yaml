@@ -1,0 +1,146 @@
+# Middle-earth - spellbooker_books version of the legacy
+# spellbooks/middle_earth.yaml. Only the subset that actually maps onto
+# today's typed operation catalog (light.set_power, vacuum.clean_area,
+# media_player.skip_track) is here - everything that needs brightness/
+# color, covers, locks, alarm, climate, fans or scenes stays exclusively
+# in the legacy book for now (see conversation notes 2026-09-10: those
+# need new catalog operations first, deliberately not guessed at here).
+#
+# IMMERSION HINT (unchanged from the legacy book): give HA areas aliases
+# like Gondor/Rohan/Moria/Auenland instead of renaming the real areas.
+
+id: middle_earth
+name: "Middle-earth"
+
+commands:
+  - id: light_of_earendil
+    trigger:
+      de: "licht von eärendil {area}"
+      en: "light of eärendil {area}"
+    operation: light.set_power
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      "on": true
+    catchphrase: "Ein Licht an dunklen Orten."
+
+  # Explicit area named - wins over the source-area default below
+  # purely through tier specificity (one more literal word: "von"),
+  # same mechanism as every other explicit-vs-default pair in this
+  # engine, not a special case for this command.
+  - id: light_beacons_named_area
+    trigger:
+      de: "entzündet die leuchtfeuer von {area}"
+      en: "light the beacons of {area}"
+    operation: light.set_power
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      "on": true
+    catchphrase: "Ein Licht an dunklen Orten."
+
+  # No {area} at all - defaults to whichever area the request came
+  # from (the speaking device's own HA area), never to all_allowed.
+  # Distinct from light_all_middle_earth below, which explicitly names
+  # "mittelerde" (the whole realm) and stays global on purpose - this
+  # command is the one that must NEVER be reinterpreted as that one,
+  # even given extra unconsumed trailing words (see core/matching.py's
+  # full-consumption fix - the same guarantee this command relies on).
+  - id: light_beacons_default_area
+    trigger:
+      de: "entzündet die leuchtfeuer"
+      en: "light the beacons"
+    operation: light.set_power
+    target:
+      kind: source_area
+    arguments:
+      "on": true
+    catchphrase: "Ein Licht in der Nähe."
+
+  - id: extinguish_fires
+    trigger:
+      de: "löscht die feuer von {area}"
+      en: "extinguish the fires of {area}"
+    operation: light.set_power
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      "on": false
+    catchphrase: "Die Feuer sind erloschen."
+
+  # Same output as extinguish_fires above - kept as its own command
+  # rather than a second trigger phrase on one command (the format
+  # doesn't support synonym triggers within one language), for the
+  # exact reason the legacy book's own comment gives: without this,
+  # "Leuchtfeuer" has nothing to match and would fuzzy-tie against the
+  # ignite spell instead.
+  - id: extinguish_beacons
+    trigger:
+      de: "löscht die leuchtfeuer von {area}"
+      en: "extinguish the beacons of {area}"
+    operation: light.set_power
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      "on": false
+    catchphrase: "Die Feuer sind erloschen."
+
+  - id: light_all_middle_earth
+    trigger:
+      de: "entzündet die feuer von mittelerde"
+      en: "light the fires of middle-earth"
+    operation: light.set_power
+    target:
+      kind: all_allowed
+    arguments:
+      "on": true
+    catchphrase: "Ganz Mittelerde erstrahlt."
+
+  - id: dark_all_middle_earth
+    trigger:
+      de: "löscht die feuer von mittelerde"
+      en: "extinguish the fires of middle-earth"
+    operation: light.set_power
+    target:
+      kind: all_allowed
+    arguments:
+      "on": false
+    catchphrase: "Ganz Mittelerde liegt im Dunkeln."
+
+  - id: clean_the_halls
+    trigger:
+      de: "reinigt die hallen von {area}"
+      en: "clean the halls of {area}"
+    operation: vacuum.clean_area
+    target:
+      kind: area_name
+      capture: area
+    catchphrase: "Die Hallen werden gereinigt."
+
+  - id: next_song
+    trigger:
+      de: "das nächste lied in {area}"
+      en: "the next song in {area}"
+    operation: media_player.skip_track
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      forward: true
+    catchphrase: "Ein neues Lied beginnt."
+
+  - id: previous_song
+    trigger:
+      de: "das vorige lied in {area}"
+      en: "the previous song in {area}"
+    operation: media_player.skip_track
+    target:
+      kind: area_name
+      capture: area
+    arguments:
+      forward: false
+    catchphrase: "Noch einmal das vorige Lied."

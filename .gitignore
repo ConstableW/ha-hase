@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.log
+audit-runtime-20260909/
+code27-origin-comparison-20260910.json
+code27-app-presence-comparison-20260910.json
+code27-app-transition-comparison-20260910.json
+origin-status-probe.cjs
+
+.venv/
+pre-hase-source.zip
+dist/
+/audit-native-app-20260912

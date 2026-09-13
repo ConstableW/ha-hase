@@ -1,0 +1,386 @@
+# Middle-earth - bundled CODE27 spellbook
+#
+# Uses the same trigger -> output -> optional catchphrase schema as Potterverse.
+# Normal smart-home commands are forwarded to Home Assistant Assist. Area aliases
+# therefore work out of the box wherever Assist resolves {area}.
+#
+# IMMERSION HINT:
+# Add Middle-earth names as aliases to your Home Assistant areas instead of
+# renaming the real areas. Examples:
+#   Wohnzimmer  -> Rohan
+#   Zwergstadt  -> Gondor
+#   Flur        -> Moria
+#   Garten      -> Auenland / The Shire
+#
+# Then commands such as "Entzündet die Leuchtfeuer von Gondor" or
+# "Löscht die Feuer von Rohan" remain completely generic in this spellbook.
+#
+# Vacuum hint:
+# "Reinigt die Hallen von {area}" is intended for the bridge's vacuum-area
+# resolver. The spoken value may be an HA area alias; the bridge resolves it to
+# the canonical HA area and matches that name to the robot's room map.
+
+id: middle_earth
+name: "Middle-earth"
+version: 1
+
+commands:
+
+  # ── Licht, Leuchtfeuer und Farben ──────────────────────────────────
+  # IMMERSION HINT: Give HA areas aliases such as Gondor, Rohan, Moria,
+  # Rivendell or The Shire for commands that sound like part of the story.
+
+  - trigger:
+      de: "entzündet die leuchtfeuer von {area}"
+      en: "light the beacons of {area}"
+    output:
+      de: "Licht {area} auf 100 Prozent stellen"
+      en: "Set the light in {area} to 100 percent"
+    catchphrase: "Rohan wird antworten."
+
+  - trigger:
+      de: "licht von eärendil {area}"
+      en: "light of eärendil {area}"
+    output:
+      de: "Licht {area} einschalten"
+      en: "Turn on the light in {area}"
+    catchphrase: "Ein Licht an dunklen Orten."
+
+  - trigger:
+      de: "löscht die feuer von {area}"
+      en: "extinguish the fires of {area}"
+    output:
+      de: "Licht {area} ausschalten"
+      en: "Turn off the light in {area}"
+    catchphrase: "Die Feuer sind erloschen."
+
+  # Same meaning/output as above, phrased with "Leuchtfeuer" instead of
+  # "Feuer" - arguably the more natural pairing with the ignite spell's
+  # own "entzündet die leuchtfeuer von {area}" wording, and previously a
+  # real trap: without this as its own trigger, a user saying "Leuchtfeuer"
+  # here had nothing to exactly match, leaving the off-intent to rely on
+  # a close, error-prone fuzzy tie against the ignite spell (see
+  # match_spellbook's opposite-action ambiguity guard in spellbook.py for
+  # the general-purpose fix; this trigger removes the need for it here).
+  - trigger:
+      de: "löscht die leuchtfeuer von {area}"
+      en: "extinguish the beacons of {area}"
+    output:
+      de: "Licht {area} ausschalten"
+      en: "Turn off the light in {area}"
+    catchphrase: "Die Feuer sind erloschen."
+
+  # Whole-house, no {area} - "mittelerde" is a fixed literal word here,
+  # not the {area} placeholder, so these are one literal word longer
+  # (more specific) than the per-area spells above and are tried first
+  # for an input that names Mittelerde itself rather than a room.
+  #
+  # action: light_all_on/off, not a plain output text - live testing found
+  # no working Assist sentence for "all lights, no area" on this HA
+  # version (German or English, including the documented "everywhere"
+  # keyword all failed), so this calls light.turn_on/off directly with
+  # the legacy entity_id: "all" instead (confirmed still working live).
+  - trigger:
+      de: "entzündet die feuer von mittelerde"
+      en: "light the fires of middle-earth"
+    action: light_all_on
+    catchphrase: "Ganz Mittelerde erstrahlt."
+
+  - trigger:
+      de: "löscht die feuer von mittelerde"
+      en: "extinguish the fires of middle-earth"
+    action: light_all_off
+    catchphrase: "Ganz Mittelerde liegt im Dunkeln."
+
+  - trigger:
+      de: "die sonne geht auf über {area}"
+      en: "the sun rises over {area}"
+    output:
+      de: "Licht {area} auf 100 Prozent stellen"
+      en: "Set the light in {area} to 100 percent"
+    catchphrase: "Der neue Tag beginnt."
+
+  - trigger:
+      de: "dämmerung über {area}"
+      en: "dusk over {area}"
+    output:
+      de: "Licht {area} auf 20 Prozent stellen"
+      en: "Set the light in {area} to 20 percent"
+    catchphrase: "Die Dämmerung fällt."
+
+  - trigger:
+      de: "licht von {area} auf {value} prozent"
+      en: "light of {area} to {value} percent"
+    output:
+      de: "Licht {area} auf {value} Prozent stellen"
+      en: "Set the light in {area} to {value} percent"
+    catchphrase: "So soll es sein."
+
+  - trigger:
+      de: "farben von valinor in {area} auf {color}"
+      en: "colors of valinor in {area} to {color}"
+    output:
+      de: "Licht {area} auf {color} stellen"
+      en: "Set the light in {area} to {color}"
+    catchphrase: "Das Licht Valinors kehrt zurück."
+
+  # ── Türen, Schlösser und Tore ──────────────────────────────────────
+
+  - trigger: "mellon {target}"
+    output:
+      de: "{target} öffnen"
+      en: "Open {target}"
+    catchphrase: "Sprich Freund und tritt ein."
+
+  - trigger:
+      de: "öffnet die tore von {target}"
+      en: "open the gates of {target}"
+    output:
+      de: "{target} öffnen"
+      en: "Open {target}"
+    catchphrase: "Die Tore sind offen."
+
+  - trigger:
+      de: "schließt die tore von {target}"
+      en: "close the gates of {target}"
+    output:
+      de: "{target} schließen"
+      en: "Close {target}"
+    catchphrase: "Die Tore sind geschlossen."
+
+  - trigger:
+      de: "haltet die tore von {target}"
+      en: "hold the gates of {target}"
+    output:
+      de: "{target} stoppen"
+      en: "Stop {target}"
+    catchphrase: "Haltet die Tore."
+
+  # ── Rollläden und Jalousien ────────────────────────────────────────
+
+  - trigger:
+      de: "öffnet die hohen tore von {target}"
+      en: "raise the high gates of {target}"
+    output:
+      de: "{target} hochfahren"
+      en: "Raise {target}"
+    catchphrase: "Die Tore erheben sich."
+
+  - trigger:
+      de: "senkt die tore von {target}"
+      en: "lower the gates of {target}"
+    output:
+      de: "{target} herunterfahren"
+      en: "Lower {target}"
+    catchphrase: "Die Tore werden gesenkt."
+
+  # ── Sicherheit ─────────────────────────────────────────────────────
+
+  - trigger:
+      de: "du kommst hier nicht vorbei {area}"
+      en: "you shall not pass {area}"
+    output:
+      de: "Alle Schlösser in {area} verriegeln"
+      en: "Lock all locks in {area}"
+    catchphrase: "Du kommst hier nicht vorbei!"
+
+  - trigger:
+      de: "bewacht die grenzen von {area}"
+      en: "guard the borders of {area}"
+    output:
+      de: "Alarm in {area} scharfschalten"
+      en: "Arm the alarm in {area}"
+    catchphrase: "Die Grenzen werden bewacht."
+
+  - trigger:
+      de: "die gefahr ist vorüber bei {target}"
+      en: "the danger has passed at {target}"
+    output:
+      de: "Alarm bei {target} deaktivieren"
+      en: "Deactivate the alarm at {target}"
+    catchphrase: "Die Gefahr ist vorüber."
+
+  # ── Medien und Lieder ──────────────────────────────────────────────
+  # Uses the same confirmed HA sentence shapes as the Potterverse book.
+
+  - trigger:
+      de: "lieder der halle {area}"
+      en: "songs of the hall {area}"
+    output:
+      de: "Musik {area} fortsetzen"
+      en: "Resume the music in {area}"
+    catchphrase: "Lasst die Lieder erklingen."
+
+  - trigger:
+      de: "schweigt in der halle {area}"
+      en: "silence in the hall {area}"
+    output:
+      de: "Musik {area} pausieren"
+      en: "Pause the music in {area}"
+    catchphrase: "Die Halle schweigt."
+
+  - trigger:
+      de: "lauter sollen die lieder klingen in {area}"
+      en: "let the songs ring louder in {area}"
+    output:
+      de: "Musik {area} lauter"
+      en: "Increase the volume for {area}"
+    catchphrase: "Die Lieder tragen weit."
+
+  - trigger:
+      de: "leiser in der halle {area}"
+      en: "quieter in the hall {area}"
+    output:
+      de: "Musik {area} leiser"
+      en: "Decrease the volume for {area}"
+    catchphrase: "Die Stimmen werden leiser."
+
+  - trigger:
+      de: "das nächste lied in {area}"
+      en: "the next song in {area}"
+    output:
+      de: "nächster Titel im {area}"
+      en: "Next track in {area}"
+    catchphrase: "Ein neues Lied beginnt."
+
+  - trigger:
+      de: "das vorige lied in {area}"
+      en: "the previous song in {area}"
+    output:
+      de: "vorheriger Titel im {area}"
+      en: "Previous track in {area}"
+    catchphrase: "Noch einmal das vorige Lied."
+
+  # ── Klima ──────────────────────────────────────────────────────────
+
+  - trigger:
+      de: "feuer von anor {area}"
+      en: "flame of anor {area}"
+    output:
+      de: "Temperatur in {area} erhöhen"
+      en: "Increase the temperature in {area}"
+    catchphrase: "Die Flamme von Anor brennt."
+
+  - trigger:
+      de: "atem des nordens {area}"
+      en: "breath of the north {area}"
+    output:
+      de: "Temperatur in {area} verringern"
+      en: "Decrease the temperature in {area}"
+    catchphrase: "Der Nordwind zieht auf."
+
+  - trigger:
+      de: "wind über {area}"
+      en: "wind over {area}"
+    output:
+      de: "Lüftung in {area} einschalten"
+      en: "Turn on the ventilation in {area}"
+    catchphrase: "Der Wind erhebt sich."
+
+  - trigger:
+      de: "wie warm sind die hallen von {area}"
+      en: "how warm are the halls of {area}"
+    output:
+      de: "Wie warm ist es in {area}"
+      en: "What's the temperature in {area}"
+
+  # ── Reinigung ──────────────────────────────────────────────────────
+  # IMMERSION HINT: The bridge resolves an HA area alias such as "Gondor"
+  # back to its canonical HA area name before matching the robot room.
+  # Keep Roborock room names identical to the canonical HA area names.
+
+  - trigger:
+      de: "reinigt die hallen von {area}"
+      en: "clean the halls of {area}"
+    action: vacuum_clean
+    catchphrase: "Die Hallen werden gereinigt."
+
+  # ── Anwesenheit und Palantír ───────────────────────────────────────
+  # Queries intentionally have no catchphrase so Assist's real answer is spoken.
+
+  - trigger:
+      de: "wer wandert durch {area}"
+      en: "who walks through {area}"
+    output:
+      de: "Ist jemand im Bereich {area}"
+      en: "Is anyone in {area}"
+
+  - trigger:
+      de: "palantír {area}"
+      en: "palantír {area}"
+    output:
+      de: "Was ist in {area} aktiv"
+      en: "What is active in {area}"
+
+  - trigger:
+      de: "wo ist {target} palantír"
+      en: "where is {target} palantír"
+    output:
+      de: "Wo befindet sich {target}"
+      en: "Where is {target}"
+
+  # ── Statusabfragen ─────────────────────────────────────────────────
+
+  - trigger:
+      de: "blick in den palantír von {area}"
+      en: "look into the palantír of {area}"
+    output:
+      de: "Was ist in {area} aktiv"
+      en: "What is active in {area}"
+
+  - trigger:
+      de: "offenbare den zustand von {target}"
+      en: "reveal the state of {target}"
+    output:
+      de: "Wie ist der Status von {target}"
+      en: "What is the status of {target}"
+
+  - trigger:
+      de: "was tut {target} palantír"
+      en: "what does {target} do palantír"
+    output:
+      de: "Was macht {target} gerade"
+      en: "What is {target} currently doing"
+
+  # ── Wetter ─────────────────────────────────────────────────────────
+
+  - trigger:
+      de: "wie steht das wetter über {area}"
+      en: "how is the weather over {area}"
+    output:
+      de: "Wie ist das Wetter in {area}"
+      en: "What's the weather like in {area}"
+
+  # ── Szenen, Modi und Reiseende ─────────────────────────────────────
+
+  - trigger:
+      de: "die reise ist zu ende {area}"
+      en: "the journey is over {area}"
+    output:
+      de: "Alle Geräte im Bereich {area} ausschalten"
+      en: "Turn off all devices in {area}"
+    catchphrase: "Die Reise ist zu Ende."
+
+  - trigger:
+      de: "ein fest im auenland {area}"
+      en: "a feast in the shire {area}"
+    output:
+      de: "Gemütliche Szene in {area} aktivieren"
+      en: "Activate the cozy scene in {area}"
+    catchphrase: "Das Fest kann beginnen."
+
+  - trigger:
+      de: "die hallen von moria {area}"
+      en: "the halls of moria {area}"
+    output:
+      de: "Licht {area} auf 20 Prozent stellen"
+      en: "Set the light in {area} to 20 percent"
+    catchphrase: "Die tiefen Hallen erwachen."
+
+  - trigger:
+      de: "der weiße baum von {area}"
+      en: "the white tree of {area}"
+    output:
+      de: "Licht {area} auf warmweiß stellen"
+      en: "Set the light in {area} to warm white"
+    catchphrase: "Der Weiße Baum erstrahlt."

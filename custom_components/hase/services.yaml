@@ -1,0 +1,321 @@
+create_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    label:
+      selector:
+        text:
+    days:
+      selector:
+        select:
+          multiple: true
+          options:
+            - "mon"
+            - "tue"
+            - "wed"
+            - "thu"
+            - "fri"
+            - "sat"
+            - "sun"
+    enabled:
+      selector:
+        boolean:
+
+update_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    alarm_id:
+      required: true
+      selector:
+        text:
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    label:
+      selector:
+        text:
+    days:
+      selector:
+        select:
+          multiple: true
+          options:
+            - "mon"
+            - "tue"
+            - "wed"
+            - "thu"
+            - "fri"
+            - "sat"
+            - "sun"
+    enabled:
+      selector:
+        boolean:
+
+delete_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    alarm_id:
+      required: true
+      selector:
+        text:
+
+send_chat_message:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    message:
+      required: true
+      selector:
+        text:
+    slot:
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    language:
+      selector:
+        text:
+
+send_chat_image:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    filename:
+      required: true
+      selector:
+        text:
+    message:
+      selector:
+        text:
+    slot:
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    language:
+      selector:
+        text:
+
+set_character_voice:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    slot:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    voice_id:
+      required: true
+      selector:
+        text:
+    group_key:
+      selector:
+        text:
+
+update_memory_card:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    character_id:
+      required: true
+      selector:
+        text:
+    card_id:
+      required: true
+      selector:
+        text:
+    content:
+      selector:
+        text:
+          multiline: true
+    category:
+      selector:
+        text:
+
+get_memory_cards:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    character_id:
+      required: true
+      selector:
+        text:
+    page:
+      selector:
+        number:
+          min: 1
+          mode: box
+    page_size:
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+get_diary_entries:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    character_id:
+      required: true
+      selector:
+        text:
+    slot:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    date:
+      selector:
+        text:
+    page:
+      selector:
+        number:
+          min: 1
+          mode: box
+    page_size:
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+get_diary_entry:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    character_id:
+      required: true
+      selector:
+        text:
+    entry_id:
+      required: true
+      selector:
+        text:
+
+upload_music:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    filename:
+      required: true
+      selector:
+        text:
+    play:
+      selector:
+        boolean:
+
+delete_music_file:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    path:
+      required: true
+      selector:
+        text:
+
+notify:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    message:
+      selector:
+        text:
+    rgb_color:
+      selector:
+        color_rgb:
+    speak_text:
+      selector:
+        text:
+
+notify_clear:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+
+speak:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: hase
+    text:
+      required: true
+      selector:
+        text:
