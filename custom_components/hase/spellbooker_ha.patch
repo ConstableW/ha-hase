@@ -1,0 +1,145 @@
+--- /mnt/data/spellbooker_ha.py.bak	2026-09-14 15:16:15.516707433 +0000
++++ /mnt/data/spellbooker_ha.py	2026-09-14 15:16:16.775288210 +0000
+@@ -382,7 +382,7 @@
+         providers = await vacuum_provider.async_list_providers(hass)
+         matches: list[_VacuumRoomMatch] = []
+         for provider in providers:
+-            matches.extend(await _discover_vacuum_rooms(hass, provider, area.name))
++            matches.extend(await _discover_vacuum_rooms(hass, provider, area_id, area.name))
+ 
+         if not matches:
+             return VacuumCleanOutcome(status="no_match")
+@@ -475,19 +475,50 @@
+     room_name: str
+ 
+ 
++def _vacuum_area_mapping(entry) -> dict[str, list[str]]:
++    """Return HA's native area -> segment mapping for a vacuum entity.
++
++    Home Assistant stores the mapping configured in the vacuum entity's
++    "Zuordnung von Staubsauger-Abschnitten zu Bereichen" dialog under
++    entity-registry options["vacuum"]["area_mapping"]. Keep this helper
++    deliberately defensive because registry options are persisted user data.
++    """
++    options = entry.options.get("vacuum", {})
++    if not isinstance(options, dict) and not hasattr(options, "get"):
++        return {}
++    mapping = options.get("area_mapping", {})
++    if not isinstance(mapping, dict) and not hasattr(mapping, "items"):
++        return {}
++
++    normalized: dict[str, list[str]] = {}
++    for mapped_area_id, segment_ids in mapping.items():
++        if not isinstance(mapped_area_id, str):
++            continue
++        if not isinstance(segment_ids, (list, tuple)):
++            continue
++        cleaned = [str(segment_id) for segment_id in segment_ids if segment_id is not None]
++        if cleaned:
++            normalized[mapped_area_id] = cleaned
++    return normalized
++
++
++def _mapped_segments_for_area(entry, area_id: str) -> set[str]:
++    return set(_vacuum_area_mapping(entry).get(area_id, ()))
++
++
+ async def _discover_vacuum_rooms(
+-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
++    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
+ ) -> list[_VacuumRoomMatch]:
+     source = provider.discover.get("source", "service")
+     if source == "service":
+-        return await _discover_vacuum_rooms_service(hass, provider, area_name)
++        return await _discover_vacuum_rooms_service(hass, provider, area_id, area_name)
+     if source == "entity_attributes":
+-        return await _discover_vacuum_rooms_entity_attributes(hass, provider, area_name)
++        return await _discover_vacuum_rooms_entity_attributes(hass, provider, area_id, area_name)
+     return []
+ 
+ 
+ async def _discover_vacuum_rooms_service(
+-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
++    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
+ ) -> list[_VacuumRoomMatch]:
+     from homeassistant.components.homeassistant.exposed_entities import (
+         async_should_expose,
+@@ -529,6 +560,10 @@
+ 
+     matches: list[_VacuumRoomMatch] = []
+     for vacuum_entity_id in vacuum_entity_ids:
++        entry = registry.async_get(vacuum_entity_id)
++        mapped_segments = _mapped_segments_for_area(entry, area_id) if entry is not None else set()
++        vacuum_has_native_mapping = bool(_vacuum_area_mapping(entry)) if entry is not None else False
++
+         vacuum_data = response.get(vacuum_entity_id)
+         if not isinstance(vacuum_data, dict):
+             continue
+@@ -543,13 +578,28 @@
+                 continue
+             map_name = str(one_map.get(name_key) or "")
+             for segment_id, room_name in rooms.items():
+-                if isinstance(room_name, str) and room_name.strip().lower() == lowered_area:
+-                    matches.append(_VacuumRoomMatch(provider, vacuum_entity_id, map_name, str(segment_id), room_name))
++                segment_id = str(segment_id)
++                mapped_match = segment_id in mapped_segments
++                # If this vacuum has HA area mappings, those mappings are the
++                # source of truth. Only unmapped legacy vacuums retain the old
++                # room-name fallback for backwards compatibility.
++                legacy_name_match = (
++                    not vacuum_has_native_mapping
++                    and isinstance(room_name, str)
++                    and room_name.strip().lower() == lowered_area
++                )
++                if mapped_match or legacy_name_match:
++                    matches.append(
++                        _VacuumRoomMatch(
++                            provider, vacuum_entity_id, map_name, segment_id,
++                            room_name if isinstance(room_name, str) else segment_id,
++                        )
++                    )
+     return matches
+ 
+ 
+ async def _discover_vacuum_rooms_entity_attributes(
+-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
++    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
+ ) -> list[_VacuumRoomMatch]:
+     from homeassistant.components.homeassistant.exposed_entities import (
+         async_should_expose,
+@@ -576,6 +626,10 @@
+ 
+     matches: list[_VacuumRoomMatch] = []
+     for vacuum_entity_id in vacuum_entity_ids:
++        entry = registry.async_get(vacuum_entity_id)
++        mapped_segments = _mapped_segments_for_area(entry, area_id) if entry is not None else set()
++        vacuum_has_native_mapping = bool(_vacuum_area_mapping(entry)) if entry is not None else False
++
+         state = hass.states.get(vacuum_entity_id)
+         if state is None:
+             continue
+@@ -589,8 +643,22 @@
+         for room in room_entries:
+             room_name = room.get(room_name_key)
+             room_id = room.get(room_id_key)
+-            if isinstance(room_name, str) and room_name.strip().lower() == lowered_area and room_id is not None:
+-                matches.append(_VacuumRoomMatch(provider, vacuum_entity_id, "", str(room_id), room_name))
++            if room_id is None:
++                continue
++            room_id = str(room_id)
++            mapped_match = room_id in mapped_segments
++            legacy_name_match = (
++                not vacuum_has_native_mapping
++                and isinstance(room_name, str)
++                and room_name.strip().lower() == lowered_area
++            )
++            if mapped_match or legacy_name_match:
++                matches.append(
++                    _VacuumRoomMatch(
++                        provider, vacuum_entity_id, "", room_id,
++                        room_name if isinstance(room_name, str) else room_id,
++                    )
++                )
+     return matches
+ 
+ 

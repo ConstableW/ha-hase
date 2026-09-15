@@ -267,6 +267,70 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         result = await self.flow.async_step_pair({"pairing_code": "123456"})
         self.assertEqual(result["errors"]["base"], "unknown")
 
+    async def test_spellbooker_options_include_and_preserve_ai_task_entity(self):
+        flow_module.selector = N(
+            SelectSelector=lambda config: ("select", config),
+            SelectSelectorConfig=lambda **kwargs: kwargs,
+            SelectOptionDict=lambda **kwargs: kwargs,
+            SelectSelectorMode=N(DROPDOWN="dropdown"),
+            AreaSelector=lambda config: ("area", config),
+            AreaSelectorConfig=lambda **kwargs: kwargs,
+            EntitySelector=lambda config: ("entity", config),
+            EntitySelectorConfig=lambda **kwargs: kwargs,
+        )
+        options={
+            "spellbooker_book":"middle_earth",
+            "spellbooker_allowed_areas":["bedroom"],
+            "spellbooker_unrestricted":False,
+            "spellbooker_queries_allowed_areas":["bedroom"],
+            "spellbooker_queries_unrestricted":False,
+            "bridge_ai_task_entity_id":"ai_task.qwen",
+        }
+        spellbooker=flow_module.SpellbookerOptionsFlow(N(options=options))
+        spellbooker.hass=self.flow.hass
+        with patch.object(flow_module,"async_discover_spellbooks",new=AsyncMock(return_value=[("middle_earth","Middle-earth")]),create=True):
+            form=await spellbooker.async_step_spellbooker()
+            self.assertIn("bridge_ai_task_entity_id",form["data_schema"])
+            self.assertEqual(form["data_schema"]["bridge_ai_task_entity_id"],("entity",{"domain":"ai_task"}))
+            saved=await spellbooker.async_step_spellbooker(dict(options))
+        self.assertEqual(saved["data"]["bridge_ai_task_entity_id"],"ai_task.qwen")
+
+    async def test_new_hase_agent_can_select_and_store_ai_task_entity(self):
+        flow_module.selector = N(
+            SelectSelector=lambda config: ("select", config),
+            SelectSelectorConfig=lambda **kwargs: kwargs,
+            SelectOptionDict=lambda **kwargs: kwargs,
+            SelectSelectorMode=N(DROPDOWN="dropdown"),
+            AreaSelector=lambda config: ("area", config),
+            AreaSelectorConfig=lambda **kwargs: kwargs,
+            EntitySelector=lambda config: ("entity", config),
+            EntitySelectorConfig=lambda **kwargs: kwargs,
+        )
+        agent = flow_module.HaseConfigFlow()
+        agent.hass = self.flow.hass
+        user_input = {
+            "name": "Wohnung",
+            "spellbooker_book": "middle_earth",
+            "spellbooker_allowed_areas": ["bedroom"],
+            "spellbooker_unrestricted": False,
+            "spellbooker_queries_allowed_areas": ["bedroom"],
+            "spellbooker_queries_unrestricted": False,
+            "spellbooker_no_match_response": "",
+            "bridge_ai_task_entity_id": "ai_task.qwen",
+        }
+        with patch.object(
+            flow_module,
+            "async_discover_spellbooks",
+            new=AsyncMock(return_value=[("middle_earth", "Middle-earth")]),
+            create=True,
+        ):
+            created = await agent.async_step_spellbooker(user_input)
+
+        self.assertEqual(created["type"], "create_entry")
+        self.assertEqual(
+            created["options"]["bridge_ai_task_entity_id"], "ai_task.qwen"
+        )
+
 
 class ResponseTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, payload, status=200, method="GET", path="/data/user/system"):

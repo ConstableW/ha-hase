@@ -93,11 +93,19 @@ for node in imports:
             "area_registry",
             "device_registry",
             "entity_registry",
+            "websocket_api",
+            "panel_custom",
         }:
             value = module(node.module + "." + alias.name)
         else:
             value = lambda *args, **kwargs: None
         setattr(target, alias.name, value)
+
+# Studio decorators are external HA registration surfaces, not engine logic.
+ws = module("homeassistant.components.websocket_api")
+ws.websocket_command = lambda schema: lambda fn: fn
+ws.require_admin = lambda fn: fn
+ws.async_response = lambda fn: fn
 module("homeassistant.core").callback = lambda fn: fn
 module("homeassistant.helpers.config_validation").ensure_list = lambda value: (
     value if isinstance(value, list) else [value]

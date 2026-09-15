@@ -1,184 +1,234 @@
-🇬🇧 English | 🇩🇪 [Deutsch](README.md)
+🇩🇪 [Deutsch](README.md) | 🇬🇧 English
 
 # HASE – Home Assistant Spellbook Engine
 
 ![HASE](docs/branding/hase-title.png)
 
 HASE combines a device-independent Spellbook Engine with optional companion providers.
-Standalone agents need no CODE27 hardware. CODE27 is the first provider, with device controls,
-a chat bridge and satellite subentries.
 
-**Fresh setup required:** The HA domain is `hase`. Existing `code27` entries are not migrated.
-Back up first, remove old entries while the old integration is still installed, then install HASE
-and configure it afresh. There are no legacy service, event or path aliases.
-See the [cutover checklist](docs/HASE-CUTOVER.md) and [architecture](docs/HASE-ARCHITECTURE.md).
+Standalone agents do not require a CODE27 device. CODE27 is the first provider to add device features, a chat bridge, and satellite subentries.
 
-## Configuring agents
+**Rebrand requires a fresh setup:** The Home Assistant domain is now `hase`. Existing `code27` entries are not migrated. Before switching, create a backup, remove the old entries while the previous integration is still installed, and then set up HASE from scratch. There are no legacy aliases for services, events, or paths.
 
-In “Add integration → HASE”, connect a CODE27 device or create a standalone Spellbook-only agent.
-Select an engine book and separate area policies for actions and queries. Engine books live in
-`custom_components/hase/spellbooks/` or `<config>/hase_spellbooks/`.
-
-Add satellites as subentries on their CODE27 device entry. Configure a name, active character
-slot, optional engine book and area policies. An empty book selection delegates to CODE27;
-a configured but broken book remains an error. Concurrent physical/app chat still has the
-existing reply-correlation limitation.
-
-The sections below describe the CODE27 provider. Screenshots show its earlier CODE27 branding;
-the new integration is listed as HASE.
-
-The CODE27 provider connects your CODE27 device
-(web UI at `http://<ip>:8081`, internally called **CODIE**) through its
-**own local REST and WebSocket API** – the exact same protocol the device's
-own web interface uses. Nothing here was invented beyond what the device
-already offers.
-
-There's also a matching **dashboard card** (`code27-card`) with chat,
-light/music controls, alarms, notes and a live feed of the voice bridge.
+See [Cutover and Live Validation](docs/HASE-CUTOVER.md) and [Architecture](docs/HASE-ARCHITECTURE.md).
 
 ## Contents
 
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Setup (step by step)](#setup-step-by-step)
-- [What gets created?](#what-gets-created)
-- [Configuring options](#configuring-options)
-- [Services](#services)
-- [Events](#events)
-- [Assist bridge – voice commands from the chat](#assist-bridge--voice-commands-from-the-chat)
-  - [Two-stage command cleanup (optional)](#two-stage-command-cleanup-optional)
-  - [Proven sentence patterns (Assist grammar)](#proven-sentence-patterns-assist-grammar)
-  - [Spellbooks – fixed magic phrases](#spellbooks--fixed-magic-phrases)
-  - [Vacuum area resolver](#vacuum-area-resolver)
-- [Dashboard card (code27-card)](#dashboard-card-code27-card)
-- [Deliberate design decisions](#deliberate-design-decisions)
-- [Known limitations](#known-limitations)
-- [Technical background](#technical-background)
-- [Support & Issues](#support--issues)
+* [Agents: Spellbookers & Satellites](#agents-spellbookers--satellites)
 
-## Requirements
+  * [Standalone Spellbooker (no CODE27 device required)](#standalone-spellbooker-no-code27-device-required)
+  * [Satellite (subentry attached to a CODE27 device)](#satellite-subentry-attached-to-a-code27-device)
+* [Installation](#installation)
+* [CODE27 Provider](#code27-provider)
 
-- For the CODE27 provider only: a CODE27 device on the same local network as Home Assistant, reachable at
-  `http://<ip>:8081`.
-- A reasonably recent Home Assistant version (the Assist bridge uses
-  `conversation.async_converse` and the `ConversationAgentSelector`).
-- For the optional Assist bridge: an Assist voice assistant already set up
-  in Home Assistant.
+  * [Requirements](#requirements)
+  * [Setup (step by step)](#setup-step-by-step)
+  * [What gets created?](#what-gets-created)
+  * [Configuring options](#configuring-options)
+  * [Services](#services)
+  * [Events](#events)
+  * [Assist Bridge – Voice commands through character chat](#assist-bridge--voice-commands-through-character-chat)
+
+    * [Two-stage command cleanup (optional)](#two-stage-command-cleanup-optional)
+    * [Proven voice patterns (Assist grammar)](#proven-voice-patterns-assist-grammar)
+    * [Spellbooks – fixed incantations](#spellbooks--fixed-incantations)
+    * [Vacuum Area Resolver](#vacuum-area-resolver)
+  * [Dashboard Card (code27-card)](#dashboard-card-code27-card)
+  * [Intentional design decisions](#intentional-design-decisions)
+  * [Known limitations](#known-limitations)
+  * [Technical background](#technical-background)
+* [Support & Issues](#support--issues)
+
+## Agents: Spellbookers & Satellites
+
+Under **Settings → Devices & services → Add integration → HASE**, there are two independent ways to create an agent: pair a CODE27 device (see [CODE27 Provider](#code27-provider) below), or create a standalone **Spellbooker** voice assistant that does not require a device.
+
+A third option — a **Satellite** — can be added later to an existing CODE27 device. A standalone Spellbooker requires no CODE27 device, while a Satellite is attached to an existing one. The pairing procedure, device entities, services, events, Assist Bridge, and dashboard card described throughout the rest of this document apply exclusively to the CODE27 provider.
+
+### Standalone Spellbooker (no CODE27 device required)
+
+**Add integration → HASE → Create Spellbooker voice assistant** creates a pure Conversation Agent that understands only commands defined in a Spellbook — without CODE27 hardware, a chat-bridge detour, or backend fallback.
+
+![Select Create Spellbooker](docs/screenshots/08-spellbooker-menu.png)
+
+*(Placeholder – screenshot of the "Connect CODE27 device" / "Create Spellbooker voice assistant" selection menu to follow.)*
+
+| Field                                          | Description                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Name                                           | Title of the entry and name of the resulting `conversation.*` entity                                                      |
+| Spellbook                                      | One of the books from `custom_components/hase/spellbooks/` or `<config>/hase_spellbooks/`                                 |
+| Allowed areas (actions) / Unrestricted actions | Defines the areas in which this assistant may execute actions; "unrestricted" allows all areas and ignores the selection  |
+| Allowed areas (queries) / Unrestricted queries | Independent of the action areas: defines the areas for which status queries (e.g. "how warm is it in X?") may be answered |
+| No-match response                              | Spoken when a sentence does not match any Spellbook command. Empty = default response                                     |
+
+![Fill out Spellbooker form](docs/screenshots/09-spellbooker-form.png)
+
+*(Placeholder – screenshot of the Spellbooker setup form to follow.)*
+
+For both actions and queries, either at least one area must be selected or the corresponding "unrestricted" option must be enabled.
+
+The Spellbooker appears as its own entry under **Devices & services** — no device and no additional entities apart from the Conversation entity itself — and can be added to an Assist pipeline under **Settings → Voice assistants**, just like any other voice assistant.
+
+Its options (Spellbook, areas, and no-match response) can be changed at any time via **Configure**.
+
+### Satellite (subentry attached to a CODE27 device)
+
+⚠️ **Experimental:** A Satellite first tries its own Spellbook. If there is no match, it forwards the request to an actual character conversation on the associated CODE27 device.
+
+The response correlation on the device — determining which response belongs to which request — has not been tested while the physical device is being used for chat at the same time. Do not use this where an incorrect or delayed response could cause a real problem.
+
+On an already configured CODE27 entry, open its subentry menu and select **Add Satellite**:
+
+![Add Satellite subentry](docs/screenshots/10-satellite-subentry-menu.png)
+
+*(Placeholder – screenshot of the subentry menu on the CODE27 device entry to follow.)*
+
+| Field                                          | Description                                                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Name                                           | Name of the Satellite; appears as its own "device" below the CODE27 device (e.g. "CODE27 Papa" → "Lilya Satellite")                       |
+| Character slot                                 | Number of the character slot on the device that the Satellite talks to (the same number used by the device's own character-slot selector) |
+| Spellbook                                      | Optional; "— No local Spellbook —" sends every utterance directly to the CODE27 backend (character chat)                                  |
+| Allowed areas (actions) / Unrestricted actions | Applies both to the local Spellbook **and** to anything proposed by the CODE27 backend                                                    |
+| Allowed areas (queries) / Unrestricted queries | Independent of the action areas                                                                                                           |
+| No-match response                              | Only relevant when no Spellbook is selected. If a Spellbook is selected, a no-match is always forwarded to the device character instead   |
+
+![Fill out Satellite form](docs/screenshots/11-satellite-form.png)
+
+*(Placeholder – screenshot of the Satellite setup form to follow.)*
+
+A Satellite shares its Coordinator and backend lock with its CODE27 device and does not create its own top-level entry. It remains permanently attached to the specific device on which it was created.
+
+Existing Satellites can be changed through their own subentry menu (**Reconfigure Satellite**). Any change reloads the complete CODE27 entry.
 
 ## Installation
 
-1. Copy the `custom_components/hase` folder into the `custom_components`
-   directory of your Home Assistant configuration
-   (`<config>/custom_components/hase`).
-2. **Fully restart** Home Assistant (not a reload – for this integration
-   type, new entities are reliably picked up only on a real restart, which
-   matters for later updates too).
+1. Copy the `custom_components/hase` folder into the `custom_components` directory of your Home Assistant configuration (`<config>/custom_components/hase`).
+2. **Fully restart Home Assistant** — do not just reload the integration. New integrations and, importantly for later updates, newly added entities are reliably picked up by this type of integration only after a full restart.
 
-## Setup (step by step)
+This applies regardless of whether you then configure a standalone Spellbooker, a Satellite, or a CODE27 device — all three live inside the same `custom_components/hase`.
 
-### 1. Add the integration
+## CODE27 Provider
 
-**Settings → Devices & Services → Add Integration → search "HASE"**, then choose the CODE27 provider.
+Everything from this point onward — pairing, device entities, options, services, events, the Assist Bridge, and the dashboard card — belongs exclusively to the **CODE27 Provider** and requires a CODE27 device.
+
+None of it is required for a standalone Spellbooker or Satellite (see [Agents: Spellbookers & Satellites](#agents-spellbookers--satellites) above).
+
+The screenshots show the integration under its former CODE27 appearance; in the current integration dialog it is named HASE.
+
+The CODE27 Provider connects your CODE27 device (Web UI at `http://<ip>:8081`, internally called **CODIE**) through the device's **own local REST and WebSocket API** — exactly the same protocol used by the device's own web interface. Nothing has been invented that the device does not already expose.
+
+A matching **dashboard card** (`code27-card`) provides chat, light/music controls, alarms, notes, and a live feed of the voice bridge.
+
+### Requirements
+
+* A CODE27 device on the same local network as Home Assistant, reachable at `http://<ip>:8081`.
+* A reasonably recent Home Assistant version (the Assist Bridge uses `conversation.async_converse` and `ConversationAgentSelector`).
+* For the optional Assist Bridge: a configured Assist voice assistant in Home Assistant.
+
+### Setup (step by step)
+
+#### 1. Add the integration
+
+Go to **Settings → Devices & services → Add integration**, search for **HASE**, then select **Connect CODE27 device**.
 
 ![Add integration](docs/screenshots/01-add-integration.png)
 
-Enter the local IP address of your CODE27 device (e.g. `192.168.xxx.xxx`)
-and the port (`8081`).
+Enter the local IP address of your CODE27 device (e.g. `192.168.xxx.xxx`) and the port (`8081`).
 
 ![Enter host and port](docs/screenshots/02-host-port.png)
 
-### 2. Pairing
+#### 2. Pairing
 
-A 6-digit pairing code now appears **on the CODE27 device's own screen**
-(the device pairing screen, no login required – it's the same process as
-connecting a new browser to the device):
+A 6-digit pairing code now appears on the **CODE27 device's own screen**.
 
-![Pairing code on the device](docs/screenshots/03-device-pairing-code.png)
+This is the device pairing screen and does not require a login — it is the same process used when connecting a new browser to the device.
 
-Enter that code in Home Assistant:
+![Pairing code on device](docs/screenshots/03-device-pairing-code.png)
+
+Enter this code in Home Assistant:
 
 ![Enter pairing code in HA](docs/screenshots/04-ha-pairing-code.png)
 
-Home Assistant gets its **own, permanent local secret** in the process –
-independent of any browser session you otherwise use with the device (as if
-HA had its own "device" in the CODE27 app).
+Home Assistant receives **its own persistent local secret**, independent of any browser session you otherwise use with the device — effectively as if HA were its own "device" in the CODE27 app.
 
-### 3. Done
+#### 3. Done
 
-The integration now creates a device with all entities (see the table
-below) and starts polling right away.
+The integration now creates a device with all entities listed below and immediately starts polling.
 
-![Fully set up device](docs/screenshots/05-device-overview.png)
+![Configured device](docs/screenshots/05-device-overview.png)
 
-## What gets created?
+### What gets created?
 
-Everything hangs off one device ("CODE27 (\<host\>)") in Home Assistant:
+Everything is attached to one device ("CODE27 (<host>)") in Home Assistant:
 
-| Entity | Type | Description |
-|---|---|---|
-| Music | `media_player` | Play/pause/next/previous, volume, source (TF card/Bluetooth), title, position/duration |
-| Ambient color | `light` | Free RGB color + brightness + effect (Static/Breathe/Pulse/Blink/Chase) via the Light Editor's preview channel – not persistent, never overwrites saved projects. On/off mirrors the device-wide light master switch |
-| Light scene | `select` | Picks a scene saved in the Light Editor and applies it (`apply`, persistent) |
-| Active character | `select` | Switches the active character slot |
-| Alarm *(per alarm)* | `switch` | On/off for each alarm defined on the device, including time/repeat as attributes |
-| Notes & reminders | `todo` | List with create/edit/delete, mirrored from "Lab → Notes & Reminders". **No** "done" status – the device itself only knows delete, not checking off |
-| Music mode active | `binary_sensor` | Whether the music page is currently open on the device's screen |
-| Notification active | `binary_sensor` | Whether a blink alert triggered via `hase.notify` is currently running (see below) |
-| Acknowledge notification | `button` | Ends the current notification alert |
-| Last message (you) / (character) | `sensor` | Last chat message, split by role. The character sensor additionally carries the last ~30 messages as a `history` attribute (used by the card) |
-| Active character / Active alarms / Notes / Language / Timezone / Build type | `sensor` | Diagnostic and status values |
-| Play test sound / Stop sound | `button` | Device test without going through the device UI |
+| Entity                                                                       | Type            | Description                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Music                                                                        | `media_player`  | Play/Pause/Next/Previous, volume, source (TF card/Bluetooth), title, position/duration                                                                                                                                               |
+| Ambient color                                                                | `light`         | Free RGB color + brightness + effect (Static/Breathe/Pulse/Blink/Running Light) through the Light Editor's preview channel. Not persistent and does not overwrite saved projects. On/Off mirrors the device-wide light master switch |
+| Light scene                                                                  | `select`        | Selects a light scene saved in the Light Editor and applies it (`apply`, persistent)                                                                                                                                                 |
+| Active character                                                             | `select`        | Switches the active character slot                                                                                                                                                                                                   |
+| Alarm *(per alarm)*                                                          | `switch`        | On/Off for each alarm configured on the device, including time/repetition as attributes                                                                                                                                              |
+| Notes & Reminders                                                            | `todo`          | Create/edit/delete list mirrored from "Lab → Notes & Reminders". **No** "completed" state — the device itself only supports deletion, not checking items off                                                                         |
+| Music mode active                                                            | `binary_sensor` | Whether the music page is currently open on the device screen                                                                                                                                                                        |
+| Notification active                                                          | `binary_sensor` | Whether a blinking notification triggered through `hase.notify` is currently active                                                                                                                                                  |
+| Acknowledge notification                                                     | `button`        | Stops the currently active notification alarm                                                                                                                                                                                        |
+| Last said (you) / (character)                                                | `sensor`        | Most recent chat message separated by role. The character sensor additionally contains the last ~30 messages in its `history` attribute (used by the card)                                                                           |
+| Active character / Active alarms / Notes / Language / Time zone / Build type | `sensor`        | Diagnostic and status values                                                                                                                                                                                                         |
+| Play test sound / Stop sound                                                 | `button`        | Device test without going through the device UI                                                                                                                                                                                      |
 
-## Configuring options
+A standalone Spellbooker or Satellite creates **none** of these entities — only its own `conversation.*` entity (see [Agents: Spellbookers & Satellites](#agents-spellbookers--satellites)).
 
-**Settings → Devices & Services → HASE → Configure** opens the options
-dialog with the polling interval and the Assist bridge:
+### Configuring options
+
+**Settings → Devices & services → HASE → Configure** opens the options dialog containing the polling interval and Assist Bridge settings:
 
 ![Options dialog](docs/screenshots/06-options-dialog.png)
 
-| Field | Meaning |
-|---|---|
-| Polling interval | Safety-net polling for alarms/notes/character/system (default 15s). Music and light-page status arrive independently via WebSocket push in near real time, chat is polled separately every 3s (see [Technical background](#technical-background)) |
-| Enable Assist bridge | Turns the voice bridge to Home Assistant Assist on/off |
-| Codeword(s) | One or more comma-separated words, e.g. `Homeassist, Computer` |
-| Spellbook | Optional; fixed magic phrases instead of codeword + free text – see [Spellbooks](#spellbooks--fixed-magic-phrases) |
-| Spellbook mode | Only relevant with a spellbook selected: "Fall back to codeword" also checks the codeword when nothing matches a trigger, "Spellbook only" ignores everything else |
-| Ask "Did you mean...?" on an unrecognized name | Actively asks for an unresolvable area/device name instead of just reporting Assist's error |
-| Acknowledge phrase(s) | One or more comma-separated phrases that clear an active notification alert (same as the acknowledge button), e.g. `acknowledge alarm` |
-| Conversation agent | Optional; empty = the built-in `conversation.home_assistant` agent, **not** necessarily your preferred one under Settings → Voice assistants |
-| Send Assist's reply back into the chat | **Off** by default – see [Assist bridge](#assist-bridge--voice-commands-from-the-chat) |
-| Speak the reply out loud | Speaks Assist's reply (or a spellbook catchphrase) through the device's TTS preview, in the active character's voice |
-| Enable AI cleanup | Optional: lets an `ai_task` entity (e.g. a local Ollama model) rephrase the command before it's sent to Assist – see [Two-stage command cleanup](#two-stage-command-cleanup-optional) |
-| AI Task entity | Which `ai_task` entity to use for the cleanup |
-| Enable vacuum action | **Off** by default; allows spellbook commands with `operation: vacuum.clean_area` to trigger real, room-level vacuuming – see [Vacuum area resolver](#vacuum-area-resolver) |
+| Field                                | Description                                                                                                                                                                                                                                        |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Polling interval                     | Safety-net polling for alarms/notes/character/system (default 15s). Music and light status arrive independently via WebSocket push in near real time, while chat is polled separately every 3s (see [Technical background](#technical-background)) |
+| Enable Assist Bridge                 | Enables/disables the voice bridge to Home Assistant Assist                                                                                                                                                                                         |
+| Codeword(s)                          | One or more comma-separated words, e.g. `Homeassist, Computer`                                                                                                                                                                                     |
+| Spellbook                            | Optional; fixed incantations instead of codeword + free text — see [Spellbooks](#spellbooks--fixed-incantations)                                                                                                                                   |
+| Spellbook mode                       | Only relevant when a Spellbook is selected: "Fallback to codeword" additionally checks the codeword if no trigger matches; "Spellbook only" ignores everything else                                                                                |
+| "Did you mean...?" for unknown names | Actively asks for clarification when an area/device name cannot be resolved instead of merely returning the Assist error                                                                                                                           |
+| Acknowledgement phrase(s)            | One or more comma-separated phrases that acknowledge an active notification alarm, just like the acknowledgement button, e.g. `Acknowledge alarm`                                                                                                  |
+| Voice assistant                      | Optional; empty = built-in `conversation.home_assistant` agent, **not** necessarily the assistant selected as your preferred one under Settings → Voice assistants                                                                                 |
+| Send Assist response back            | **Off** by default — see [Assist Bridge](#assist-bridge--voice-commands-through-character-chat)                                                                                                                                                    |
+| Speak response aloud                 | Speaks Assist's response (or a Spellbook catchphrase) through the device's TTS preview using the active character's voice                                                                                                                          |
+| Enable AI cleanup                    | Optional: lets an `ai_task` entity (e.g. a local Ollama model) rewrite the command before sending it to Assist — see [Two-stage command cleanup](#two-stage-command-cleanup-optional)                                                              |
+| AI Task entity                       | Selects the `ai_task` entity used for cleanup                                                                                                                                                                                                      |
+| Enable vacuum action                 | **Off** by default; allows Spellbook commands using `operation: vacuum.clean_area` to trigger actual room-specific cleaning — see [Vacuum Area Resolver](#vacuum-area-resolver)                                                                    |
 
-The polling interval is stored **per device** (config entry) – if you have
-multiple CODE27 devices, each has its own options.
+The polling interval is stored **per device** (Config Entry). If you have multiple CODE27 devices, each one has its own options.
 
-## Services
+### Services
 
-| Service | Description |
-|---|---|
-| `hase.create_alarm` | Create a new alarm (time, weekdays, label, enabled) |
-| `hase.update_alarm` | Update an existing alarm by its `alarm_id` |
-| `hase.delete_alarm` | Delete an existing alarm by its `alarm_id` |
-| `hase.speak` | Speak text using the active character's TTS preview |
-| `hase.send_chat_message` | Sends a text into the character's chat, as if you had typed it yourself |
-| `hase.notify` | Blinks the LEDs in a color until acknowledged – for alerts from e.g. Node-RED. Fields: `message` (logged only, not spoken), `rgb_color` (defaults to red) |
-| `hase.notify_clear` | Stops the blinking programmatically (instead of via the button) |
+All services target an existing CODE27 device via `config_entry_id` and are not available to standalone Spellbookers or Satellites.
 
-## Events
+| Service                  | Description                                                                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hase.create_alarm`      | Create a new alarm (time, weekdays, label, enabled state)                                                                                                                  |
+| `hase.update_alarm`      | Modify an existing alarm using its `alarm_id`                                                                                                                              |
+| `hase.delete_alarm`      | Delete an existing alarm using its `alarm_id`                                                                                                                              |
+| `hase.speak`             | Output text through the active character's TTS preview                                                                                                                     |
+| `hase.send_chat_message` | Sends text into the character chat as if you had typed it yourself                                                                                                         |
+| `hase.notify`            | Makes the LEDs blink in a selected color until acknowledged — useful for alarms from e.g. Node-RED. Fields: `message` (logged only, not spoken), `rgb_color` (default red) |
+| `hase.notify_clear`      | Programmatically stops the blinking notification instead of using the button                                                                                               |
 
-| Event | Payload | When |
-|---|---|---|
-| `hase_user_message` | `text`, `chat_id`, `slot`, `created_at`, `config_entry_id` | On every new message you write to the character |
-| `hase_assistant_message` | same as above | On every new reply from the character |
+### Events
 
-These let you build your own automations, independent of the built-in
-bridge:
+These events are also emitted only for a CODE27 device (chat with its character), not for standalone Spellbookers or Satellites.
+
+| Event                    | Payload                                                    | When                                            |
+| ------------------------ | ---------------------------------------------------------- | ----------------------------------------------- |
+| `hase_user_message`      | `text`, `chat_id`, `slot`, `created_at`, `config_entry_id` | For every new message you send to the character |
+| `hase_assistant_message` | same as above                                              | For every new response from the character       |
+
+This allows you to build your own automations independently of the built-in bridge:
 
 ```yaml
-alias: "CODE27: custom automation on cue"
+alias: "CODE27: custom automation on command"
 trigger:
   - platform: event
     event_type: hase_user_message
@@ -189,312 +239,247 @@ action:
   - service: script.good_night_routine
 ```
 
-## Assist bridge – voice commands from the chat
+### Assist Bridge – Voice commands through character chat
 
-CODE27 itself has (as of today) **no** function-calling/tool system that
-would let the character directly control devices – there's no such
-interface anywhere in the device UI's web bundle. What the device does
-provide is a clean chat history, where every message is clearly split by
-`role: "user"` vs. `"assistant"` – the bridge builds on exactly that.
+CODE27 itself currently has **no** function-calling/tool system that would allow the character to control devices directly. No such interface exists in the device UI's web bundle.
 
-Instead of catching phrasings yourself via an automation, the bridge
-forwards everything after the codeword **1:1 to Home Assistant Assist**
-(`conversation.async_converse`) – so practically anything your Assist
-understands, not just lights.
+What the device does provide, however, is a clean chat history in which every message is clearly separated by `role: "user"` and `"assistant"`. The bridge is built on top of that.
 
-Every step is **traceable live** in the system log and as a logbook entry
-on the device's Activity tab:
+Instead of intercepting individual phrases through custom automations, the bridge forwards everything after the codeword **1:1 to Home Assistant Assist** using `conversation.async_converse`.
+
+That means it can use essentially anything your Assist understands — not just lights.
+
+Every step is **traceable live** in the system log and as a logbook entry in the device's Activity tab:
 
 ```
 Codeword detected, command: "what time is it?"
 Sent to Assist: "what time is it?"
-Assist reply: "It's 12:51"
-Reply sent into the chat   (only if "send reply back" is enabled)
+Assist response: "It is 12:51"
+Response sent to chat   (only if "Send response back" is enabled)
 ```
 
-Only enable "send Assist's reply back into the chat" if you want the
-character to **additionally react on its own** – Assist's answer then goes
-in as a new chat message and the character replies to it independently (not
-a 1:1 read-out, there's no API to put words directly "in the character's
-mouth"). Off by default, since otherwise it looks like an unsolicited
-double reply.
+Enable **Send Assist response back** only if you want the character to **react to the response again on its own**.
 
-### Two-stage command cleanup (optional)
+Assist's response is then inserted as a new chat message, and the character responds to it independently. This is not 1:1 speech output — there is no API that allows putting exact words into the character's mouth.
 
-Nobody talks to a companion character like a speaker. People say things like
-"Hey, could you maybe ask Home Assistant if it would be so kind as to dim
-the desk light to 80 percent?" instead of a terse command. Assist's own NLU
-expects fairly direct phrasing and chokes on all that wrapping. So the
-bridge cleans the text up in two stages before handing it to Assist:
+The option is disabled by default because otherwise it tends to feel like an unsolicited duplicate response.
 
-1. **Stage 1 – regex filter (always on, free):** Strips common filler
-   phrases like "could you please…", "would you… ask if…", "…if that's
-   okay" via regular expressions. Runs locally in Python, no configuration
-   or model needed.
-2. **Stage 2 – AI cleanup (optional, via `ai_task`):** For cases stage 1
-   doesn't fully catch, an `ai_task` entity (e.g. a local Ollama model) can
-   reduce the remaining text to a short command like "desk light 80
-   percent". If the AI call fails for any reason (model unreachable, error),
-   the bridge just falls back to the stage-1 text – it never breaks because
-   of this.
+#### Two-stage command cleanup (optional)
 
-Both stages show up in the Activity log:
+A character is not usually addressed like a smart speaker. Conversations tend to be more roleplay-like, for example:
+
+"Hey, could you maybe ask Home Assistant whether it could set the desk light to 80 percent if it wouldn't mind?"
+
+instead of a concise command.
+
+Assist's own NLU expects more direct wording and may fail when given too much conversational padding. The bridge therefore cleans up the text in two stages before passing it to Assist:
+
+1. **Stage 1 – Regex filter (always active, free):** Removes common filler phrases such as "could you please...", "would you ask whether...", or "...if it wouldn't mind" using regular expressions. Runs locally in Python, requires no configuration and no model.
+2. **Stage 2 – AI cleanup (optional, via `ai_task`):** For cases Stage 1 does not fully handle, an `ai_task` entity (e.g. a local Ollama model) can reduce the remaining text to a short command such as "Desk light 80 percent". If the AI request fails for any reason (model unavailable, error, etc.), the Stage 1 result is simply used instead. The bridge never fails because of the AI cleanup stage.
+
+Both stages are included in the Activity log:
 
 ```
-Codeword detected, command: "hey, could you maybe ask it to set the
-ambient light to 80 percent if that's okay?"
-AI cleanup: "ambient light 80 percent"
-Sent to Assist: "ambient light 80 percent"
-Assist reply: "Brightness set"
+Codeword detected, command: "hey, could you maybe ask whether it could
+set the ambient color to 80 percent if it wouldn't mind?"
+Filler removed: "set the ambient color to 80 percent"
+AI cleanup: "Ambient color 80 percent"
+Sent to Assist: "Ambient color 80 percent"
+Assist response: "Brightness set"
 ```
 
-**Hardware requirements for stage 2:** a very small model is plenty – tested
-with `qwen3:0.6b` through the local Ollama add-on, **CPU-only** (no GPU
-passthrough), on a repurposed ThinkPad E14 Gen 2 (i7-1165G7, 32 GB RAM)
-running as its own HA instance. CPU usage briefly spikes to around 60%
-during inference, otherwise idle – for the occasional single short command
-that's easily doable on modest hardware, no dedicated AI box required.
+**Hardware requirements for Stage 2:** A very small model is entirely sufficient.
 
-✅ Tested end-to-end against a real device and working.
+Tested with `qwen3:0.6b` through the local Ollama add-on, **CPU-only** (no GPU passthrough), on a used ThinkPad E14 Gen 2 (i7-1165G7, 32 GB RAM) running its own HA instance.
 
-### Proven sentence patterns (Assist grammar)
+CPU usage briefly reaches just under 60% during inference and otherwise remains idle. For the occasional processing of a single short command, this is perfectly feasible even on modest hardware — no dedicated AI compute server required.
 
-Assist doesn't understand every plausible phrasing equally well – these
-patterns were tested live against a real production instance and are
-confirmed reliable. Not the only possible phrasings, but the ones you can
-count on (also used by the spellbooks, see `spellbooks/potter_verse.yaml`).
+✅ Tested end-to-end against a real device and confirmed working.
+
+#### Proven voice patterns (Assist grammar)
+
+Assist does not understand every seemingly obvious formulation equally well. The following patterns were tested against a real production instance and confirmed to work reliably.
+
+They are not necessarily the only possible formulations, but they are the ones that can be relied upon — including for Spellbooks (see `spellbooks/potter_verse.yaml`).
 
 **Lights (per area):**
 
-| Action | Phrasing |
-|---|---|
-| On/off | "turn on the light in {area}" / "turn off the light in {area}" |
-| Brightness | "set the light in {area} to {number} percent" |
-| Color/color temperature | "set the light in {area} to {color}" / "... to warm white" |
+| Action                  | Phrase                                                         |
+| ----------------------- | -------------------------------------------------------------- |
+| On/Off                  | "turn on the light in {area}" / "turn off the light in {area}" |
+| Brightness              | "set the light in {area} to {number} percent"                  |
+| Color/color temperature | "set the light in {area} to {color}" / "... to warm white"     |
 
-⚠️ The bare "{area} on" (without the word "light") does **not** work
-reliably – it sometimes works, but often comes back as "doesn't exist" or
-"sorry, I didn't understand that", with no discernible pattern for which.
-Always lead with the domain word "light".
+⚠️ Simply saying "{area} on" without the domain word "light" does **not work reliably**. Sometimes it succeeds; often Assist responds that the entity does not exist or that it did not understand the command, with no obvious pattern.
 
-**Music (per area, media player):**
+Always include the domain word "light".
 
-| Action | Phrasing |
-|---|---|
-| Pause | "pause the music in {area}" |
-| Resume | "resume the music in {area}" |
-| Louder/quieter | "increase the volume for {area}" / "decrease the volume for {area}" |
-| Next track | "next track in {area}" |
-| Previous track | "previous track in {area}" |
+**Music (per area, Media Player):**
 
-Noteworthy: play/pause/volume follow the pattern "music {area} verb" (area
-before the verb, in German at least), track skipping follows "verb-phrase
-in {area}" (area after, with "in") – two different sentence shapes for
-different Assist intents, not interchangeable.
+| Action         | Phrase                                               |
+| -------------- | ---------------------------------------------------- |
+| Pause          | "pause music in {area}"                              |
+| Resume         | "resume music in {area}"                             |
+| Louder/Quieter | "music in {area} louder" / "music in {area} quieter" |
+| Next track     | "next track in {area}" (or "next song in {area}")    |
+| Previous track | "previous track in {area}"                           |
 
-❌ Muting ("mute the music in {area}" and variants) did **not** work in
-several attempts – no working phrasing found yet.
+Notably, Play/Pause/Volume and track switching follow different Assist intent patterns and are not necessarily interchangeable.
+
+❌ Muting was tested with several formulations and **did not work**. No reliably working phrase has been found yet.
 
 **Temperature (per area):**
 
-| Action | Phrasing |
-|---|---|
-| Query | "what's the temperature in {area}" |
+| Action | Phrase                                          |
+| ------ | ----------------------------------------------- |
+| Query  | "temperature in {area}" or "how warm is {area}" |
 
-Requirement: the area needs a `temperature_entity_id` set (Home Assistant →
-edit area → "Related sensors") – a sensor merely being *in* the area isn't
-enough, Assist needs the explicit area link.
+Requirement: the area must have a configured `temperature_entity_id` under **Home Assistant → Edit area → Associated sensors**.
 
-❌ No working built-in sentence pattern for humidity was found in Home
-Assistant – several phrasings tried, all failed. Likely a genuine gap in
-Assist's default intents, not something fixable from this bridge.
+Simply placing a sensor in the area is not enough; Assist requires the explicit area association.
 
-**Generally unreliable:** Addressing individual devices by their own name
-(instead of via the area) practically never works reliably, even with an
-exactly matching entity name. Area-based commands are the reliable path.
+❌ No working built-in voice pattern for humidity was found in Home Assistant. Several formulations were tested and all failed.
 
-### Spellbooks – fixed magic phrases
+This appears to be a genuine limitation in Assist's standard intents rather than something the bridge can fix.
 
-Instead of saying "codeword, turn on the light in the living room" every
-time, a **spellbook** can map fixed trigger phrases ("magic words") directly
-onto an Assist command – no codeword needed, and with its own in-character
-catchphrase reply:
+**Generally unreliable:** Addressing individual devices by their own names instead of through an area is rarely reliable, even when using the exact entity name. Area-based commands are the dependable approach.
+
+#### Spellbooks – fixed incantations
+
+Instead of saying "Codeword, turn on the living room light" every time, a **Spellbook** can map fixed trigger phrases ("incantations") directly to an Assist command.
+
+No codeword is required, and each command can have its own catchphrase response in the character's style:
 
 ```
-Lumos living room            -> "turn on the light in living room"   "Lumos."
-Nox living room               -> "turn off the light in living room"  "Nox."
-Computer light kitchen on     -> "turn on the light in kitchen"       "Confirmed."
+Lumos Living Room             -> "Turn on the light in Living Room"    "Lumos."
+Nox Living Room               -> "Turn off the light in Living Room"   "Nox."
+Computer Kitchen Light On     -> "Turn on the light in Kitchen"        "Confirmed."
 ```
 
-Three shared HASE spellbooks ship with the integration
-(`custom_components/hase/spellbooks/`): Potterverse, Middle-earth and Demo. Drop your own spellbook YAML files into
-`<config>/hase_spellbooks/` – they're picked up automatically, no restart
-needed (YAML is re-read on every message; only changes to Python files need
-a real restart).
+Three shared HASE Spellbooks are included in `custom_components/hase/spellbooks/`: Potterverse, Middle-earth, and Demo.
 
-**Picking among several candidates:** If a spoken/typed phrase doesn't match
-a trigger exactly but only approximately (typo, mishearing) and fits more
-than one, the winner isn't whichever trigger happens to be declared first in
-the file, but whichever one it actually resembles most closely. If two
-near-equally-good candidates do **opposite** things (on/off, open/close,
-louder/quieter, lock/unlock), the bridge doesn't guess – it asks, rather than
-risking doing the exact opposite of what was meant:
+Custom Spellbooks can be placed as YAML files in `<config>/hase_spellbooks/`. They are detected automatically and require no restart. YAML is re-read for every message; only fixes involving changed Python files require a full restart.
+
+The same books are used by standalone Spellbookers and Satellites (see [Agents: Spellbookers & Satellites](#agents-spellbookers--satellites)), not just by the CODE27 Bridge.
+
+**Selecting between multiple candidates:** If a spoken or typed phrase does not exactly match a trigger but approximately matches several of them due to a typo or speech-recognition error, the first trigger in the file does not automatically win. Instead, HASE selects the trigger with the highest actual similarity.
+
+If two almost equally good candidates would perform **opposite actions** (on/off, open/close, louder/quieter, lock/unlock), the bridge does not guess. It actively asks for clarification instead of risking the opposite of what the user intended:
 
 ```
 "Did you mean 'extinguish the beacons of Gondor' or
 'light the beacons of Gondor'?"
 ```
 
-The next reply is matched against both phrasings – one clearly recognizable
-word from either is enough (e.g. just "extinguish" or just "light").
+The next response is compared against both formulations. A clearly identifiable word from either one is enough, for example simply "extinguish" or "light".
 
-**Shared semantic commands:** Books use `operation`, `target` and `arguments`, optionally `output`. Typed commands run through the shared executor. Output-only commands go to Assist from CODE27 and remain invisible to Satellite execution. If both exist, typed wins; an execution error never forwards output. No frontend labels belong in YAML.
+**Shared semantic commands:** Spellbooks use `operation`, `target`, and `arguments`, with optional `output`.
 
-Global lighting is `light.set_power`, `target: {kind: all_allowed}`, and `arguments: {"on": true}` (or `false`). Targets must pass registry/exposure checks and the frontend's area policy. Vacuum uses `vacuum.clean_area` with an area target. See [Etappe 8](docs/spellbook-engine/etappe-8-unified-spellbooks.md).
+Typed commands run through the shared executor. Output-only commands are sent to Assist by CODE27 and are invisible to Satellite execution. If both an operation and output are present, only the operation applies; failures never fall back to the output.
 
-### Vacuum area resolver
+Frontend markers do not belong in the YAML.
 
-A spellbook entry with `operation: vacuum.clean_area` (e.g. "clean the halls of
-{area}") resolves the spoken area to a vacuum's room and starts cleaning
-just that one room. Off by default (the "Enable vacuum action" option – a
-real physical side effect, not just a text command).
+Global lighting uses `light.set_power`, `target: {kind: all_allowed}`, and `arguments: {"on": true}` (or `false`).
 
-Two-tiered, in this order:
+Registry/exposure checks and area policies determine which targets are allowed. Vacuums use `vacuum.clean_area` with an area target.
 
-1. **Native Home Assistant path** (`vacuum.clean_area`, HA 2026.3+):
-   brand-agnostic, works with any vacuum whose integration supports this
-   feature (confirmed: Roborock). Requires a one-time setup per vacuum in
-   its own entity settings ("map vacuum segments to areas"), mapping each
-   room to a Home Assistant area. After that, the bridge needs neither a
-   vendor-specific map lookup nor any room logic of its own.
-2. **Vendor fallback** (`vacuum_providers/*.yaml`): only for vacuums without
-   native support or without a configured mapping. Declarative, just like
-   the spellbooks themselves – drop your own provider files into
-   `<config>/hase_vacuum_providers/`. `roborock.yaml` ships with the
-   integration and is verified live against a real device;
-   `dreame_vacuum.yaml` and `xiaomi_miio.yaml` are prepared as a starting
-   point but **not** tested against a real device (for Xiaomi Miio, there
-   isn't even a documented API path today to discover room names
-   automatically).
+Details: [Stage 8](docs/spellbook-engine/etappe-8-unified-spellbooks.md).
 
-No match, an ambiguous match (e.g. several vacuums with a same-named room),
-or an error commanding the device is **never** guessed around – the bridge
-logs why and does nothing, rather than risking cleaning the wrong room.
+#### Vacuum Area Resolver
 
-## Dashboard card (code27-card)
+A Spellbook entry using `operation: vacuum.clean_area` (e.g. "Clean the halls of {area}") resolves the spoken area to a robot vacuum room and starts cleaning **only that room**.
 
-A Lovelace custom card with CODE27 branding, a reactive glow in the current
-ambient color, chat, and the most important controls:
+Through the CODE27 Assist Bridge this is **disabled by default** using the "Enable vacuum action" option because it causes a real physical side effect rather than merely producing a text command.
 
-![Dashboard card](docs/screenshots/07-dashboard-card.png)
+A Spellbooker or Satellite using a corresponding Spellbook entry does not have a separate switch for this.
 
-### Installing the card
+Resolution happens in two stages, in this order:
 
-1. Copy `www/hase/code27-card.js` (and optionally your own portrait image) into
-   the `www` folder of your Home Assistant configuration, e.g.
-   `<config>/www/hase/code27-card.js`.
-2. **Restart Home Assistant** (the `www` folder is only exposed as
-   `/local/...` at startup – if it was just created, this only takes effect
-   after a restart).
-3. **Settings → Dashboards → Resources (⋮ menu) → Add Resource**: URL
-   `/local/hase/code27-card.js`, type "JavaScript Module".
-4. Add the card to a dashboard, type `custom:code27-card`.
+1. **Native Home Assistant path** (`vacuum.clean_area`, HA 2026.3+): Brand-independent and works with any robot vacuum whose integration supports this feature (confirmed: Roborock). Each vacuum room must be mapped once to a Home Assistant area in the vacuum entity settings ("Mapping vacuum segments to areas"). After that, the bridge requires neither manufacturer-specific map queries nor its own room-resolution logic.
+2. **Brand fallback** (`vacuum_providers/*.yaml`): Used only for vacuums without native support or without configured mappings. It is declarative, just like the Spellbooks themselves. Custom provider files can be placed in `<config>/hase_vacuum_providers/`. `roborock.yaml` is included and has been verified live against a real device. `dreame_vacuum.yaml` and `xiaomi_miio.yaml` are provided as starting points but have **not** been tested against real devices. For Xiaomi Miio, there currently is not even an API path available to automatically retrieve room names.
 
-### Configuration
+If no match is found, multiple ambiguous matches exist (for example multiple vacuums containing a room with the same name), or communication with the device fails, HASE **never guesses**.
+
+The bridge logs the reason and does nothing instead of potentially cleaning the wrong room.
+
+### Dashboard Card (code27-card)
+
+A Lovelace custom card with CODE27 branding, a reactive glow based on the current ambient color, chat, and the most important controls:
+
+![Dashboard Card](docs/screenshots/07-dashboard-card.png)
+
+#### Installing the card
+
+1. Copy `www/hase/code27-card.js` (and optionally your own portrait image) into the `www` folder of your Home Assistant configuration, for example `<config>/www/hase/code27-card.js`.
+2. **Restart Home Assistant.** The `www` folder is exposed as `/local/...` only at startup. If it has just been created, it will not become available until after a restart.
+3. Go to **Settings → Dashboards → Resources (⋮ menu) → Add resource**. Set URL to `/local/hase/code27-card.js` and type to **JavaScript Module**.
+4. Add the card to a dashboard using type `custom:code27-card`.
+
+#### Configuration
 
 ```yaml
 type: custom:code27-card
-device_prefix: code27_192_168_32_197   # shared prefix of all this device's entity IDs
-name: CODE27                            # optional, defaults to "CODE27"
-config_entry_id: 01M20777KPCKCNGQ3F45SWX1CG   # needed for the chat send button
-portrait_image: /local/hase/portrait.png    # optional, your own image
-history_count: 8                        # how many chat messages are shown
-show_chips: true                        # diagnostic chips (language/timezone/alarms/notes)
-show_feed: true                         # live feed of Assist bridge activity
+device_prefix: code27_192_168_32_197   # shared prefix of all entity IDs for this device
+name: CODE27                            # optional, default "CODE27"
+config_entry_id: 01M20777KPCKCNGQ3F45SWX1CG   # required for the Send Chat button
+portrait_image: /local/hase/portrait.png    # optional, custom image
+history_count: 8                        # number of chat messages displayed
+show_chips: true                        # diagnostic chips (language/time zone/alarms/notes)
+show_feed: true                         # live feed of Assist Bridge activity
 ```
 
-`device_prefix` is the shared part of all this device's entity IDs (for
-`sensor.code27_192_168_32_197_notizen` that's `code27_192_168_32_197`) –
-this lets the card find all related entities automatically, without
-entering each one individually. You'll find `config_entry_id` in the URL
-when you click the integration under **Settings → Devices & Services**.
+`device_prefix` is the shared part of all entity IDs belonging to the device. For example, for `sensor.code27_192_168_32_197_notizen`, the prefix is `code27_192_168_32_197`.
 
-The card displays/controls: ambient light (color, effect, brightness),
-music (play/pause/skip, volume, source, progress bar, music-mode badge),
-light scene and character selection, alarms (list with toggles), open notes
-(with a delete button), chat history with an input field, the notification
-alert banner with acknowledge, diagnostic chips, and the Assist bridge live
-feed. The card automatically follows your Home Assistant UI language
-(German if set to German, English otherwise).
+This allows the card to automatically discover all related entities without requiring every entity to be configured individually.
 
-**Important:** After any change to `code27-card.js`, the browser remembers
-the old version. Either bump the resource URL with a new `?v=` parameter,
-or do a hard reload (Ctrl+Shift+R).
+You can find `config_entry_id` in the URL after opening the integration under **Settings → Devices & services**.
 
-## Deliberate design decisions
+The card displays and controls:
 
-- **No reset/character editor**: Resetting a character or editing
-  personality prompts was deliberately *not* built as an entity – those are
-  consequential, device-specific actions that should stay in the device UI.
-- **No personality text in HA**: The `character_prompt` (the detailed
-  character description) is never shown or stored in Home Assistant – only
-  the active character's name.
-- **Pairing instead of stealing a cookie**: Home Assistant gets its own
-  pairing when set up (like an extra "device" in the CODE27 app), instead
-  of borrowing the browser session you already use.
-- **No separate LED master switch anymore**: Early on there was, alongside
-  the ambient-color light, its own on/off switch for the same LEDs – two
-  controls for one thing is confusing, so it was removed.
-- **No "restore light scene" button**: Existed briefly, was removed again –
-  the behavior (revert to the "applied" project) is indistinguishable from
-  the master-switch state when the saved project is empty in normal mode.
-  Use the light-scene selector instead to go back to a scene, which works
-  cleanly via `apply`.
+Ambient lighting (color, effect, brightness), music (Play/Pause/Skip, volume, source, progress bar, music-mode badge), light scene and character selection, alarms (list with toggles), open notes (with delete button), chat history with input field, the notification alarm banner including acknowledgement, diagnostic chips, and the live Assist Bridge feed.
 
-## Known limitations
+The card automatically follows your Home Assistant interface language — German when HA is set to German, English otherwise.
 
-Everything below is deliberately *not* built because CODE27 doesn't offer
-it – not because we overlooked it:
+**Important:** After every change to `code27-card.js`, the browser may continue using the cached version. Either change the resource URL using a new `?v=` parameter or perform a hard reload with Ctrl+Shift+R.
 
-- **No device-wide volume control** outside of music playback
-  (voice/sound effects) – doesn't exist anywhere in the API, not even
-  behind admin rights.
-- **"Spaces"** can only be selected directly on the device screen, no API
-  for it.
-- **No function-calling** in the character's chat (hence the Assist bridge
-  as a workaround, see above).
-- **The card's portrait** is a generic stock image from the app bundle, not
-  your actually configured character – there's no way to fetch a live
-  render via the API.
-- Behind admin rights (which local pairing doesn't get) sits, among other
-  things, a **"Proactive" system** for automatic, presence-based greeting
-  (time windows, idle recovery, camera triggers for smile/proximity/
-  gesture, quiet hours) – interesting for later, should CODE27 ever open
-  that up for local pairings.
+### Intentional design decisions
 
-## Technical background
+* **No Reset/Character Editor:** Resetting a character or editing personality prompts is deliberately **not** exposed as an entity. These are consequential, device-specific operations that should remain in the device UI.
+* **No personality text in HA:** `character_prompt`, the detailed character description, is never displayed or stored in Home Assistant. Only the name of the active character is exposed.
+* **Pairing instead of stealing cookies:** Home Assistant receives its own pairing during setup, effectively like an additional "device" in the CODE27 app, instead of borrowing a browser session.
+* **No separate LED master switch:** Early versions exposed a separate On/Off switch for the same LEDs in addition to the Ambient Color light entity. Two controls for the same thing were confusing, so the additional switch was removed.
+* **No "Restore light scene" button:** This existed briefly and was removed again. Returning to the "applied" project cannot be reliably distinguished from the master-switch state when the stored project is empty in Normal mode. To return to a scene, use the Light Scene selector, which applies the scene cleanly via `apply`.
 
-The device requires an HMAC-SHA256 signature (`X-Local-Sig` and other
-headers) for every endpoint except the three auth routes, derived from a
-local secret handed out during pairing – the exact same scheme the device's
-own web UI uses (reverse engineered from its JS bundle, see
-`custom_components/hase/providers/code27/api.py`). The WebSocket channel
-(`/v1/ws/channel`, see `websocket_client.py`) uses the same scheme, just as
-query parameters instead of headers (a WebSocket handshake can't set
-individual headers) – this is how music and light-page status arrive
-essentially in real time, without any polling. There is **no** push event
-for chat messages on this channel (not even the device's own web UI gets
-one) – those are polled separately every 3 seconds, notably faster than the
-rest (15s default interval).
+### Known limitations
 
-All of this was verified live against a real CODE27 device, not just
-derived from the JS bundle.
+Everything below is deliberately **not implemented because CODE27 does not expose it**, not because it was overlooked:
+
+* **No device-wide volume control** outside music playback (voice/sound effects). No such feature exists anywhere in the API, even behind admin permissions.
+* **"Spaces"** can only be selected directly on the device screen. There is no API for them.
+* **No function calling** in the character chat, which is why the Assist Bridge exists as a workaround.
+* **The portrait shown by the card** is a generic stock image from the app bundle, not the character you actually configured. The API provides no retrievable live-rendered view of the configured character.
+* Behind admin permissions — which local pairing does not receive — there is, among other things, a **"Proactive" system** for automatic presence-based interactions using time windows, idle recovery, camera triggers for smiling/proximity/gestures, and quiet hours. This may be interesting in the future if CODE27 exposes it to local pairings.
+
+### Technical background
+
+For every endpoint except the three authentication routes, the device requires an HMAC-SHA256 signature using headers such as `X-Local-Sig`.
+
+The signature is derived from the local secret assigned during pairing — the same mechanism used by the device's own web UI, as verified from its JavaScript bundle. See `custom_components/hase/providers/code27/api.py`.
+
+The WebSocket channel (`/v1/ws/channel`, see `websocket_client.py`) uses the same mechanism, but passes the authentication data as query parameters instead of headers because a WebSocket handshake cannot set arbitrary headers.
+
+Music and light page state arrive through this channel in near real time without polling.
+
+There is **no** push event for chat messages on this channel — not even the device's own web UI receives one. Chat is therefore polled separately every 3 seconds, significantly faster than the rest of the integration's default 15-second polling interval.
+
+All of this has been verified live against a real CODE27 device, not merely inferred from the JavaScript bundle.
 
 ## Support & Issues
 
-For support, feature requests or bug reports, please visit the GitHub
-repository. We welcome community contributions and feedback!
+For support, feature requests, or bug reports, please visit the GitHub repository.
 
-If this project helped you and you'd like to buy the maintainer a coffee:
+Contributions and feedback from the community are welcome!
+
+If this project has been useful to you and you would like to buy the maintainer a coffee:
 
 **[☕ Buy Me a Coffee](https://buymeacoffee.com/constablew)**

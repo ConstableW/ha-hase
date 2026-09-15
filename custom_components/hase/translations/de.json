@@ -6,11 +6,11 @@
         "description": "Die Kopplung war erfolgreich. Bestätige, um die Geräteprüfung erneut zu versuchen."
       },
       "user": {
-        "title": "CODE27-Integration einrichten",
+        "title": "HASE-Integration einrichten",
         "description": "Womit möchtest du HASE einrichten?",
         "menu_options": {
           "code27_device": "CODE27-Gerät verbinden",
-          "spellbooker": "Spellbooker-Sprachassistent anlegen"
+          "spellbooker": "HASE-Sprachassistent anlegen"
         }
       },
       "code27_device": {
@@ -22,14 +22,15 @@
         }
       },
       "spellbooker": {
-        "title": "Spellbooker anlegen",
-        "description": "Ein eigenständiger Sprachassistent, der nur die Kommandos aus einem Spellbook versteht - kein CODE27-Gerät nötig.",
+        "title": "HASE-Agent anlegen",
+        "description": "Ein eigenständiger HASE-Sprachassistent, der Kommandos aus einem Spellbook verwendet - kein CODE27-Gerät nötig.",
         "data": {
           "name": "Name",
           "spellbooker_book": "Spellbook",
           "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
           "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
           "spellbooker_no_match_response": "Antwort bei Nicht-Treffer",
+          "bridge_ai_task_entity_id": "AI-Task-Entity",
           "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
           "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)"
         },
@@ -37,6 +38,7 @@
           "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf. Wird ignoriert, wenn \"Uneingeschränkt\" aktiviert ist.",
           "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
           "spellbooker_no_match_response": "Wird gesagt, wenn ein Satz keinem Spellbook-Kommando entspricht. Leer lassen für die Standardantwort.",
+          "bridge_ai_task_entity_id": "Optional. Wenn ausgewählt, bereinigt diese AI-Task jeden gesprochenen Satz, bevor der HASE-Agent ihn mit dem Spellbook abgleicht.",
           "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf (z. B. \"wie warm ist es in X\"). Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
           "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf."
         }
@@ -104,12 +106,13 @@
         }
       },
       "spellbooker": {
-        "title": "Spellbooker-Optionen",
+        "title": "HASE-Agent-Optionen",
         "data": {
           "spellbooker_book": "Spellbook",
           "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
           "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
           "spellbooker_no_match_response": "Antwort bei Nicht-Treffer",
+          "bridge_ai_task_entity_id": "AI-Task-Entity",
           "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
           "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)"
         },
@@ -117,6 +120,7 @@
           "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf. Wird ignoriert, wenn \"Uneingeschränkt\" aktiviert ist.",
           "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
           "spellbooker_no_match_response": "Wird gesagt, wenn ein Satz keinem Spellbook-Kommando entspricht. Leer lassen für die Standardantwort.",
+          "bridge_ai_task_entity_id": "Optional. Wenn ausgewählt, bereinigt diese AI-Task jeden gesprochenen Satz, bevor der HASE-Agent ihn mit dem Spellbook abgleicht.",
           "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf (z. B. \"wie warm ist es in X\"). Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
           "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf."
         }
@@ -559,7 +563,7 @@
       "entry_type": "Satellit",
       "step": {
         "user": {
-          "title": "Spellbooker-Satellit hinzufügen",
+          "title": "HASE-Agent-Satellit hinzufügen",
           "description": "Experimentell. Ein Sprachassistent, der zuerst sein eigenes Spellbook probiert und bei Nicht-Treffer an ein echtes Charakter-Gespräch auf diesem CODE27-Gerät weiterreicht. Die Antwortkorrelation mit dem CODE27-Gerät wurde nicht gegen gleichzeitige physische Chat-Nutzung geprüft - nicht auf etwas verlassen, bei dem eine falsche oder verzögerte Antwort ein Problem wäre.",
           "data": {
             "name": "Name",

@@ -10,49 +10,28 @@ custom_components/hase/spellbooker_ha.py; tests inject fakes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from typing import Literal, Protocol
 
-from .models import ActionDraft, ActionTarget, AreaPolicy, ExecutionResult, ExecutionStatus, ScopedAreaPolicy
+from .models import (
+    QUERY_RESPONSE_FIELDS_BY_DOMAIN,
+    ActionDraft,
+    ActionTarget,
+    AreaPolicy,
+    ExecutionResult,
+    ExecutionStatus,
+    QueryPlan,
+    QuerySourceSpec,
+    ScopedAreaPolicy,
+)
 
-
-@dataclass(frozen=True)
-class OperationSpec:
-    kind: str  # "action" | "query"
-    allowed_target_kinds: frozenset[str]
-    argument_types: dict[str, type]  # name -> required exact type
-
-
-OPERATION_CATALOG: dict[str, OperationSpec] = {
-    "light.set_power": OperationSpec(
-        kind="action",
-        allowed_target_kinds=frozenset(
-            {"area_name", "area_id", "entity_name", "entity_id", "all_allowed", "source_area"}
-        ),
-        argument_types={"on": bool},
-    ),
-    "entity.get_state": OperationSpec(
-        kind="query",
-        allowed_target_kinds=frozenset({"entity_name", "entity_id"}),
-        argument_types={},
-    ),
-    "vacuum.clean_area": OperationSpec(
-        kind="action",
-        # Area-only, deliberately - "which vacuum, which room" is a
-        # discovery problem (native HA mapping, or a per-brand
-        # provider), not something a spoken entity_name could name
-        # directly. See _execute_vacuum_clean_area below.
-        allowed_target_kinds=frozenset({"area_name", "area_id"}),
-        argument_types={},
-    ),
-    "media_player.skip_track": OperationSpec(
-        kind="action",
-        allowed_target_kinds=frozenset(
-            {"area_name", "area_id", "entity_name", "entity_id", "all_allowed", "source_area"}
-        ),
-        argument_types={"forward": bool},
-    ),
-}
+# The declarative operation/capability catalog lives in core/operations.py -
+# this module is execution/validation only. Re-exported here (not just used
+# internally) so existing importers (core/studio.py, studio.py, tests) keep
+# working unchanged: `from .core.executor import OPERATION_CATALOG` remains
+# valid, it just re-reads the one shared dict instead of owning a copy.
+from .operations import OPERATION_CATALOG, OperationSpec
 
 
 @dataclass(frozen=True)
@@ -64,6 +43,8 @@ class ResolvedEntity:
 @dataclass(frozen=True)
 class ResolvedTargets:
     entities: tuple[ResolvedEntity, ...]
+    diagnostics: tuple[dict, ...] = ()
+    raw: object = None
 
 
 class TargetNotFound:
@@ -107,7 +88,8 @@ class TargetResolver(Protocol):
 
 class ServiceCaller(Protocol):
     async def set_light_power(
-        self, entity_ids: tuple[str, ...], on: bool, *, context: object | None = None
+        self, entity_ids: tuple[str, ...], on: bool, *, area_id: str | None = None,
+        context: object | None = None
     ) -> bool:
         """Returns whether the service call was accepted. Acceptance is
         not physical confirmation - SUCCESS here means "HA took the
@@ -120,6 +102,23 @@ class ServiceCaller(Protocol):
         Logbook/History as uninitiated."""
         ...
 
+    async def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_ids: tuple[str, ...],
+        data: dict,
+        *,
+        area_id: str | None = None,
+        context: object | None = None,
+    ) -> bool:
+        """Call one of the executor's closed, pre-mapped HA services.
+
+        `domain`/`service` are selected by ActionExecutor from its own
+        whitelist, never taken directly from imported spellbook data.
+        """
+        ...
+
     async def get_entity_state(self, entity_id: str) -> dict | None:
         """Returns {"state": ..., "unit": ... | None} or None if the
         entity has no current state. Read-only - no context to
@@ -127,7 +126,8 @@ class ServiceCaller(Protocol):
         ...
 
     async def skip_track(
-        self, entity_ids: tuple[str, ...], forward: bool, *, context: object | None = None
+        self, entity_ids: tuple[str, ...], forward: bool, *, area_id: str | None = None,
+        context: object | None = None
     ) -> bool:
         """Next track if forward else previous. Same acceptance-only
         caveat as set_light_power."""
@@ -155,6 +155,23 @@ def _entity_permitted(entity: ResolvedEntity, policy: AreaPolicy) -> bool:
     return policy.permits_area(entity.area_id)
 
 
+# A variable with no usable value (missing entity, unavailable state, empty
+# aggregation, ...) renders as this short neutral token instead of a raw
+# "None"/leftover "{var}" or a crashed turn (item 14 - Fehlerverhalten).
+_MISSING_VALUE_TOKEN = "?"
+
+
+def _render_query_response(template: str, variables: dict) -> str:
+    safe_values = {name: (_MISSING_VALUE_TOKEN if value is None else value) for name, value in variables.items()}
+    try:
+        return template.format_map(safe_values)
+    except (KeyError, IndexError, ValueError, AttributeError, TypeError):
+        # A malformed template shouldn't reach here (Studio validates
+        # variable names against declared sources at save time) - degrade
+        # to the raw template rather than losing the whole response.
+        return template
+
+
 _TARGET_KINDS_REQUIRING_A_VALUE = frozenset({"area_name", "area_id", "entity_name", "entity_id"})
 
 
@@ -169,44 +186,90 @@ def _valid_target_shape(target: ActionTarget) -> bool:
     batch runs, is the whole point of validate_shape existing."""
     if target.kind in ("all_allowed", "none", "source_area"):
         return target.value is None
+    if target.kind == "template":
+        return isinstance(target.value, str) and 0 < len(target.value.strip()) <= 8192
+    if target.kind == "entity_ids":
+        return isinstance(target.value, tuple) and 0 < len(target.value) <= 256 and all(
+            isinstance(v, str) and bool(v.strip()) for v in target.value)
     if target.kind in _TARGET_KINDS_REQUIRING_A_VALUE:
         return isinstance(target.value, str) and bool(target.value.strip())
     return True
 
 
+_MAX_ARGUMENT_STRING_LENGTH = 100
+
+
+def _argument_type_matches(value, expected_type: type) -> bool:
+    if expected_type is bool:
+        return isinstance(value, bool)
+    if expected_type is int:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected_type is float:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected_type is str:
+        # A bound against nonsense/abusive payloads on the string-typed
+        # arguments (hvac_mode, effect, source, option, ...) - HA's own
+        # service call still enforces whether the value is actually valid
+        # for the target entity, same non-goal as int_ranges/float_ranges.
+        return isinstance(value, str) and 0 < len(value) <= _MAX_ARGUMENT_STRING_LENGTH
+    return isinstance(value, expected_type)
+
+
 def _validate_arguments(spec: OperationSpec, arguments) -> bool:
-    # arguments comes straight off an ActionDraft, which a backend
-    # proposal builds with no validation of its own (dataclasses don't
-    # enforce field types) - a non-dict (None, a list, ...) must fail
-    # closed here, before `set(arguments)` (raises TypeError on None)
-    # or `arguments[name]` (raises TypeError on a list, since `name`
-    # is a string key, not an index) ever run. Found live (external
-    # audit): arguments=None and arguments=["on"] both crashed with an
-    # uncaught TypeError instead of the controlled rejection
-    # validate_shape exists to guarantee for a whole proposal batch.
     if not isinstance(arguments, dict):
         return False
-    if set(arguments) != set(spec.argument_types):
+
+    schemas = (spec.argument_types, *spec.argument_variants)
+    if not any(
+        set(arguments) == set(schema)
+        and all(_argument_type_matches(arguments[name], expected)
+                for name, expected in schema.items())
+        for schema in schemas
+    ):
         return False
-    for name, expected_type in spec.argument_types.items():
+
+    for name, (minimum, maximum) in spec.int_ranges.items():
+        if name not in arguments:
+            continue
         value = arguments[name]
-        # bool is an int subclass in Python - an int-typed argument must
-        # never silently accept True/False, and a bool-typed argument
-        # must never accept a plain 0/1. isinstance alone conflates
-        # both directions, so both are checked explicitly.
-        if expected_type is bool and not isinstance(value, bool):
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
             return False
-        if expected_type is int and (isinstance(value, bool) or not isinstance(value, int)):
+
+    for name, (minimum, maximum) in spec.float_ranges.items():
+        if name not in arguments:
+            continue
+        value = arguments[name]
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not minimum <= value <= maximum
+        ):
             return False
-        if expected_type not in (bool, int) and not isinstance(value, expected_type):
-            return False
+
+    rgb_color = arguments.get("rgb_color")
+    if rgb_color is not None and (
+        not isinstance(rgb_color, list)
+        or len(rgb_color) != 3
+        or any(
+            not isinstance(channel, int)
+            or isinstance(channel, bool)
+            or not 0 <= channel <= 255
+            for channel in rgb_color
+        )
+    ):
+        return False
     return True
 
 
+
 class ActionExecutor:
-    def __init__(self, resolver: TargetResolver, caller: ServiceCaller) -> None:
+    def __init__(self, resolver: TargetResolver, caller: ServiceCaller,
+                 expert_allowed: Callable[[], bool] | None = None,
+                 operation_allowed: Callable[[str], bool] | None = None) -> None:
         self._resolver = resolver
         self._caller = caller
+        self._expert_allowed = expert_allowed or (lambda: False)
+        self._operation_allowed = operation_allowed or (lambda operation: True)
 
     def validate_shape(self, draft: ActionDraft) -> bool:
         """Static, side-effect-free checks only - operation known,
@@ -230,6 +293,8 @@ class ActionExecutor:
         # audit): proposal=None reproduced exactly that crash.
         if not isinstance(draft, ActionDraft):
             return False
+        if not isinstance(draft.operation, str) or not isinstance(draft.target, ActionTarget):
+            return False
         spec = OPERATION_CATALOG.get(draft.operation)
         if spec is None:
             return False
@@ -246,7 +311,49 @@ class ActionExecutor:
         *,
         context: object | None = None,
         source_area_id: str | None = None,
+        dry_run: bool = False,
     ) -> ExecutionResult:
+        if not isinstance(draft, ActionDraft) or not isinstance(draft.target, ActionTarget) or not isinstance(draft.operation, str):
+            return ExecutionResult(ExecutionStatus.INVALID, "malformed_action")
+        # Permission is supplied by local configuration, never by a spell/import.
+        # Operations marked expert_only are gated even if an imported spell omits
+        # draft.expert=True.
+        spec = OPERATION_CATALOG.get(draft.operation)
+        if draft.expert or (spec is not None and spec.expert_only) or draft.target.kind == "template":
+            fallback = draft.user_fallback
+            if fallback is not None and (fallback.expert or fallback.target.kind == "template" or fallback.user_fallback):
+                fallback = None
+            if not self._expert_allowed():
+                if fallback is not None:
+                    result = await self.execute(fallback, policies, context=context,
+                                                source_area_id=source_area_id, dry_run=dry_run)
+                    return replace(result, data={**result.data, "user_fallback": True,
+                                                 "effective_operation": fallback.operation,
+                                                 "effective_catchphrase": fallback.catchphrase})
+                return ExecutionResult(ExecutionStatus.DENIED, "expert_disabled")
+            # Resolve expert once before any effect. Never fallback after a service failure.
+            prepared = await self._execute(replace(draft, user_fallback=None), policies,
+                                           context=context, source_area_id=source_area_id, dry_run=True)
+            if prepared.status != ExecutionStatus.SUCCESS and prepared.reason_code != "vacuum_mapping_pending":
+                if fallback is not None:
+                    result = await self.execute(fallback, policies, context=context,
+                                                source_area_id=source_area_id, dry_run=dry_run)
+                    return replace(result, data={**result.data, "user_fallback": True,
+                                                 "effective_operation": fallback.operation,
+                                                 "effective_catchphrase": fallback.catchphrase,
+                                                 "expert_error": prepared.reason_code})
+                return prepared
+            if dry_run:
+                return prepared
+            # Freeze the checked targets; execute checks exposure/policy again.
+            if draft.target.kind == "template":
+                draft = replace(draft, target=ActionTarget("entity_ids", tuple(prepared.data["entity_ids"])))
+        return await self._execute(draft, policies, context=context,
+                                   source_area_id=source_area_id, dry_run=dry_run)
+
+    async def _execute(self, draft, policies, *, context=None, source_area_id=None, dry_run=False):
+        if not self._operation_allowed(draft.operation):
+            return ExecutionResult(ExecutionStatus.DENIED, "operation_disabled")
         spec = OPERATION_CATALOG.get(draft.operation)
         if spec is None:
             return ExecutionResult(
@@ -286,18 +393,21 @@ class ActionExecutor:
             target = ActionTarget(kind="area_id", value=source_area_id)
 
         if draft.operation == "vacuum.clean_area":
-            return await self._execute_vacuum_clean_area(target, policy, context=context)
+            return await self._execute_vacuum_clean_area(target, policy, context=context, dry_run=dry_run)
 
-        domain_filter = {
-            "light.set_power": "light",
-            "media_player.skip_track": "media_player",
-        }.get(draft.operation)
-        resolved = await self._resolver.resolve(target, domain_filter=domain_filter)
+        resolved = await self._resolver.resolve(target, domain_filter=spec.domain_filter)
         if isinstance(resolved, TargetNotFound):
             return ExecutionResult(status=ExecutionStatus.INVALID, reason_code="target_not_found")
 
         entities = resolved.entities
-        if draft.target.kind == "all_allowed":
+        diagnostics = list(resolved.diagnostics)
+        diagnostics.extend({"entity_id": e.entity_id, "area_id": e.area_id,
+                            "reason": "allowed" if _entity_permitted(e, policy) else "area_not_permitted"}
+                           for e in entities)
+        details = {"raw": resolved.raw, "targets": diagnostics}
+        if draft.target.kind == "entity_ids" and resolved.diagnostics:
+            return ExecutionResult(ExecutionStatus.INVALID, "target_not_found", details)
+        if draft.target.kind in ("all_allowed", "template"):
             # "all_allowed" means everything Operation AND Policy
             # permit (stage-1/README.md) - forbidden members are
             # quietly excluded, not cause for denying the batch. A
@@ -307,44 +417,145 @@ class ActionExecutor:
             # silently narrowing it - see the `denied` check below.
             entities = tuple(e for e in entities if _entity_permitted(e, policy))
         if not entities:
-            return ExecutionResult(status=ExecutionStatus.INVALID, reason_code="no_matching_targets")
+            return ExecutionResult(status=ExecutionStatus.INVALID, reason_code="no_matching_targets", data=details)
 
-        if draft.target.kind != "all_allowed":
+        if draft.target.kind not in ("all_allowed", "template"):
             denied = [e for e in entities if not _entity_permitted(e, policy)]
             if denied:
                 # Fail the whole set, never a silent partial execution.
                 return ExecutionResult(
                     status=ExecutionStatus.DENIED,
                     reason_code="area_not_permitted",
-                    data={"denied_entity_count": len(denied)},
+                    data={**details, "denied_entity_count": len(denied)},
                 )
 
         entity_ids = tuple(e.entity_id for e in entities)
-
         if spec.kind == "query":
             state = await self._caller.get_entity_state(entity_ids[0])
             if state is None:
                 return ExecutionResult(status=ExecutionStatus.FAILED, reason_code="no_state")
+            if draft.response_template and any(
+                f"{{{name}}}" in draft.response_template
+                for fields in QUERY_RESPONSE_FIELDS_BY_DOMAIN.values()
+                for name in fields
+            ):
+                values = {
+                    name: ""
+                    for fields in QUERY_RESPONSE_FIELDS_BY_DOMAIN.values()
+                    for name in fields
+                }
+                values.update({key: "" if value is None else value for key, value in state.items()})
+                try:
+                    state = {**state, "response_text": draft.response_template.format_map(values)}
+                except (KeyError, ValueError, AttributeError, TypeError):
+                    pass
             return ExecutionResult(status=ExecutionStatus.QUERY_ANSWER, reason_code="ok", data=state)
 
-        if draft.operation == "media_player.skip_track":
-            accepted = await self._caller.skip_track(entity_ids, draft.arguments["forward"], context=context)
-        else:
-            accepted = await self._caller.set_light_power(entity_ids, draft.arguments["on"], context=context)
+        if dry_run:
+            return ExecutionResult(ExecutionStatus.SUCCESS, "dry_run",
+                                   {**details, "entity_ids": entity_ids})
+
+        accepted = await self._dispatch_action(
+            draft,
+            entity_ids,
+            context=context,
+        )
+        if accepted is None:
+            # Should be unreachable while catalog/dispatch stay in sync; fail closed.
+            return ExecutionResult(
+                status=ExecutionStatus.UNSUPPORTED,
+                reason_code="unknown_operation",
+                data={"operation": draft.operation},
+            )
         if not accepted:
             return ExecutionResult(status=ExecutionStatus.FAILED, reason_code="service_call_rejected")
         return ExecutionResult(
             status=ExecutionStatus.SUCCESS, reason_code="ok", data={"entity_ids": entity_ids}
         )
 
+    async def _dispatch_action(
+        self,
+        draft: ActionDraft,
+        entity_ids: tuple[str, ...],
+        *,
+        area_id: str | None = None,
+        context: object | None = None,
+    ) -> bool | None:
+        """Dispatch one validated action to either entity_ids or a native HA area_id."""
+        target_kwargs = {"context": context}
+        if area_id is not None:
+            target_kwargs["area_id"] = area_id
+
+        if draft.operation == "media_player.skip_track":
+            return await self._caller.skip_track(
+                entity_ids,
+                draft.arguments["forward"],
+                **target_kwargs,
+            )
+
+        if draft.operation == "light.set_power":
+            if "percentage" in draft.arguments:
+                percentage = draft.arguments["percentage"]
+                if percentage == 0:
+                    return await self._caller.call_service(
+                        "light",
+                        "turn_off",
+                        entity_ids,
+                        {},
+                        **target_kwargs,
+                    )
+                return await self._caller.call_service(
+                    "light",
+                    "turn_on",
+                    entity_ids,
+                    {"brightness_pct": percentage},
+                    **target_kwargs,
+                )
+            return await self._caller.set_light_power(
+                entity_ids,
+                draft.arguments["on"],
+                **target_kwargs,
+            )
+
+        spec = OPERATION_CATALOG.get(draft.operation)
+        if spec is not None and spec.service is not None:
+            domain, service = spec.service
+            service_data = dict(draft.arguments)
+
+            if draft.operation == "media_player.volume_set":
+                # Expert input is intentionally a simple integer scale 0..10.
+                # Home Assistant expects volume_level as a float 0.0..1.0.
+                service_data = {
+                    "volume_level": draft.arguments["volume_level"] / 10.0
+                }
+            elif draft.operation == "media_player.volume_mute":
+                # This expert operation means mute-on, not toggle.
+                service_data = {"is_volume_muted": True}
+
+            return await self._caller.call_service(
+                domain,
+                service,
+                entity_ids,
+                service_data,
+                **target_kwargs,
+            )
+
+        return None
+
     async def _execute_vacuum_clean_area(
-        self, target: ActionTarget, policy: AreaPolicy, *, context: object | None = None
+        self, target: ActionTarget, policy: AreaPolicy, *, context: object | None = None, dry_run: bool = False
     ) -> ExecutionResult:
         area_id = await self._resolver.resolve_area(target)
         if isinstance(area_id, TargetNotFound):
             return ExecutionResult(status=ExecutionStatus.INVALID, reason_code="target_not_found")
         if not policy.permits_area(area_id):
             return ExecutionResult(status=ExecutionStatus.DENIED, reason_code="area_not_permitted")
+
+        if dry_run:
+            return ExecutionResult(ExecutionStatus.NOT_EXECUTED, "vacuum_mapping_pending", {
+                "area_id": area_id, "entity_ids": [],
+                "warnings": ["Sauger-/Raum-Zuordnung wird erst bei Ausführung vom vorhandenen Provider ermittelt."],
+            })
 
         outcome = await self._caller.clean_vacuum_area(area_id, context=context)
         if outcome.status == "started":
@@ -362,3 +573,136 @@ class ActionExecutor:
                 data={"candidates_description": outcome.candidates_description},
             )
         return ExecutionResult(status=ExecutionStatus.FAILED, reason_code="vacuum_error")
+
+    async def execute_query_plan(
+        self,
+        plan: QueryPlan,
+        policies: ScopedAreaPolicy,
+        *,
+        context: object | None = None,
+        source_area_id: str | None = None,
+    ) -> ExecutionResult:
+        """The multi-source-query sibling of execute() (item 4/5) - resolves
+        every source through the exact same TargetResolver/AreaPolicy an
+        action would use, merges their variables into one dict, and renders
+        the response template. A per-source data problem (missing entity,
+        unavailable state, empty aggregation, ...) degrades ONLY that
+        variable to a safe placeholder and is reported in data["sources"]
+        for the Wizard's Preview (item 9/14) - it never aborts the whole
+        query. The one thing that DOES abort the whole query is a policy
+        DENIAL on a named (non-all_allowed) source target, mirroring
+        execute()'s own "a named target with a forbidden member denies the
+        whole request" rule - a security boundary, not a data-availability
+        one, so it must never silently degrade into a "?" that reads like
+        "tried but nothing there"."""
+        variables: dict[str, object] = {}
+        source_reports: list[dict] = []
+        for source in plan.sources:
+            value, unit_value, report = await self._resolve_query_source(
+                source, policies.queries, source_area_id=source_area_id,
+            )
+            if report["status"] == "denied":
+                return ExecutionResult(
+                    status=ExecutionStatus.DENIED,
+                    reason_code="area_not_permitted",
+                    data={"sources": [*source_reports, report]},
+                )
+            variables[source.variable] = value
+            if source.unit_variable:
+                variables[source.unit_variable] = unit_value
+            source_reports.append(report)
+
+        response_text = (
+            _render_query_response(plan.response_template, variables)
+            if plan.response_template else None
+        )
+        any_soft_failure = any(report["status"] != "ok" for report in source_reports)
+        return ExecutionResult(
+            status=ExecutionStatus.QUERY_ANSWER,
+            reason_code="ok" if not any_soft_failure else "partial",
+            data={"response_text": response_text, "variables": variables, "sources": source_reports},
+        )
+
+    async def _resolve_query_source(
+        self, source: QuerySourceSpec, policy: AreaPolicy, *, source_area_id: str | None,
+    ) -> tuple[object, object, dict]:
+        """Returns (value, unit_value, report). report["status"] is "ok",
+        "denied" (the whole plan must be denied - see execute_query_plan),
+        or one of item 14's soft per-source failure codes:
+        no_source_area, target_not_found, ambiguous_source, unavailable,
+        missing_attribute, empty_aggregation."""
+        target = source.target
+        if target.kind == "source_area":
+            if not source_area_id:
+                return None, None, {"variable": source.variable, "status": "no_source_area"}
+            target = ActionTarget(kind="area_id", value=source_area_id)
+
+        resolved = await self._resolver.resolve(target, domain_filter=source.domain_filter)
+        if isinstance(resolved, TargetNotFound):
+            return None, None, {"variable": source.variable, "status": "target_not_found"}
+
+        entities = resolved.entities
+        if target.kind == "all_allowed":
+            entities = tuple(e for e in entities if _entity_permitted(e, policy))
+        elif any(not _entity_permitted(e, policy) for e in entities):
+            return None, None, {"variable": source.variable, "status": "denied"}
+
+        if source.device_class is not None:
+            filtered = []
+            for entity in entities:
+                state = await self._caller.get_entity_state(entity.entity_id)
+                if state is not None and state.get("device_class") == source.device_class:
+                    filtered.append(entity)
+            entities = tuple(filtered)
+
+        is_aggregate = source.kind in ("count", "min", "max", "avg", "sum")
+        if not is_aggregate:
+            if not entities:
+                return None, None, {"variable": source.variable, "status": "target_not_found"}
+            if len(entities) > 1:
+                return None, None, {"variable": source.variable, "status": "ambiguous_source"}
+            state = await self._caller.get_entity_state(entities[0].entity_id)
+            if state is None:
+                return None, None, {"variable": source.variable, "status": "target_not_found"}
+            if source.kind == "attribute":
+                attributes = state.get("attributes")
+                if not isinstance(attributes, dict) or source.attribute not in attributes:
+                    return None, None, {"variable": source.variable, "status": "missing_attribute"}
+                return attributes[source.attribute], None, {"variable": source.variable, "status": "ok"}
+            raw_state = state.get("state")
+            unavailable = raw_state is None or raw_state in ("unknown", "unavailable")
+            unit_value = state.get("unit") if source.unit_variable else None
+            return (
+                None if unavailable else raw_state,
+                unit_value,
+                {"variable": source.variable, "status": "unavailable" if unavailable else "ok"},
+            )
+
+        if source.state_filter is not None:
+            matching = []
+            for entity in entities:
+                state = await self._caller.get_entity_state(entity.entity_id)
+                if state is not None and state.get("state") == source.state_filter:
+                    matching.append(entity)
+            entities = tuple(matching)
+
+        if source.kind == "count":
+            return len(entities), None, {"variable": source.variable, "status": "ok", "matched": len(entities)}
+
+        numeric_values = []
+        for entity in entities:
+            state = await self._caller.get_entity_state(entity.entity_id)
+            if state is None:
+                continue
+            try:
+                numeric_values.append(float(state.get("state")))
+            except (TypeError, ValueError):
+                continue
+        if not numeric_values:
+            return None, None, {"variable": source.variable, "status": "empty_aggregation"}
+        aggregate = {
+            "min": min, "max": max,
+            "avg": lambda values: round(sum(values) / len(values), 1),
+            "sum": lambda values: round(sum(values), 1),
+        }[source.kind](numeric_values)
+        return aggregate, None, {"variable": source.variable, "status": "ok", "matched": len(numeric_values)}

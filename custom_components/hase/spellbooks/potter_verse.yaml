@@ -190,12 +190,16 @@ commands:
     en: Resume the music in {area}
   catchphrase: Renervate.
   id: potter_verse_24
-- trigger: scourgify {target}
+- id: potter_verse_27
+  trigger: scourgify {target}
   output:
     de: '{target} starten'
     en: Start {target}
+  operation: vacuum.clean_area
+  target:
+    kind: area_name
+    capture: target
   catchphrase: Scourgify.
-  id: potter_verse_27
 - trigger: tergeo {target}
   output:
     de: '{target} anhalten'

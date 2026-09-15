@@ -57,7 +57,8 @@ from .core.models import (
 from .core.router import DEFAULT_NO_MATCH_RESPONSE, AgentConfig, SpellbookRouter
 from .core.spellbook_engine import EngineSpellbook
 from .providers.code27.backend import Code27ConversationBackend
-from .providers.code27.const import MANUFACTURER
+from .providers.code27.bridge import async_cleanup_command
+from .providers.code27.const import CONF_BRIDGE_AI_TASK_ENTITY_ID, MANUFACTURER
 from .spellbook_loader import async_get_spellbook
 from .spellbooker_ha import (
     HaServiceCaller,
@@ -110,7 +111,34 @@ def intent_response_for(language: str, result) -> intent.IntentResponse:
     that genuinely are an action having been done, or a follow-up
     question (continue_conversation, set separately by the caller,
     is the actual mechanism for that - HA has no distinct
-    IntentResponseType for "assistant is asking something back")."""
+    IntentResponseType for "assistant is asking something back").
+
+    Output mode (item 8): verified against HA's own intent.py
+    (IntentResponse/IntentResponseType) that there is NO native
+    TEXT-vs-SPEECH split at this layer - only whether async_set_speech was
+    called at all, and IntentResponseType itself has no "silent"/
+    "display-only" variant either. Whether spoken text is actually spoken
+    aloud is a pipeline/frontend decision (a voice satellite vs the Assist
+    text chat), not something a conversation agent's response can flag -
+    so AUTO/TEXT/SPEECH/TEXT_AND_SPEECH are indistinguishable here and all
+    keep exactly today's behavior. Only NONE is representable at all: an
+    empty speech string (not skipping the call) keeps the response shape
+    HA's own frontend expects, while being as close to "no output" as this
+    layer supports.
+
+    This also bounds what CODE27's bridge (providers/code27/bridge.py) can
+    do with the SAME turn: it never sees a HASE ConversationResult
+    directly, only whatever this function put into the standard
+    intent.IntentResponse via conversation.async_converse() - the generic
+    HA API any agent is consumed through. Confirmed in bridge.py's
+    _forward_to_assist: an empty `speech` here (NONE) already short-circuits
+    before _output_speech() is ever called, so NONE correctly suppresses
+    both TTS and chat-relay with no bridge.py change needed - but
+    TEXT/SPEECH/TEXT_AND_SPEECH genuinely cannot reach the bridge as
+    distinct signals, same limitation as HA's own Assist frontend; CODE27's
+    own CONF_BRIDGE_TTS_ENABLED/CONF_BRIDGE_RELAY_RESPONSE options are the
+    only thing deciding TTS vs chat-relay for anything non-NONE, same as
+    before this feature existed."""
     response = intent.IntentResponse(language=language)
     if result.status is ConversationStatus.ERROR:
         response.async_set_error(
@@ -129,7 +157,7 @@ def intent_response_for(language: str, result) -> intent.IntentResponse:
             intent.IntentResponseErrorCode.FAILED_TO_HANDLE, result.response_text
         )
     else:
-        response.async_set_speech(result.response_text)
+        response.async_set_speech("" if result.output_mode == "NONE" else result.response_text)
         if any(er.status is ExecutionStatus.QUERY_ANSWER for er in result.execution_results):
             response.response_type = intent.IntentResponseType.QUERY_ANSWER
     return response
@@ -179,7 +207,7 @@ class SpellbookerConversationEntity(ConversationEntity):
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, subentry.subentry_id)},
                 manufacturer=MANUFACTURER,
-                model="Spellbooker Satellite",
+                model="HASE-Agent Satellite",
                 name=subentry.title,
             )
             # has_entity_name=True + a device present + _attr_name=None
@@ -208,7 +236,13 @@ class SpellbookerConversationEntity(ConversationEntity):
         # which recreates this entity and so also discards any dialog
         # left open under the old book/policy - never answered against
         # a stale configuration.
-        self._router = SpellbookRouter(ActionExecutor(HaTargetResolver(hass), HaServiceCaller(hass)))
+        self._router = SpellbookRouter(ActionExecutor(
+            HaTargetResolver(hass), HaServiceCaller(hass),
+            expert_allowed=lambda: getattr(hass, "data", {}).get("hase_studio_permissions", {}).get(
+                (self._subentry.data if self._subentry is not None else self._config_entry.options).get(CONF_SPELLBOOKER_BOOK),
+                False,
+            ) is True,
+        ))
 
     @property
     def supported_languages(self) -> list[str] | str:
@@ -340,6 +374,25 @@ class SpellbookerConversationEntity(ConversationEntity):
             profile_id=profile_id,
         )
 
+        request_text = user_input.text
+        task_entity_id = settings.get(CONF_BRIDGE_AI_TASK_ENTITY_ID)
+        if task_entity_id:
+            request_text, failure, discarded = await async_cleanup_command(
+                self.hass,
+                request_text,
+                task_entity_id,
+            )
+            if failure is not None:
+                _LOGGER.warning(
+                    "HASE-Agent AI Task cleanup failed; using original input: %s",
+                    failure,
+                )
+            elif discarded is not None:
+                _LOGGER.warning(
+                    "HASE-Agent AI Task returned an unsafe rewrite %r; using original input",
+                    discarded,
+                )
+
         request = ConversationRequest(
             request_id=str(uuid.uuid4()),
             # A SATELLITE's own subentry_id, not the parent CODE27
@@ -352,7 +405,7 @@ class SpellbookerConversationEntity(ConversationEntity):
             # the parent), set separately below - only the SESSION
             # identity changes here. Found live (external audit).
             agent_entry_id=self._subentry.subentry_id if self._subentry is not None else self._config_entry.entry_id,
-            text=user_input.text,
+            text=request_text,
             language=language,
             source_namespace="ha_conversation",
             source_id=user_input.device_id,

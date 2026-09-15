@@ -16,17 +16,18 @@ def build() -> Path:
         ROOT / name for name in ("README.md", "README.en.md", "LICENSE", "hacs.json")
     ]
     for directory in ("tests", "scripts"):
-        files.extend(p for p in (ROOT / directory).glob("*.py") if p.is_file())
+        files.extend(p for p in (ROOT / directory).iterdir()
+                     if p.is_file() and p.suffix in {".py", ".mjs", ".html"})
     files.append(ROOT / "requirements-test.txt")
     files.extend(
         p
         for p in component.rglob("*")
-        if p.is_file() and p.suffix in {".py", ".json", ".yaml", ".png"}
+        if p.is_file() and p.suffix in {".py", ".json", ".yaml", ".png", ".js", ".css", ".svg"}
     )
     files.extend(p for p in (ROOT / "www/hase").rglob("*") if p.is_file())
     files.extend(
         ROOT / "docs" / name
-        for name in ("HASE-ARCHITECTURE.md", "HASE-CUTOVER.md", "HASE-VALIDATION.md")
+        for name in ("HASE-ARCHITECTURE.md", "HASE-CUTOVER.md", "HASE-VALIDATION.md", "SPELLBOOK-STUDIO.md")
     )
     files.extend(ROOT / "docs/spellbook-engine" / name for name in (
         "etappe-8-unified-spellbooks.md", "migration-inventory.json",

@@ -35,6 +35,7 @@ from .providers.code27.config_flow import (
     Code27OptionsFlow,
     SatelliteSubentryFlow,
 )
+from .providers.code27.const import CONF_BRIDGE_AI_TASK_ENTITY_ID
 from .spellbook_loader import async_discover_spellbooks
 
 
@@ -100,12 +101,15 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
                         CONF_SPELLBOOKER_NO_MATCH_RESPONSE: user_input.get(
                             CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""
                         ),
+                        CONF_BRIDGE_AI_TASK_ENTITY_ID: user_input.get(
+                            CONF_BRIDGE_AI_TASK_ENTITY_ID
+                        ),
                     },
                 )
 
         schema = vol.Schema(
             {
-                vol.Required("name", default="Spellbooker"): str,
+                vol.Required("name", default="HASE-Agent"): str,
                 vol.Required(CONF_SPELLBOOKER_BOOK): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
@@ -126,6 +130,9 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
                     CONF_SPELLBOOKER_QUERIES_UNRESTRICTED, default=False
                 ): bool,
                 vol.Optional(CONF_SPELLBOOKER_NO_MATCH_RESPONSE, default=""): str,
+                vol.Optional(CONF_BRIDGE_AI_TASK_ENTITY_ID): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="ai_task")
+                ),
             }
         )
         return self.async_show_form(
@@ -254,6 +261,14 @@ class SpellbookerOptionsFlow(OptionsFlow):
                     CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
                     default=options.get(CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""),
                 ): str,
+                vol.Optional(
+                    CONF_BRIDGE_AI_TASK_ENTITY_ID,
+                    description={
+                        "suggested_value": options.get(CONF_BRIDGE_AI_TASK_ENTITY_ID)
+                    },
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="ai_task")
+                ),
             }
         )
         return self.async_show_form(

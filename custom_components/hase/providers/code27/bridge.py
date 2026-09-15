@@ -1322,33 +1322,73 @@ async def _ai_cleanup(
     if not task_entity_id:
         return command
 
+    cleaned, failure, discarded = await async_cleanup_command(
+        hass,
+        command,
+        task_entity_id,
+        task_name="code27_bridge_cleanup",
+        timeout=_AI_CLEANUP_TIMEOUT,
+    )
+    if failure is not None:
+        err = failure
+        reason = f"timeout after {_AI_CLEANUP_TIMEOUT:g}s" if isinstance(err, TimeoutError) else str(err)
+        _LOGGER.warning("%s: AI Task cleanup failed: %s", LOGBOOK_NAME, reason)
+        _log_activity(hass, entry, _msg(hass, "ai_cleanup_error", error=reason), entity_id)
+        return command
+    if discarded:
+        _LOGGER.warning(
+            "%s: AI cleanup result %r looks unrelated to input %r, discarding",
+            LOGBOOK_NAME,
+            discarded,
+            command,
+        )
+        _log_activity(
+            hass, entry, _msg(hass, "ai_cleanup_discarded", ai_result=discarded), entity_id
+        )
+        return command
+    if cleaned != command:
+        _log_activity(hass, entry, _msg(hass, "ai_cleanup_result", command=cleaned), entity_id)
+    return cleaned
+
+
+async def async_cleanup_command(
+    hass: HomeAssistant,
+    command: str,
+    task_entity_id: str,
+    *,
+    task_name: str = "hase_agent_cleanup",
+    timeout: float = _AI_CLEANUP_TIMEOUT,
+) -> tuple[str, Exception | None, str | None]:
+    """Safely normalize a voice command with one configured AI Task entity.
+
+    Shared by CODE27 and standalone HASE agents. Provider errors and unsafe
+    rewrites preserve the original command; cancellation remains cancellable.
+    """
     try:
-        async with asyncio.timeout(_AI_CLEANUP_TIMEOUT):
+        async with asyncio.timeout(timeout):
             result = await hass.services.async_call(
-                "ai_task", "generate_data",
+                "ai_task",
+                "generate_data",
                 {
-                    "task_name": "code27_bridge_cleanup",
+                    "task_name": task_name,
                     "instructions": _AI_CLEANUP_PROMPT.format(command=command),
                     "entity_id": task_entity_id,
                 },
-                blocking=True, return_response=True,
+                blocking=True,
+                return_response=True,
             )
         data = result.get("data") if isinstance(result, dict) else None
         text = data
         if isinstance(data, dict):
             text = data.get("text") or data.get("result")
         if not isinstance(text, str):
-            return command
+            return command, None, None
         cleaned = text.strip().strip('"')
-    except Exception as err:  # noqa: BLE001 - cleanup failure preserves the original command.
-        reason = f"timeout after {_AI_CLEANUP_TIMEOUT:g}s" if isinstance(err, TimeoutError) else str(err)
-        _LOGGER.warning("%s: AI Task cleanup failed: %s", LOGBOOK_NAME, reason)
-        _log_activity(hass, entry, _msg(hass, "ai_cleanup_error", error=reason), entity_id)
-        return command
+    except Exception as err:  # noqa: BLE001 - AI failure preserves the original command.
+        return command, err, None
 
     if not cleaned or cleaned == command:
-        return command
-
+        return command, None, None
     if (
         not _shares_words(command, cleaned)
         or _invented_numbers(command, cleaned)
@@ -1356,19 +1396,8 @@ async def _ai_cleanup(
         or _has_stray_characters(cleaned)
         or _dropped_question_form(command, cleaned)
     ):
-        _LOGGER.warning(
-            "%s: AI cleanup result %r looks unrelated to input %r, discarding",
-            LOGBOOK_NAME,
-            cleaned,
-            command,
-        )
-        _log_activity(
-            hass, entry, _msg(hass, "ai_cleanup_discarded", ai_result=cleaned), entity_id
-        )
-        return command
-
-    _log_activity(hass, entry, _msg(hass, "ai_cleanup_result", command=cleaned), entity_id)
-    return cleaned
+        return command, None, cleaned
+    return cleaned, None, None
 
 
 async def _ask_assist(
@@ -1545,11 +1574,14 @@ async def _handle_typed_action(
 ) -> None:
     """Execute the original draft once. Rendering never changes its semantics."""
     _COMMAND_RECOGNIZED.set(True)
-    if draft.operation == "vacuum.clean_area" and not entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False):
+    if draft.operation == "vacuum.clean_area" and draft.user_fallback is None and not entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False):
         _log_activity(hass, entry, _msg(hass, "vacuum_action_disabled"), entity_id)
         return
     request = _current_request(hass, entry, coordinator)
-    execution = await Code27FrontendAdapter(hass).execute(draft)
+    execution = await Code27FrontendAdapter(
+        hass, entry.options.get(CONF_BRIDGE_SPELLBOOK),
+        vacuum_allowed=entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False) is True,
+    ).execute(draft)
     if (execution.reason_code == "target_not_found"
             and draft.target.kind in ("area_name", "entity_name")
             and entry.options.get(CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, False)):

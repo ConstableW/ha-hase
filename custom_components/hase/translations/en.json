@@ -10,7 +10,7 @@
         "description": "What do you want to set up?",
         "menu_options": {
           "code27_device": "Connect a CODE27 device",
-          "spellbooker": "Create a Spellbooker voice assistant"
+          "spellbooker": "Create a HASE voice assistant"
         }
       },
       "code27_device": {
@@ -22,14 +22,15 @@
         }
       },
       "spellbooker": {
-        "title": "Create a Spellbooker",
-        "description": "A standalone voice assistant that only understands commands from one spellbook - no CODE27 device required.",
+        "title": "Create a HASE-Agent",
+        "description": "A standalone HASE voice assistant that uses commands from one spellbook - no CODE27 device required.",
         "data": {
           "name": "Name",
           "spellbooker_book": "Spellbook",
           "spellbooker_allowed_areas": "Allowed areas (actions)",
           "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
           "spellbooker_no_match_response": "No-match response",
+          "bridge_ai_task_entity_id": "AI Task entity",
           "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
           "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
         },
@@ -37,6 +38,7 @@
           "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
           "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
           "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
+          "bridge_ai_task_entity_id": "Optional. If selected, this AI Task cleans up each spoken phrase before the HASE-Agent matches it against the spellbook.",
           "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
           "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
         }
@@ -104,12 +106,13 @@
         }
       },
       "spellbooker": {
-        "title": "Spellbooker options",
+        "title": "HASE-Agent options",
         "data": {
           "spellbooker_book": "Spellbook",
           "spellbooker_allowed_areas": "Allowed areas (actions)",
           "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
           "spellbooker_no_match_response": "No-match response",
+          "bridge_ai_task_entity_id": "AI Task entity",
           "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
           "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
         },
@@ -117,6 +120,7 @@
           "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
           "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
           "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
+          "bridge_ai_task_entity_id": "Optional. If selected, this AI Task cleans up each spoken phrase before the HASE-Agent matches it against the spellbook.",
           "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
           "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
         }
@@ -559,7 +563,7 @@
       "entry_type": "Satellite",
       "step": {
         "user": {
-          "title": "Add a Spellbooker Satellite",
+          "title": "Add a HASE-Agent Satellite",
           "description": "Experimental. A voice assistant that tries its own spellbook first, then falls back to a real character conversation on this CODE27 device for anything that doesn't match. Reply correlation with the CODE27 device has not been verified against concurrent physical chat use on it - avoid relying on this for anything where a wrong or delayed reply would matter.",
           "data": {
             "name": "Name",

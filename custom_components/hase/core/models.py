@@ -16,6 +16,27 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
+# Values that a read-only entity.get_state response may expose to a response
+# template. Studio, schema validation and the HA adapter share this catalogue,
+# so the Wizard never invents placeholders that runtime cannot fill.
+QUERY_RESPONSE_FIELDS_BY_DOMAIN: dict[str, tuple[str, ...]] = {
+    "*": ("state", "entity_name", "entity_id", "area"),
+    "sensor": ("unit",),
+    "light": (
+        "brightness",
+        "brightness_percent",
+        "color_temp_kelvin",
+        "rgb_color",
+        "effect",
+    ),
+    "cover": ("current_position",),
+    "climate": ("current_temperature", "temperature", "hvac_action"),
+    "fan": ("percentage", "preset_mode"),
+    "media_player": ("volume_level", "volume_percent", "media_title", "media_artist"),
+}
+QUERY_RESPONSE_FIELDS = frozenset(
+    name for fields in QUERY_RESPONSE_FIELDS_BY_DOMAIN.values() for name in fields
+)
 
 # ---------------------------------------------------------------------------
 # Inbound request
@@ -86,8 +107,19 @@ class ActionTarget:
     supposed to be whole-house-global keeps using all_allowed, exactly
     as before - this kind never turns one into the other."""
 
-    kind: Literal["area_name", "area_id", "entity_name", "entity_id", "all_allowed", "none", "source_area"]
-    value: str | None = None
+    kind: Literal["area_name", "area_id", "entity_name", "entity_id", "entity_ids", "template", "all_allowed", "none", "source_area"]
+    value: str | tuple[str, ...] | None = None
+
+
+# Output delivery modes (item 8) - AUTO/TEXT/SPEECH/TEXT_AND_SPEECH/NONE.
+# Stored on the draft/plan the spellbook actually declared; each frontend
+# adapter (conversation.py, providers/code27/bridge.py) decides what it
+# concretely means for that frontend's own real capabilities - HA's own
+# IntentResponse has no native TEXT-vs-SPEECH split, so AUTO is the only
+# universally meaningful default. A response is generated first,
+# independently of how it's delivered - see ConversationResult.output_mode.
+OUTPUT_MODES = frozenset({"AUTO", "TEXT", "SPEECH", "TEXT_AND_SPEECH", "NONE"})
+DEFAULT_OUTPUT_MODE = "AUTO"
 
 
 @dataclass(frozen=True)
@@ -100,14 +132,70 @@ class ActionDraft:
     target: ActionTarget
     arguments: dict = field(default_factory=dict)
     catchphrase: str | None = None
+    expert: bool = False
+    user_fallback: ActionDraft | None = None
+    # Kept last so existing positional construction of expert/user_fallback
+    # remains backwards compatible.
+    response_template: str | None = None
+    output_mode: str = DEFAULT_OUTPUT_MODE
+
+
+@dataclass(frozen=True)
+class QuerySourceSpec:
+    """One data source within a multi-source query spell (item 4/5) - reads
+    a single value (state/attribute) or aggregates over a resolved SET of
+    entities (count/min/max/avg/sum). Resolved through the exact same
+    TargetResolver + AreaPolicy as any ActionDraft's target - see
+    core.executor.ActionExecutor.execute_query_plan, no separate resolution
+    path. `variable`/`unit_variable` name the values this source contributes
+    to the response template's placeholder dict.
+
+    `device_class` narrows a domain_filter="sensor" match to one specific
+    kind of sensor (temperature vs humidity in the same area) - state/
+    attribute sources require the target+domain_filter+device_class
+    combination to resolve to EXACTLY one entity (ambiguous/ no match is a
+    reported per-source error, never a guess); count/min/max/avg/sum
+    sources aggregate over however many entities match (zero is a valid,
+    reported "empty_aggregation" outcome, not a crash)."""
+
+    kind: str  # "state" | "attribute" | "count" | "min" | "max" | "avg" | "sum"
+    target: ActionTarget
+    domain_filter: str | None = None
+    device_class: str | None = None
+    attribute: str | None = None  # required for kind == "attribute"
+    state_filter: str | None = None  # aggregations only: e.g. state_filter="on" for a "lights on" count
+    variable: str = ""
+    unit_variable: str | None = None  # kind == "state" only: also expose the entity's unit
+
+
+@dataclass(frozen=True)
+class QueryPlan:
+    """The multi-source-query sibling of ActionDraft - built by
+    core.spellbook_engine.build_query_plan when a command declares
+    `sources` instead of a single `operation`. Never turns into an
+    ActionDraft; core.executor.ActionExecutor.execute_query_plan is its own
+    execution path, reusing the same target-resolution/policy machinery."""
+
+    sources: tuple[QuerySourceSpec, ...]
+    response_template: str | None
+    catchphrase: str | None = None
+    output_mode: str = DEFAULT_OUTPUT_MODE
 
 
 @dataclass(frozen=True)
 class EngineMatch:
-    action_draft: ActionDraft
+    # Exactly one of action_draft/query_plan is set for a real match (both
+    # None only for the free-text output-only path, which never reaches
+    # EngineMatch at all in match()'s SATELLITE/typed view - see
+    # spellbook_engine.match()). action_draft's type stays nullable rather
+    # than moving query_plan before it, so every existing 4-positional-arg
+    # EngineMatch(draft, spell_id, text, is_exact) construction keeps
+    # working unchanged.
+    action_draft: ActionDraft | None
     spell_id: str
     matched_text: str
     is_exact: bool
+    query_plan: QueryPlan | None = None
 
 
 @dataclass(frozen=True)
@@ -267,3 +355,8 @@ class ConversationResult:
     # router (None only for the handful of pre-session config-error
     # rejections, e.g. a misconfigured SATELLITE entry).
     conversation_token: str | None = None
+    # The matched draft/plan's declared output_mode (item 8), "AUTO" for
+    # anything that isn't a real match (no-match/rejected/error text always
+    # needs *some* delivery). Each frontend adapter interprets this
+    # against its own real capabilities - see OUTPUT_MODES's docstring.
+    output_mode: str = DEFAULT_OUTPUT_MODE

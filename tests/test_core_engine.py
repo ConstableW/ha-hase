@@ -632,6 +632,65 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, ExecutionStatus.QUERY_ANSWER)
         self.assertEqual(result.data, {"state": "on", "unit": None})
 
+    async def test_query_response_template_uses_live_sensor_and_area_values_in_dry_run(self):
+        caller = FakeCaller(state={
+            "state": "22",
+            "unit": "°C",
+            "entity_name": "Wohnzimmer Temperatur",
+            "entity_id": "sensor.wohnzimmer_temperatur",
+            "area": "Wohnzimmer",
+        })
+        executor = ActionExecutor(self.resolver, caller)
+        draft = ActionDraft(
+            "entity.get_state",
+            ActionTarget("entity_name", "Buero"),
+            {},
+            response_template="Im {area} sind es aktuell {state} {unit}.",
+        )
+        result = await executor.execute(
+            draft,
+            _scoped(AreaPolicy(allowed_areas=frozenset(), unrestricted=True)),
+            dry_run=True,
+        )
+        self.assertEqual(result.status, ExecutionStatus.QUERY_ANSWER)
+        self.assertEqual(
+            result.data["response_text"],
+            "Im Wohnzimmer sind es aktuell 22 °C.",
+        )
+
+    async def test_query_response_template_supports_light_values(self):
+        caller = FakeCaller(state={
+            "state": "on",
+            "entity_name": "Stehlampe",
+            "entity_id": "light.stehlampe",
+            "area": "Wohnzimmer",
+            "brightness": 128,
+            "brightness_percent": 50,
+            "color_temp_kelvin": 3000,
+            "rgb_color": "255, 180, 90",
+            "effect": "fireplace",
+        })
+        executor = ActionExecutor(self.resolver, caller)
+        draft = ActionDraft(
+            "entity.get_state",
+            ActionTarget("entity_name", "Buero"),
+            {},
+            response_template=(
+                "{entity_name} im {area}: {state}, {brightness_percent} Prozent, "
+                "{color_temp_kelvin} Kelvin, RGB {rgb_color}, Effekt {effect}."
+            ),
+        )
+        result = await executor.execute(
+            draft,
+            _scoped(AreaPolicy(allowed_areas=frozenset(), unrestricted=True)),
+        )
+        self.assertEqual(result.status, ExecutionStatus.QUERY_ANSWER)
+        self.assertEqual(
+            result.data["response_text"],
+            "Stehlampe im Wohnzimmer: on, 50 Prozent, 3000 Kelvin, "
+            "RGB 255, 180, 90, Effekt fireplace.",
+        )
+
     async def test_rejected_service_call_is_failed_not_success(self):
         caller = FakeCaller(accept=False)
         executor = ActionExecutor(self.resolver, caller)
@@ -799,6 +858,31 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
         result = await router.handle(self._request("wie warm ist es in Buero"), config)
         self.assertEqual(result.status, ConversationStatus.COMPLETED)
         self.assertEqual(result.response_text, "21.5°C")
+
+    async def test_query_answer_supports_configured_live_return_values(self):
+        book = spellbook_engine.load_spellbook_from_text(
+            "q",
+            "name: Q\ncommands:\n  - id: temp\n    trigger: \"wie warm ist es in {area}\"\n    "
+            "operation: entity.get_state\n    target: {kind: entity_id, value: sensor.wohnzimmer}\n    "
+            "catchphrase: \"Im {area} sind es aktuell {state} {unit}.\"\n",
+        )
+        self.assertIsNotNone(book)
+        resolver = FakeResolver({
+            "sensor.wohnzimmer": ResolvedTargets((ResolvedEntity("sensor.wohnzimmer", "wohnzimmer"),))
+        })
+        caller = FakeCaller(state={
+            "state": "22", "unit": "°C", "entity_name": "Temperatur",
+            "entity_id": "sensor.wohnzimmer", "area": "Wohnzimmer",
+        })
+        router = SpellbookRouter(ActionExecutor(resolver, caller))
+        config = AgentConfig(
+            mode=FrontendMode.SPELLBOOK_ONLY,
+            spellbook=book,
+            policy=_scoped(AreaPolicy(allowed_areas=frozenset({"wohnzimmer"}))),
+        )
+        result = await router.handle(self._request("wie warm ist es in Wohnzimmer"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "Im Wohnzimmer sind es aktuell 22 °C.")
 
     async def test_duplicate_request_id_is_not_executed_twice(self):
         config = AgentConfig(
@@ -1435,6 +1519,16 @@ class VacuumExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, ExecutionStatus.INVALID)
         self.assertEqual(result.reason_code, "target_kind_not_allowed_for_operation")
         self.assertEqual(caller.vacuum_calls, [])
+
+    async def test_source_area_uses_generic_area_resolution_for_vacuum(self):
+        caller = FakeCaller(vacuum_outcome=VacuumCleanOutcome("started", "vacuum.kreacher", "Zwergstadt"))
+        self.resolver._areas["zwergstadt"] = "zwergstadt"
+        executor = ActionExecutor(self.resolver, caller)
+        policy = AreaPolicy(allowed_areas=frozenset({"zwergstadt"}))
+        draft = ActionDraft("vacuum.clean_area", ActionTarget("source_area"), {})
+        result = await executor.execute(draft, _scoped(policy), source_area_id="zwergstadt")
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
+        self.assertEqual(caller.vacuum_calls, ["zwergstadt"])
 
 
 LEGACY_YAML = """

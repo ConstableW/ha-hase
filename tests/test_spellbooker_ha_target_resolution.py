@@ -141,12 +141,15 @@ class FindAreaByNameTests(unittest.TestCase):
 
 
 class FakeEntry:
-    def __init__(self, entity_id, domain, platform=None, device_id=None, translation_key=None):
+    def __init__(self, entity_id, domain, platform=None, device_id=None, translation_key=None,
+                 area_id=None, name=None):
         self.entity_id = entity_id
         self.domain = domain
         self.platform = platform
         self.device_id = device_id
         self.translation_key = translation_key
+        self.area_id = area_id
+        self.name = name
 
 
 class FakeEntityRegistry:
@@ -160,6 +163,66 @@ class FakeEntityRegistry:
 class FakeProvider:
     platform = "roborock"
     select_map = {"translation_key": "selected_map"}
+
+
+class StateReturnValueTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        entries = [
+            FakeEntry("sensor.wohnzimmer", "sensor", area_id="living"),
+            FakeEntry("light.stehlampe", "light", device_id="lamp-device"),
+        ]
+        entity_registry = FakeEntityRegistry(entries)
+        area_registry = FakeAreaRegistry([FakeArea("living", "Wohnzimmer")])
+        device_registry = FakeDeviceRegistry({"lamp-device": FakeDevice("living")})
+        sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
+        sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+        sys.modules["homeassistant.helpers.entity_registry"] = types.SimpleNamespace(
+            async_get=lambda hass: entity_registry
+        )
+        sys.modules["homeassistant.helpers.area_registry"] = types.SimpleNamespace(
+            async_get=lambda hass: area_registry
+        )
+        sys.modules["homeassistant.helpers.device_registry"] = types.SimpleNamespace(
+            async_get=lambda hass: device_registry
+        )
+        states = {
+            "sensor.wohnzimmer": types.SimpleNamespace(
+                state="22",
+                attributes={"friendly_name": "Wohnzimmer Temperatur", "unit_of_measurement": "°C"},
+            ),
+            "light.stehlampe": types.SimpleNamespace(
+                state="on",
+                attributes={
+                    "friendly_name": "Stehlampe", "brightness": 128,
+                    "color_temp_kelvin": 3000, "rgb_color": (255, 180, 90),
+                    "effect": "fireplace",
+                },
+            ),
+        }
+        self.caller = spellbooker_ha.HaServiceCaller(
+            types.SimpleNamespace(states=types.SimpleNamespace(get=states.get))
+        )
+
+    async def test_sensor_returns_name_area_state_and_unit(self):
+        result = await self.caller.get_entity_state("sensor.wohnzimmer")
+        self.assertEqual(result, {
+            "state": "22",
+            "entity_id": "sensor.wohnzimmer",
+            "entity_name": "Wohnzimmer Temperatur",
+            "area": "Wohnzimmer",
+            "unit": "°C",
+            "device_class": None,
+            "attributes": {"friendly_name": "Wohnzimmer Temperatur", "unit_of_measurement": "°C"},
+        })
+
+    async def test_light_returns_domain_specific_values_and_device_area(self):
+        result = await self.caller.get_entity_state("light.stehlampe")
+        self.assertEqual(result["area"], "Wohnzimmer")
+        self.assertEqual(result["brightness"], 128)
+        self.assertEqual(result["brightness_percent"], 50)
+        self.assertEqual(result["color_temp_kelvin"], 3000)
+        self.assertEqual(result["rgb_color"], "255, 180, 90")
+        self.assertEqual(result["effect"], "fireplace")
 
 
 class SwitchVacuumMapTests(unittest.IsolatedAsyncioTestCase):

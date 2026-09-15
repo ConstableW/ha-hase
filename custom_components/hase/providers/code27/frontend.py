@@ -21,8 +21,12 @@ _UNRESTRICTED_POLICY = ScopedAreaPolicy(
 
 
 class Code27FrontendAdapter:
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._executor = ActionExecutor(HaTargetResolver(hass), HaServiceCaller(hass))
+    def __init__(self, hass: HomeAssistant, book_id: str | None = None, *, vacuum_allowed: bool = True) -> None:
+        self._executor = ActionExecutor(
+            HaTargetResolver(hass), HaServiceCaller(hass),
+            expert_allowed=lambda: getattr(hass, "data", {}).get("hase_studio_permissions", {}).get(book_id, False) is True,
+            operation_allowed=lambda operation: operation != "vacuum.clean_area" or vacuum_allowed,
+        )
 
     async def execute(
         self, draft: ActionDraft, *, context: object | None = None,

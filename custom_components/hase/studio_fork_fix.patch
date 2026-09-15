@@ -1,0 +1,186 @@
+--- studio.py.old
++++ studio.py
+@@ -47,6 +47,41 @@
+ from .spellbooker_ha import HaServiceCaller, HaTargetResolver
+ 
+ 
++def _studio_book_sources(hass, book_id: str) -> tuple[Path | None, Path | None, Path | None]:
++    """Resolve Studio book sources with an explicit user-override preference.
++
++    Returns ``(active, user_override, builtin)``.  The Studio must never rely
++    on directory iteration order to decide which copy wins: a user copy with
++    the same logical book id always overrides the shipped built-in.
++    """
++    user_root = Path(hass.config.path(USER_BOOK_SUBDIR)).resolve()
++
++    def matching(paths):
++        matches = []
++        for candidate in paths:
++            try:
++                if candidate.is_symlink() or not candidate.is_file():
++                    continue
++                book = spellbook_loader.load_spellbook_from_path(candidate)
++            except Exception:
++                continue
++            if book is not None and book.id == book_id:
++                matches.append(candidate.resolve())
++        return matches
++
++    user_matches = matching(user_root.glob("*.y*ml")) if user_root.exists() else []
++    if len(user_matches) > 1:
++        raise StudioError(f"Mehrere Benutzer-Spellbooks verwenden dieselbe ID: {book_id}")
++
++    builtin_matches = matching(spellbook_loader.BUILTIN_BOOK_DIR.glob("*.y*ml"))
++    if len(builtin_matches) > 1:
++        raise StudioError(f"Mehrere ausgelieferte Spellbooks verwenden dieselbe ID: {book_id}")
++
++    user = user_matches[0] if user_matches else None
++    builtin = builtin_matches[0] if builtin_matches else None
++    return user or builtin, user, builtin
++
++
+ def _preserve_existing_user_variant(old: dict | None, new: dict, fallback_mode: str | None) -> dict:
+     """Apply the Studio's explicit User-fallback choice."""
+     result = deepcopy(new)
+@@ -99,12 +134,11 @@
+ 
+     async def file_info(self, book_id, *, cover=False):
+         def inspect():
+-            path = _list_book_files(self.hass).get(book_id)
++            path, user_override, builtin_path = _studio_book_sources(self.hass, book_id)
+             if path is None:
+                 raise StudioError("Dieses Spellbook wurde nicht gefunden.")
+-            custom = path.resolve().parent == Path(self.hass.config.path(USER_BOOK_SUBDIR)).resolve()
+-            builtin = any((book := spellbook_loader.load_spellbook_from_path(p)) and book.id == book_id
+-                          for p in spellbook_loader.BUILTIN_BOOK_DIR.glob("*.y*ml"))
++            custom = user_override is not None and path == user_override
++            builtin = builtin_path is not None
+             png = path.with_suffix(".png")
+             has_cover = png.is_file() and not png.is_symlink()
+             info = {"origin": "override" if custom and builtin else "custom" if custom else "builtin",
+@@ -119,14 +153,13 @@
+     async def remove_book(self, book_id, revision, *, reset=False):
+         async with self.lock:
+             def remove():
+-                path = _list_book_files(self.hass).get(book_id)
++                _active, path, builtin_path = _studio_book_sources(self.hass, book_id)
+                 root = Path(self.hass.config.path(USER_BOOK_SUBDIR)).resolve()
+                 if path is None or path.is_symlink() or path.resolve().parent != root:
+                     raise StudioError("Only custom books can be deleted or reset.")
+                 if hashlib.sha256(path.read_text(encoding="utf-8").encode()).hexdigest() != revision:
+                     raise StudioError("Das Buch wurde inzwischen geändert. Bitte neu laden und Änderungen vergleichen.")
+-                builtin = any((book := spellbook_loader.load_spellbook_from_path(p)) and book.id == book_id
+-                              for p in spellbook_loader.BUILTIN_BOOK_DIR.glob("*.y*ml"))
++                builtin = builtin_path is not None
+                 if reset and not builtin:
+                     raise StudioError("No built-in original exists.")
+                 moved = []
+@@ -157,7 +190,7 @@
+ 
+     async def read(self, book_id):
+         def read_file():
+-            path = _list_book_files(self.hass).get(book_id)
++            path, _user_override, _builtin = _studio_book_sources(self.hass, book_id)
+             if path is None:
+                 raise StudioError("Dieses Spellbook wurde nicht gefunden.")
+             text = path.read_text(encoding="utf-8")
+@@ -170,32 +203,70 @@
+         return await self.hass.async_add_executor_job(read_file)
+ 
+     async def write(self, raw, revision):
++        """Persist a Studio book, forking shipped books into the user directory.
++
++        A built-in is immutable.  The first mutation writes a complete user
++        override (and its adjacent cover, when present); later mutations target
++        that override directly.  The built-in remains untouched and becomes
++        active again when the override is reset/deleted.
++        """
+         check_document(raw)
+         async with self.lock:
+             def write_file():
+-                paths = _list_book_files(self.hass)
+-                old_path = paths.get(raw["id"])
+-                current = hashlib.sha256(old_path.read_text(encoding="utf-8").encode()).hexdigest() if old_path else None
++                book_id = raw["id"]
++                active_path, user_override, builtin_path = _studio_book_sources(self.hass, book_id)
++                current = (
++                    hashlib.sha256(active_path.read_text(encoding="utf-8").encode()).hexdigest()
++                    if active_path else None
++                )
+                 if current != revision:
+                     raise StudioError("Das Buch wurde inzwischen geändert. Bitte neu laden und Änderungen vergleichen.")
++
+                 directory = Path(self.hass.config.path(USER_BOOK_SUBDIR)).resolve()
+                 directory.mkdir(parents=True, exist_ok=True)
+-                destination = old_path.resolve() if old_path and old_path.resolve().parent == directory else directory / (old_path.name if old_path else f"{raw['id']}.yaml")
++
++                # User books are always edited in place.  Shipped books are
++                # forked on the first mutation, preserving the shipped filename
++                # so the override stays obvious on disk.
++                if user_override is not None:
++                    destination = user_override
++                elif builtin_path is not None:
++                    destination = directory / builtin_path.name
++                else:
++                    destination = directory / f"{book_id}.yaml"
++
++                destination = destination.resolve()
+                 if destination.parent != directory:
+                     raise StudioError("Ungültiger Speicherort.")
+-                if destination.exists() and destination != old_path:
+-                    raise StudioError("Eine andere Datei belegt diesen Speicherort.")
+-                # Stage the complete book before publishing its adjacent cover.
++                if destination.is_symlink():
++                    raise StudioError("Ungültiger Speicherort.")
++
++                # A same-named user file that belongs to another logical book
++                # must never be overwritten while creating an override.
++                if destination.exists() and user_override is None:
++                    existing = spellbook_loader.load_spellbook_from_path(destination)
++                    if existing is None or existing.id != book_id:
++                        raise StudioError("Eine andere Datei belegt diesen Speicherort.")
++
++                text = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False)
++                descriptor, temporary = tempfile.mkstemp(dir=directory, suffix=".tmp")
++
++                # Only the first fork inherits the shipped cover.  Existing user
++                # covers are never replaced implicitly by a YAML save.
+                 cover_destination = None
+                 cover_bytes = None
+-                if old_path and destination != old_path and old_path.with_suffix(".png").is_file():
+-                    cover_source = old_path.with_suffix(".png")
++                if user_override is None and builtin_path is not None:
++                    cover_source = builtin_path.with_suffix(".png")
+                     candidate = destination.with_suffix(".png")
+-                    if not cover_source.is_symlink() and not candidate.exists() and not candidate.is_symlink():
++                    if (
++                        cover_source.is_file()
++                        and not cover_source.is_symlink()
++                        and not candidate.exists()
++                        and not candidate.is_symlink()
++                    ):
+                         cover_destination = candidate
+                         cover_bytes = cover_source.read_bytes()
+-                text = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False)
+-                descriptor, temporary = tempfile.mkstemp(dir=directory, suffix=".tmp")
++
+                 cover_created = False
+                 try:
+                     with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+@@ -214,7 +285,16 @@
+                 finally:
+                     if os.path.exists(temporary):
+                         os.unlink(temporary)
++
++                # Verify the fork is now the Studio's active source.  This catches
++                # loader precedence regressions immediately instead of pretending
++                # the save succeeded while continuing to show the built-in.
++                resolved, resolved_user, _resolved_builtin = _studio_book_sources(self.hass, book_id)
++                if resolved_user is None or resolved != destination:
++                    raise StudioError("Benutzer-Override wurde gespeichert, konnte aber nicht als aktive Version aufgelöst werden.")
++
+                 return hashlib.sha256(text.encode()).hexdigest()
++
+             return await self.hass.async_add_executor_job(write_file)
+ 
+     def _configured_profiles(self):

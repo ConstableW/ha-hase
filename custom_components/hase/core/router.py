@@ -347,6 +347,8 @@ class SpellbookRouter:
             )
 
         assert isinstance(result, EngineMatch)
+        if result.query_plan is not None:
+            return await self._execute_query_plan_and_respond(request, result.query_plan, config.policy)
         return await self._execute_and_respond(request, result.action_draft, config.policy)
 
     async def _execute_and_respond(self, request, action_draft, policy) -> ConversationResult:
@@ -371,7 +373,32 @@ class SpellbookRouter:
             status = ConversationStatus.ERROR
 
         return ConversationResult(
-            request_id=request.request_id, response_text=text, status=status, execution_results=(execution,)
+            request_id=request.request_id, response_text=text, status=status,
+            execution_results=(execution,), output_mode=action_draft.output_mode,
+        )
+
+    async def _execute_query_plan_and_respond(self, request, query_plan, policy) -> ConversationResult:
+        """Multi-source-query sibling of _execute_and_respond (item 4/5) -
+        same status mapping, minus SUCCESS (a query never has a bare
+        "did something" outcome, only QUERY_ANSWER/DENIED/error, same as
+        the single-entity entity.get_state path above)."""
+        execution = await self._executor.execute_query_plan(
+            query_plan, policy, context=request.context, source_area_id=request.source_area_id
+        )
+
+        if execution.status is ExecutionStatus.QUERY_ANSWER:
+            text = _response_text_for_success(execution)
+            status = ConversationStatus.COMPLETED
+        elif execution.status is ExecutionStatus.DENIED:
+            text = _REJECTED_TEXT
+            status = ConversationStatus.REJECTED
+        else:
+            text = _ERROR_TEXT
+            status = ConversationStatus.ERROR
+
+        return ConversationResult(
+            request_id=request.request_id, response_text=text, status=status,
+            execution_results=(execution,), output_mode=query_plan.output_mode,
         )
 
     async def _consult_backend(
@@ -504,6 +531,8 @@ class SpellbookRouter:
 
 def _response_text_for_success(execution: ExecutionResult) -> str:
     if execution.status is ExecutionStatus.QUERY_ANSWER:
+        if isinstance(execution.data.get("response_text"), str):
+            return execution.data["response_text"]
         state = execution.data.get("state")
         unit = execution.data.get("unit")
         if state is None:

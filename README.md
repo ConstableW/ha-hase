@@ -13,58 +13,102 @@ migriert. Vor dem Wechsel sichern, alte Entries mit installiertem Altcode entfer
 frisch einrichten. Es gibt keine alten Service-, Event- oder Pfad-Aliasse.
 Siehe [Cutover und Live-Abnahme](docs/HASE-CUTOVER.md) und [Architektur](docs/HASE-ARCHITECTURE.md).
 
-## Agents einrichten
-
-Nach „Integration hinzufügen → HASE“ entweder ein CODE27-Gerät verbinden oder einen
-Spellbook-only-Agent erstellen. Für den Agent ein Engine-Book und getrennte Bereiche für
-Aktionen und Abfragen wählen. Engine-Bücher liegen in `custom_components/hase/spellbooks/`
-oder `<config>/hase_spellbooks/`.
-
-Satelliten werden am CODE27-Geräte-Entry als Subentry hinzugefügt. Name, aktiven Character-Slot,
-optionales Engine-Book und Bereichsrichtlinien einstellen. Ohne lokales Buch geht die Anfrage
-zum CODE27-Backend; ein konfiguriertes, aber defektes Buch führt weiterhin zu einem Fehler.
-Die vorhandene Einschränkung der Antwortzuordnung bei gleichzeitigem physischem/App-Chat bleibt bestehen.
-
-Die folgenden Abschnitte beschreiben den CODE27-Provider. Die Screenshots zeigen den früheren
-CODE27-Auftritt; im neuen Integrationsdialog heißt die Integration HASE.
-
-Der CODE27-Provider verbindet dein CODE27-Gerät (Web-UI unter
-`http://<ip>:8081`, intern **CODIE** genannt) über dessen **eigene lokale
-REST- und WebSocket-API** einbindet – exakt das Protokoll, das auch die
-Web-Oberfläche des Geräts selbst nutzt. Es wurde nichts erfunden, was das
-Gerät nicht ohnehin schon anbietet.
-
-Dazu gibt es eine passende **Dashboard-Karte** (`code27-card`) mit Chat,
-Licht-/Musiksteuerung, Alarmen, Notizen und einem Live-Feed der Sprachbrücke.
-
 ## Inhalt
 
-- [Voraussetzungen](#voraussetzungen)
+- [Agents: Spellbooker & Satelliten](#agents-spellbooker--satelliten)
+  - [Eigenständiger Spellbooker (kein CODE27-Gerät nötig)](#eigenständiger-spellbooker-kein-code27-gerät-nötig)
+  - [Satellit (Subentry an einem CODE27-Gerät)](#satellit-subentry-an-einem-code27-gerät)
 - [Installation](#installation)
-- [Einrichtung (Schritt für Schritt)](#einrichtung-schritt-für-schritt)
-- [Was wird angelegt?](#was-wird-angelegt)
-- [Optionen konfigurieren](#optionen-konfigurieren)
-- [Services](#services)
-- [Events](#events)
-- [Assist-Bridge – Sprachbefehle aus dem Chat heraus](#assist-bridge--sprachbefehle-aus-dem-chat-heraus)
-  - [Zweistufige Befehls-Bereinigung (optional)](#zweistufige-befehls-bereinigung-optional)
-  - [Bewährte Sprachmuster (Assist-Grammatik)](#bewährte-sprachmuster-assist-grammatik)
-  - [Spellbooks – feste Zauberformeln](#spellbooks--feste-zauberformeln)
-  - [Vacuum-Area-Resolver](#vacuum-area-resolver)
-- [Dashboard-Karte (code27-card)](#dashboard-karte-code27-card)
-- [Bewusste Design-Entscheidungen](#bewusste-design-entscheidungen)
-- [Bekannte Grenzen](#bekannte-grenzen)
-- [Technischer Hintergrund](#technischer-hintergrund)
+- [CODE27-Provider](#code27-provider)
+  - [Voraussetzungen](#voraussetzungen)
+  - [Einrichtung (Schritt für Schritt)](#einrichtung-schritt-für-schritt)
+  - [Was wird angelegt?](#was-wird-angelegt)
+  - [Optionen konfigurieren](#optionen-konfigurieren)
+  - [Services](#services)
+  - [Events](#events)
+  - [Assist-Bridge – Sprachbefehle aus dem Chat heraus](#assist-bridge--sprachbefehle-aus-dem-chat-heraus)
+    - [Zweistufige Befehls-Bereinigung (optional)](#zweistufige-befehls-bereinigung-optional)
+    - [Bewährte Sprachmuster (Assist-Grammatik)](#bewährte-sprachmuster-assist-grammatik)
+    - [Spellbooks – feste Zauberformeln](#spellbooks--feste-zauberformeln)
+    - [Vacuum-Area-Resolver](#vacuum-area-resolver)
+  - [Dashboard-Karte (code27-card)](#dashboard-karte-code27-card)
+  - [Bewusste Design-Entscheidungen](#bewusste-design-entscheidungen)
+  - [Bekannte Grenzen](#bekannte-grenzen)
+  - [Technischer Hintergrund](#technischer-hintergrund)
 - [Support & Issues](#support--issues)
 
-## Voraussetzungen
+## Agents: Spellbooker & Satelliten
 
-- Nur für den CODE27-Provider: ein CODE27-Gerät im selben lokalen Netzwerk wie Home Assistant, erreichbar
-  unter `http://<ip>:8081`.
-- Eine halbwegs aktuelle Home-Assistant-Version (die Assist-Bridge nutzt
-  `conversation.async_converse` und den `ConversationAgentSelector`).
-- Für die optionale Assist-Bridge: ein eingerichteter Assist-Sprachassistent
-  in Home Assistant.
+Hinter "Einstellungen → Geräte & Dienste → Integration hinzufügen → HASE" stecken zwei
+unabhängige Wege, einen Agent anzulegen: ein CODE27-Gerät koppeln (siehe
+[CODE27-Provider](#code27-provider) unten), oder einen eigenständigen **Spellbooker**-
+Sprachassistenten erstellen, der kein Gerät braucht. Ein dritter Weg – ein **Satellit** –
+wird nachträglich an einem bereits eingerichteten CODE27-Gerät hinzugefügt. Beide brauchen
+kein CODE27-Gerät bzw. hängen an einem bereits vorhandenen – die im Rest des Dokuments
+beschriebene Pairing-Prozedur, Geräte-Entitäten, Services, Events, Assist-Bridge und
+Dashboard-Karte gehören ausschließlich zum CODE27-Provider.
+
+### Eigenständiger Spellbooker (kein CODE27-Gerät nötig)
+
+"Integration hinzufügen → HASE → Spellbooker-Sprachassistent anlegen" legt einen reinen
+Conversation-Agent an, der ausschließlich Kommandos aus einem Spellbook versteht – ohne
+CODE27-Hardware, Chat-Bridge-Umweg oder Backend-Fallback.
+
+![Spellbooker anlegen auswählen](docs/screenshots/08-spellbooker-menu.png)
+
+*(Platzhalter – Screenshot des Auswahlmenüs "CODE27-Gerät verbinden" / "Spellbooker-Sprachassistent anlegen" folgt.)*
+
+| Feld | Bedeutung |
+|---|---|
+| Name | Titel des Eintrags und Name der resultierenden `conversation.*`-Entität |
+| Spellbook | Eines der Bücher aus `custom_components/hase/spellbooks/` oder `<config>/hase_spellbooks/` |
+| Erlaubte Bereiche (Aktionen) / Aktionen uneingeschränkt | In welchen Bereichen dieser Assistent Aktionen ausführen darf; "uneingeschränkt" erlaubt alle Bereiche und ignoriert die Auswahl |
+| Erlaubte Bereiche (Abfragen) / Abfragen uneingeschränkt | Unabhängig von den Aktions-Bereichen: in welchen Bereichen Statusabfragen (z. B. "wie warm ist es in X") beantwortet werden dürfen |
+| Antwort bei Nicht-Treffer | Wird gesagt, wenn ein Satz zu keinem Spellbook-Kommando passt. Leer = Standardantwort |
+
+![Spellbooker-Formular ausfüllen](docs/screenshots/09-spellbooker-form.png)
+
+*(Platzhalter – Screenshot des Spellbooker-Einrichtungsformulars folgt.)*
+
+Für Aktionen und für Abfragen ist jeweils entweder mindestens ein Bereich oder
+"uneingeschränkt" Pflicht. Der Spellbooker erscheint als eigener Eintrag unter Geräte &
+Dienste – kein Gerät, keine weiteren Entitäten außer der Conversation-Entität selbst – und
+lässt sich wie jeder andere Sprachassistent unter **Einstellungen → Sprachassistenten** in
+eine Assist-Pipeline einhängen. Optionen (Spellbook, Bereiche, Nicht-Treffer-Antwort) lassen
+sich jederzeit über "Konfigurieren" anpassen.
+
+### Satellit (Subentry an einem CODE27-Gerät)
+
+⚠️ **Experimentell**: Ein Satellit probiert zuerst sein eigenes Spellbook und reicht bei
+Nicht-Treffer an ein echtes Charakter-Gespräch auf dem zugehörigen CODE27-Gerät weiter. Die
+Antwortzuordnung zum Gerät (welche Antwort zu welcher Anfrage gehört) wurde nicht gegen
+gleichzeitige physische Chat-Nutzung am Gerät selbst getestet – nicht dort einsetzen, wo eine
+falsche oder verspätete Antwort ein echtes Problem wäre.
+
+Auf der Seite eines bereits eingerichteten CODE27-Eintrags über dessen Subentry-Menü
+**"Satellit hinzufügen"** wählen:
+
+![Satellit-Subentry hinzufügen](docs/screenshots/10-satellite-subentry-menu.png)
+
+*(Platzhalter – Screenshot des Subentry-Menüs am CODE27-Geräte-Eintrag folgt.)*
+
+| Feld | Bedeutung |
+|---|---|
+| Name | Name des Satelliten; erscheint als eigenes "Gerät" unterhalb des CODE27-Geräts (z. B. "CODE27 Papa" → "Lilya Satellit") |
+| Charakter-Slot | Nummer des Charakter-Slots auf dem Gerät, mit dem der Satellit spricht (dieselbe Nummer wie in dessen eigener Charakter-Slot-Auswahl) |
+| Spellbook | Optional; "— Kein lokales Spellbook —" schickt jede Äußerung direkt an das CODE27-Backend (Charakter-Chat) |
+| Erlaubte Bereiche (Aktionen) / Aktionen uneingeschränkt | Gilt für das lokale Spellbook **und** für alles, was das CODE27-Backend vorschlägt |
+| Erlaubte Bereiche (Abfragen) / Abfragen uneingeschränkt | Unabhängig von den Aktions-Bereichen |
+| Antwort bei Nicht-Treffer | Nur relevant ohne ausgewähltes Spellbook – ist eines gewählt, geht ein Nicht-Treffer stattdessen immer an den Charakter des Geräts |
+
+![Satellit-Formular ausfüllen](docs/screenshots/11-satellite-form.png)
+
+*(Platzhalter – Screenshot des Satelliten-Einrichtungsformulars folgt.)*
+
+Ein Satellit teilt sich Coordinator und Backend-Lock mit seinem CODE27-Gerät und erzeugt
+keinen eigenen Eintrag auf oberster Ebene – er hängt fest an genau dem Gerät, an dem er
+angelegt wurde. Bestehende Satelliten lassen sich über ihr eigenes Subentry-Menü ("Satellit
+neu konfigurieren") anpassen; jede Änderung lädt den gesamten CODE27-Eintrag neu.
 
 ## Installation
 
@@ -75,11 +119,43 @@ Licht-/Musiksteuerung, Alarmen, Notizen und einem Live-Feed der Sprachbrücke.
    und, wichtig für spätere Updates, neue Entitäten werden bei diesem
    Integrationstyp zuverlässig nur bei einem echten Neustart eingelesen).
 
-## Einrichtung (Schritt für Schritt)
+Dieser Schritt gilt unabhängig davon, ob danach ein eigenständiger Spellbooker,
+ein Satellit oder ein CODE27-Gerät eingerichtet wird – alle drei leben im selben
+`custom_components/hase`.
 
-### 1. Integration hinzufügen
+## CODE27-Provider
 
-**Einstellungen → Geräte & Dienste → Integration hinzufügen → "HASE"** suchen.
+Alles ab hier – Pairing, Geräte-Entitäten, Optionen, Services, Events, Assist-Bridge
+und Dashboard-Karte – gehört ausschließlich zum **CODE27-Provider** und setzt ein
+CODE27-Gerät voraus. Für einen eigenständigen Spellbooker oder einen Satelliten ist
+nichts davon nötig (siehe [Agents: Spellbooker & Satelliten](#agents-spellbooker--satelliten)
+oben). Die Screenshots zeigen den früheren CODE27-Auftritt; im neuen Integrationsdialog
+heißt die Integration HASE.
+
+Der CODE27-Provider verbindet dein CODE27-Gerät (Web-UI unter
+`http://<ip>:8081`, intern **CODIE** genannt) über dessen **eigene lokale
+REST- und WebSocket-API** einbindet – exakt das Protokoll, das auch die
+Web-Oberfläche des Geräts selbst nutzt. Es wurde nichts erfunden, was das
+Gerät nicht ohnehin schon anbietet.
+
+Dazu gibt es eine passende **Dashboard-Karte** (`code27-card`) mit Chat,
+Licht-/Musiksteuerung, Alarmen, Notizen und einem Live-Feed der Sprachbrücke.
+
+### Voraussetzungen
+
+- Ein CODE27-Gerät im selben lokalen Netzwerk wie Home Assistant, erreichbar
+  unter `http://<ip>:8081`.
+- Eine halbwegs aktuelle Home-Assistant-Version (die Assist-Bridge nutzt
+  `conversation.async_converse` und den `ConversationAgentSelector`).
+- Für die optionale Assist-Bridge: ein eingerichteter Assist-Sprachassistent
+  in Home Assistant.
+
+### Einrichtung (Schritt für Schritt)
+
+#### 1. Integration hinzufügen
+
+**Einstellungen → Geräte & Dienste → Integration hinzufügen → "HASE"** suchen, dann
+**"CODE27-Gerät verbinden"** wählen.
 
 ![Integration hinzufügen](docs/screenshots/01-add-integration.png)
 
@@ -88,7 +164,7 @@ den Port (`8081`) ein.
 
 ![Host und Port eingeben](docs/screenshots/02-host-port.png)
 
-### 2. Pairing
+#### 2. Pairing
 
 Auf dem **Bildschirm des CODE27-Geräts selbst** erscheint jetzt ein
 6-stelliger Pairing-Code (Device-Pairing-Screen, kein Login nötig – das ist
@@ -104,14 +180,14 @@ Home Assistant erhält dabei ein **eigenes, dauerhaftes lokales Secret** –
 unabhängig von jeder Browser-Session, die du sonst mit dem Gerät benutzt
 (so, als hätte HA sein eigenes "Gerät" in der CODE27-App).
 
-### 3. Fertig
+#### 3. Fertig
 
 Die Integration legt jetzt ein Gerät mit allen Entitäten an (siehe Tabelle
 unten) und beginnt sofort mit dem Abfragen.
 
 ![Fertig eingerichtetes Gerät](docs/screenshots/05-device-overview.png)
 
-## Was wird angelegt?
+### Was wird angelegt?
 
 Alles hängt an einem Gerät ("CODE27 (\<host\>)") in Home Assistant:
 
@@ -130,7 +206,11 @@ Alles hängt an einem Gerät ("CODE27 (\<host\>)") in Home Assistant:
 | Aktiver Charakter / Aktive Alarme / Notizen / Sprache / Zeitzone / Build-Typ | `sensor` | Diagnose- und Statuswerte |
 | Testton abspielen / Ton stoppen | `button` | Gerätetest ohne Umweg über die Geräte-UI |
 
-## Optionen konfigurieren
+Ein eigenständiger Spellbooker oder ein Satellit legt **keine** dieser Entitäten an –
+nur die eine `conversation.*`-Entität selbst (siehe
+[Agents: Spellbooker & Satelliten](#agents-spellbooker--satelliten)).
+
+### Optionen konfigurieren
 
 **Einstellungen → Geräte & Dienste → HASE → Konfigurieren** öffnet den
 Options-Dialog mit dem Abfrageintervall und der Assist-Bridge:
@@ -156,7 +236,10 @@ Options-Dialog mit dem Abfrageintervall und der Assist-Bridge:
 Das Abfrageintervall ist **pro Gerät** (Config Entry) gespeichert – hast du
 mehrere CODE27-Geräte, hat jedes seine eigenen Optionen.
 
-## Services
+### Services
+
+Alle Services zielen über `config_entry_id` auf ein bestehendes CODE27-Gerät und
+stehen für einen eigenständigen Spellbooker oder einen Satelliten nicht zur Verfügung.
 
 | Service | Beschreibung |
 |---|---|
@@ -168,7 +251,10 @@ mehrere CODE27-Geräte, hat jedes seine eigenen Optionen.
 | `hase.notify` | Lässt die LEDs in einer Farbe blinken, bis quittiert – für Alarme aus z. B. Node-RED. Felder: `message` (nur geloggt, nicht gesprochen), `rgb_color` (Standard Rot) |
 | `hase.notify_clear` | Beendet das Blinken programmatisch (statt über den Button) |
 
-## Events
+### Events
+
+Auch diese Events feuern nur für ein CODE27-Gerät (Chat mit dessen Charakter), nicht
+für einen eigenständigen Spellbooker oder einen Satelliten.
 
 | Event | Payload | Wann |
 |---|---|---|
@@ -190,7 +276,7 @@ action:
   - service: script.gute_nacht_routine
 ```
 
-## Assist-Bridge – Sprachbefehle aus dem Chat heraus
+### Assist-Bridge – Sprachbefehle aus dem Chat heraus
 
 CODE27 selbst hat (Stand heute) **kein** Function-Calling/Tool-System, mit dem
 der Charakter direkt Geräte schalten könnte – im Web-Bundle der Geräte-UI
@@ -220,7 +306,7 @@ darauf (kein 1:1-Vorlesen, es gibt keine API, um dem Charakter Worte "in den
 Mund zu legen"). Standardmäßig aus, weil das sonst wie eine ungefragte
 Doppel-Antwort wirkt.
 
-### Zweistufige Befehls-Bereinigung (optional)
+#### Zweistufige Befehls-Bereinigung (optional)
 
 Ein Charakter wird nicht wie ein Lautsprecher angesprochen, sondern im
 Rollenspiel-Ton – z. B. „Du, sag mal, würdest du Home Assistant vielleicht
@@ -263,7 +349,7 @@ machbar, kein dediziertes KI-Rechenzentrum nötig.
 
 ✅ End-to-end gegen ein echtes Gerät getestet und funktionsfähig.
 
-### Bewährte Sprachmuster (Assist-Grammatik)
+#### Bewährte Sprachmuster (Assist-Grammatik)
 
 Assist versteht nicht jede naheliegende Formulierung gleich gut – diese
 Muster wurden gegen eine echte Produktivinstanz durchgetestet und sind
@@ -323,7 +409,7 @@ an dieser Bridge reparierbar.
 über den Bereich) funktioniert praktisch nie zuverlässig, selbst mit exakt
 passendem Entitätsnamen. Bereichsbasierte Befehle sind der verlässliche Weg.
 
-### Spellbooks – feste Zauberformeln
+#### Spellbooks – feste Zauberformeln
 
 Statt jedes Mal "Codewort, Licht Wohnzimmer einschalten" zu sagen, kann ein
 **Spellbook** feste Trigger-Sätze ("Zauberformeln") direkt auf einen
@@ -340,7 +426,10 @@ Drei gemeinsame HASE-Spellbooks liegen bei (`custom_components/hase/spellbooks/`
 Potterverse, Middle-earth und Demo. Eigene Spellbooks als YAML-Datei in
 `<config>/hase_spellbooks/` ablegen – werden automatisch erkannt, kein
 Neustart nötig (YAML wird bei jeder Nachricht neu eingelesen, nur an Python-
-Dateien geänderte Fixes brauchen einen echten Neustart).
+Dateien geänderte Fixes brauchen einen echten Neustart). Dieselben Bücher
+werden auch von einem eigenständigen Spellbooker und von Satelliten benutzt
+(siehe [Agents: Spellbooker & Satelliten](#agents-spellbooker--satelliten)),
+nicht nur von der CODE27-Bridge.
 
 **Auswahl bei mehreren Kandidaten:** Passt eine gesprochene/getippte
 Formulierung nicht exakt, sondern nur ungefähr auf mehrere Trigger
@@ -362,13 +451,14 @@ erkennbares Wort daraus reicht (z. B. nur "lösche" oder nur "entzünde").
 
 Globale Beleuchtung verwendet `light.set_power`, `target: {kind: all_allowed}` und `arguments: {"on": true}` (oder `false`). Registry-/Exposure-Prüfung und Bereichspolicy bestimmen die erlaubten Ziele. Sauger verwenden `vacuum.clean_area` mit einem Bereichsziel. Details: [Etappe 8](docs/spellbook-engine/etappe-8-unified-spellbooks.md).
 
-### Vacuum-Area-Resolver
+#### Vacuum-Area-Resolver
 
 Ein Spellbook-Eintrag mit `operation: vacuum.clean_area` (z. B. "Reinigt die Hallen
 von {area}") löst den gesprochenen Bereich auf einen Saugroboter-Raum auf und
-startet die Reinigung nur dieses einen Raums. Standardmäßig **aus** (Option
-"Vacuum-Aktion aktivieren" – ein echter physischer Seiteneffekt, kein reiner
-Textbefehl).
+startet die Reinigung nur dieses einen Raums. Über die CODE27 Assist-Bridge
+standardmäßig **aus** (Option "Vacuum-Aktion aktivieren" – ein echter physischer
+Seiteneffekt, kein reiner Textbefehl); ein Spellbooker oder Satellit mit einem
+entsprechenden Buch-Eintrag hat dagegen keinen eigenen Umschalter dafür.
 
 Zweistufig, in dieser Reihenfolge:
 
@@ -393,14 +483,14 @@ gleichnamigem Raum) oder ein Fehler beim Ansprechen des Geräts wird **nie
 geraten** – die Bridge loggt den Grund und tut nichts, statt versehentlich
 den falschen Raum zu reinigen.
 
-## Dashboard-Karte (code27-card)
+### Dashboard-Karte (code27-card)
 
 Eine Lovelace-Custom-Card mit CODE27-Branding, reaktivem Glow in der
 aktuellen Umgebungsfarbe, Chat und den wichtigsten Bedienelementen:
 
 ![Dashboard-Karte](docs/screenshots/07-dashboard-card.png)
 
-### Installation der Karte
+#### Installation der Karte
 
 1. Kopiere `www/hase/code27-card.js` (und optional ein eigenes Portrait-Bild) in
    den `www`-Ordner deiner Home-Assistant-Konfiguration, z. B.
@@ -412,7 +502,7 @@ aktuellen Umgebungsfarbe, Chat und den wichtigsten Bedienelementen:
    hinzufügen**: URL `/local/hase/code27-card.js`, Typ "JavaScript-Modul".
 4. Karte auf einem Dashboard hinzufügen, Typ `custom:code27-card`.
 
-### Konfiguration
+#### Konfiguration
 
 ```yaml
 type: custom:code27-card
@@ -443,7 +533,7 @@ Home-Assistant-Oberflächensprache (Deutsch bei Deutsch, sonst Englisch).
 die alte Version. Entweder die Ressourcen-URL mit einem neuen
 `?v=`-Parameter versehen, oder Strg+Shift+R (harter Reload).
 
-## Bewusste Design-Entscheidungen
+### Bewusste Design-Entscheidungen
 
 - **Kein Reset/Character-Editor**: Das Zurücksetzen eines Charakters oder das
   Bearbeiten von Persönlichkeits-Prompts wurde bewusst *nicht* als Entität
@@ -464,7 +554,7 @@ die alte Version. Entweder die Ressourcen-URL mit einem neuen
   Normal-Modus leer ist. Für "zu einer Szene zurück" die Lichtszene-Auswahl
   benutzen, die per `apply` sauber funktioniert.
 
-## Bekannte Grenzen
+### Bekannte Grenzen
 
 Alles unten ist bewusst *nicht* gebaut, weil CODE27 es nicht anbietet – nicht
 weil wir es übersehen hätten:
@@ -484,7 +574,7 @@ weil wir es übersehen hätten:
   Ruhezeiten) – spannend für später, falls CODE27 das mal für lokale
   Pairings öffnet.
 
-## Technischer Hintergrund
+### Technischer Hintergrund
 
 Das Gerät verlangt für alle Endpunkte außer den drei Auth-Routen eine
 HMAC-SHA256-Signatur (`X-Local-Sig` u. a. Header), abgeleitet aus einem beim

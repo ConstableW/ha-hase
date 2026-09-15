@@ -105,6 +105,37 @@ class HaTargetResolver:
         # result, not a performance optimization worth that risk. The
         # lookups here are in-memory dict/attribute access, not I/O -
         # there was never a blocking-call reason to offload them.
+        if target.kind in ("template", "entity_ids"):
+            raw = target.value
+            if target.kind == "template":
+                from homeassistant.helpers.template import Template
+                try:
+                    template = Template(target.value, self._hass)
+                    template.ensure_valid()
+                    raw = template.async_render(parse_result=True)
+                except Exception:  # noqa: BLE001 - untrusted template failures are diagnostics.
+                    return ResolvedTargets((), ({"reason": "template_error"},), None)
+            if isinstance(raw, str):
+                values = [v.strip() for v in raw.split(",")] if raw.strip() else []
+            elif isinstance(raw, (list, tuple)):
+                values = list(raw)
+            else:
+                return ResolvedTargets((), ({"reason": "invalid_template_result"},), str(raw)[:4096])
+            import re
+            if len(values) > 256 or not all(isinstance(v, str) and re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", v) for v in values):
+                return ResolvedTargets((), ({"reason": "invalid_template_result"},), str(raw)[:4096])
+            entities, rejected = [], []
+            for value in dict.fromkeys(values):
+                result = self._resolve_sync(ActionTarget("entity_id", value), domain_filter)
+                if isinstance(result, TargetNotFound):
+                    state = self._hass.states.get(value)
+                    reason = "not_found" if state is None else (
+                        "wrong_domain" if domain_filter and value.split(".")[0] != domain_filter else
+                        "unavailable" if state.state in ("unavailable", "unknown") else "not_exposed_or_ineligible")
+                    rejected.append({"entity_id": value, "reason": reason})
+                else:
+                    entities.extend(result.entities)
+            return ResolvedTargets(tuple(entities), tuple(rejected), raw)
         return self._resolve_sync(target, domain_filter)
 
     async def resolve_area(self, target: ActionTarget) -> str | TargetNotFound:
@@ -242,32 +273,80 @@ class HaServiceCaller:
         self._hass = hass
 
     async def set_light_power(
-        self, entity_ids: tuple[str, ...], on: bool, *, context: object | None = None
+        self, entity_ids: tuple[str, ...], on: bool, *, area_id: str | None = None,
+        context: object | None = None
     ) -> bool:
         try:
-            await self._hass.services.async_call(
-                "light",
-                "turn_on" if on else "turn_off",
-                {"entity_id": list(entity_ids)},
-                blocking=True,
-                context=context,
-            )
+            if area_id:
+                await self._hass.services.async_call(
+                    "light", "turn_on" if on else "turn_off", {},
+                    target={"area_id": area_id}, blocking=True, context=context,
+                )
+            else:
+                # Keep the established payload shape used by existing HASE
+                # clients and tests; native area targeting is an optional path.
+                await self._hass.services.async_call(
+                    "light", "turn_on" if on else "turn_off",
+                    {"entity_id": list(entity_ids)}, blocking=True, context=context,
+                )
         except Exception as err:  # noqa: BLE001 - executor turns this into FAILED, not a crash
             _LOGGER.warning("spellbooker: light.set_power service call failed: %s", err)
             return False
         return True
 
-    async def skip_track(
-        self, entity_ids: tuple[str, ...], forward: bool, *, context: object | None = None
+    async def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_ids: tuple[str, ...],
+        data: dict,
+        *,
+        area_id: str | None = None,
+        context: object | None = None,
     ) -> bool:
+        """Execute a service selected by ActionExecutor's closed whitelist.
+
+        The spellbook never supplies `domain` or `service` directly. Targets
+        have already been resolved/exposure-checked/policy-checked by the
+        executor before this method is reached.
+        """
+        target = {"area_id": area_id} if area_id else {"entity_id": list(entity_ids)}
         try:
             await self._hass.services.async_call(
-                "media_player",
-                "media_next_track" if forward else "media_previous_track",
-                {"entity_id": list(entity_ids)},
+                domain,
+                service,
+                dict(data),
+                target=target,
                 blocking=True,
                 context=context,
             )
+        except Exception as err:  # noqa: BLE001 - executor converts this to FAILED
+            _LOGGER.warning(
+                "spellbooker: %s.%s service call failed: %s",
+                domain,
+                service,
+                err,
+            )
+            return False
+        return True
+
+    async def skip_track(
+        self, entity_ids: tuple[str, ...], forward: bool, *, area_id: str | None = None,
+        context: object | None = None
+    ) -> bool:
+        try:
+            if area_id:
+                await self._hass.services.async_call(
+                    "media_player",
+                    "media_next_track" if forward else "media_previous_track",
+                    {}, target={"area_id": area_id}, blocking=True, context=context,
+                )
+            else:
+                await self._hass.services.async_call(
+                    "media_player",
+                    "media_next_track" if forward else "media_previous_track",
+                    {"entity_id": list(entity_ids)}, blocking=True, context=context,
+                )
         except Exception as err:  # noqa: BLE001 - executor turns this into FAILED, not a crash
             _LOGGER.warning("spellbooker: media_player.skip_track service call failed: %s", err)
             return False
@@ -277,7 +356,64 @@ class HaServiceCaller:
         state = self._hass.states.get(entity_id)
         if state is None:
             return None
-        return {"state": state.state, "unit": state.attributes.get("unit_of_measurement")}
+        from homeassistant.helpers import area_registry as ar
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
+
+        entry = er.async_get(self._hass).async_get(entity_id)
+        area_id = entry.area_id if entry is not None else None
+        if area_id is None and entry is not None and entry.device_id:
+            device = dr.async_get(self._hass).async_get(entry.device_id)
+            area_id = device.area_id if device is not None else None
+        area = ar.async_get(self._hass).areas.get(area_id) if area_id else None
+        attributes = state.attributes
+        result = {
+            "state": state.state,
+            "entity_id": entity_id,
+            "entity_name": attributes.get("friendly_name")
+            or (entry.name if entry is not None else None)
+            or entity_id,
+            "area": area.name if area is not None else "",
+            # For multi-source query sources (core/models.py's
+            # QuerySourceSpec): "device_class" disambiguates same-domain
+            # sensors within one area (temperature vs humidity), and
+            # "attributes" is the full raw attribute dict so kind="attribute"
+            # sources can read ANY attribute HA exposes, not just the
+            # curated per-domain subset added below - both additive, no
+            # existing consumer of this dict's other keys is affected.
+            "device_class": attributes.get("device_class"),
+            "attributes": dict(attributes),
+        }
+        domain = entity_id.split(".", 1)[0]
+        if domain == "sensor":
+            result["unit"] = attributes.get("unit_of_measurement")
+        elif domain == "light":
+            brightness = attributes.get("brightness")
+            result.update({
+                "brightness": brightness,
+                "brightness_percent": round(brightness * 100 / 255) if isinstance(brightness, (int, float)) else None,
+                "color_temp_kelvin": attributes.get("color_temp_kelvin"),
+                "rgb_color": ", ".join(map(str, attributes["rgb_color"]))
+                if isinstance(attributes.get("rgb_color"), (list, tuple)) else None,
+                "effect": attributes.get("effect"),
+            })
+        elif domain == "cover":
+            result["current_position"] = attributes.get("current_position")
+        elif domain == "climate":
+            result.update({name: attributes.get(name) for name in (
+                "current_temperature", "temperature", "hvac_action"
+            )})
+        elif domain == "fan":
+            result.update({name: attributes.get(name) for name in ("percentage", "preset_mode")})
+        elif domain == "media_player":
+            volume = attributes.get("volume_level")
+            result.update({
+                "volume_level": volume,
+                "volume_percent": round(volume * 100) if isinstance(volume, (int, float)) else None,
+                "media_title": attributes.get("media_title"),
+                "media_artist": attributes.get("media_artist"),
+            })
+        return result
 
     async def clean_vacuum_area(
         self, area_id: str, *, context: object | None = None
@@ -317,7 +453,7 @@ class HaServiceCaller:
         providers = await vacuum_provider.async_list_providers(hass)
         matches: list[_VacuumRoomMatch] = []
         for provider in providers:
-            matches.extend(await _discover_vacuum_rooms(hass, provider, area.name))
+            matches.extend(await _discover_vacuum_rooms(hass, provider, area_id, area.name))
 
         if not matches:
             return VacuumCleanOutcome(status="no_match")
@@ -410,19 +546,50 @@ class _VacuumRoomMatch:
     room_name: str
 
 
+def _vacuum_area_mapping(entry) -> dict[str, list[str]]:
+    """Return HA's native area -> segment mapping for a vacuum entity.
+
+    Home Assistant stores the mapping configured in the vacuum entity's
+    "Zuordnung von Staubsauger-Abschnitten zu Bereichen" dialog under
+    entity-registry options["vacuum"]["area_mapping"]. Keep this helper
+    deliberately defensive because registry options are persisted user data.
+    """
+    options = entry.options.get("vacuum", {})
+    if not isinstance(options, dict) and not hasattr(options, "get"):
+        return {}
+    mapping = options.get("area_mapping", {})
+    if not isinstance(mapping, dict) and not hasattr(mapping, "items"):
+        return {}
+
+    normalized: dict[str, list[str]] = {}
+    for mapped_area_id, segment_ids in mapping.items():
+        if not isinstance(mapped_area_id, str):
+            continue
+        if not isinstance(segment_ids, (list, tuple)):
+            continue
+        cleaned = [str(segment_id) for segment_id in segment_ids if segment_id is not None]
+        if cleaned:
+            normalized[mapped_area_id] = cleaned
+    return normalized
+
+
+def _mapped_segments_for_area(entry, area_id: str) -> set[str]:
+    return set(_vacuum_area_mapping(entry).get(area_id, ()))
+
+
 async def _discover_vacuum_rooms(
-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
 ) -> list[_VacuumRoomMatch]:
     source = provider.discover.get("source", "service")
     if source == "service":
-        return await _discover_vacuum_rooms_service(hass, provider, area_name)
+        return await _discover_vacuum_rooms_service(hass, provider, area_id, area_name)
     if source == "entity_attributes":
-        return await _discover_vacuum_rooms_entity_attributes(hass, provider, area_name)
+        return await _discover_vacuum_rooms_entity_attributes(hass, provider, area_id, area_name)
     return []
 
 
 async def _discover_vacuum_rooms_service(
-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
 ) -> list[_VacuumRoomMatch]:
     from homeassistant.components.homeassistant.exposed_entities import (
         async_should_expose,
@@ -464,6 +631,10 @@ async def _discover_vacuum_rooms_service(
 
     matches: list[_VacuumRoomMatch] = []
     for vacuum_entity_id in vacuum_entity_ids:
+        entry = registry.async_get(vacuum_entity_id)
+        mapped_segments = _mapped_segments_for_area(entry, area_id) if entry is not None else set()
+        vacuum_has_native_mapping = bool(_vacuum_area_mapping(entry)) if entry is not None else False
+
         vacuum_data = response.get(vacuum_entity_id)
         if not isinstance(vacuum_data, dict):
             continue
@@ -478,13 +649,28 @@ async def _discover_vacuum_rooms_service(
                 continue
             map_name = str(one_map.get(name_key) or "")
             for segment_id, room_name in rooms.items():
-                if isinstance(room_name, str) and room_name.strip().lower() == lowered_area:
-                    matches.append(_VacuumRoomMatch(provider, vacuum_entity_id, map_name, str(segment_id), room_name))
+                segment_id = str(segment_id)
+                mapped_match = segment_id in mapped_segments
+                # If this vacuum has HA area mappings, those mappings are the
+                # source of truth. Only unmapped legacy vacuums retain the old
+                # room-name fallback for backwards compatibility.
+                legacy_name_match = (
+                    not vacuum_has_native_mapping
+                    and isinstance(room_name, str)
+                    and room_name.strip().lower() == lowered_area
+                )
+                if mapped_match or legacy_name_match:
+                    matches.append(
+                        _VacuumRoomMatch(
+                            provider, vacuum_entity_id, map_name, segment_id,
+                            room_name if isinstance(room_name, str) else segment_id,
+                        )
+                    )
     return matches
 
 
 async def _discover_vacuum_rooms_entity_attributes(
-    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_name: str
+    hass: HomeAssistant, provider: vacuum_provider.VacuumProvider, area_id: str, area_name: str
 ) -> list[_VacuumRoomMatch]:
     from homeassistant.components.homeassistant.exposed_entities import (
         async_should_expose,
@@ -511,6 +697,10 @@ async def _discover_vacuum_rooms_entity_attributes(
 
     matches: list[_VacuumRoomMatch] = []
     for vacuum_entity_id in vacuum_entity_ids:
+        entry = registry.async_get(vacuum_entity_id)
+        mapped_segments = _mapped_segments_for_area(entry, area_id) if entry is not None else set()
+        vacuum_has_native_mapping = bool(_vacuum_area_mapping(entry)) if entry is not None else False
+
         state = hass.states.get(vacuum_entity_id)
         if state is None:
             continue
@@ -524,8 +714,22 @@ async def _discover_vacuum_rooms_entity_attributes(
         for room in room_entries:
             room_name = room.get(room_name_key)
             room_id = room.get(room_id_key)
-            if isinstance(room_name, str) and room_name.strip().lower() == lowered_area and room_id is not None:
-                matches.append(_VacuumRoomMatch(provider, vacuum_entity_id, "", str(room_id), room_name))
+            if room_id is None:
+                continue
+            room_id = str(room_id)
+            mapped_match = room_id in mapped_segments
+            legacy_name_match = (
+                not vacuum_has_native_mapping
+                and isinstance(room_name, str)
+                and room_name.strip().lower() == lowered_area
+            )
+            if mapped_match or legacy_name_match:
+                matches.append(
+                    _VacuumRoomMatch(
+                        provider, vacuum_entity_id, "", room_id,
+                        room_name if isinstance(room_name, str) else room_id,
+                    )
+                )
     return matches
 
 

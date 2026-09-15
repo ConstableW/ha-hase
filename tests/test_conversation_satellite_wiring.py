@@ -43,8 +43,10 @@ _executor_mod = importlib.import_module("hase_spellbook_core.executor")
 _engine_mod = importlib.import_module("hase_spellbook_core.spellbook_engine")
 
 ConversationRequest = _models_mod.ConversationRequest
+ConversationResult = _models_mod.ConversationResult
 ConversationStatus = _models_mod.ConversationStatus
 ExecutionStatus = _models_mod.ExecutionStatus
+ExecutionResult = _models_mod.ExecutionResult
 FrontendMode = _models_mod.FrontendMode
 AreaPolicy = _models_mod.AreaPolicy
 ScopedAreaPolicy = _models_mod.ScopedAreaPolicy
@@ -119,6 +121,9 @@ class FakeBackend:
 
 
 def _load_conversation_module(**extra_adapters):
+    async def passthrough_cleanup(_hass, command, _task_entity_id):
+        return command, None, None
+
     adapters = dict(  # noqa: C408 - keyword mapping keeps the injected symbols readable.
         ConversationEntity=FakeConversationEntity,
         ConversationInput=object,
@@ -149,6 +154,7 @@ def _load_conversation_module(**extra_adapters):
         async_get_spellbook=None,  # overridden per-test below
         resolve_source_area_id=lambda hass, device_id: None,
         Code27ConversationBackend=FakeBackend,
+        async_cleanup_command=passthrough_cleanup,
         # const.py values, verbatim - a relative import, stripped by
         # load_source just like everything else from this package.
         CONF_ENTRY_KIND="entry_kind",
@@ -159,6 +165,7 @@ def _load_conversation_module(**extra_adapters):
         CONF_SPELLBOOKER_UNRESTRICTED="spellbooker_unrestricted",
         CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS="spellbooker_queries_allowed_areas",
         CONF_SPELLBOOKER_QUERIES_UNRESTRICTED="spellbooker_queries_unrestricted",
+        CONF_BRIDGE_AI_TASK_ENTITY_ID="bridge_ai_task_entity_id",
         DOMAIN="hase",
         ENTRY_KIND_SPELLBOOKER="spellbooker",
         SUBENTRY_TYPE_SATELLITE="satellite",
@@ -166,6 +173,51 @@ def _load_conversation_module(**extra_adapters):
     )
     adapters.update(extra_adapters)
     return support.load_source("conversation", **adapters)
+
+
+class OutputModeTests(unittest.TestCase):
+    """Item 8: intent_response_for's output_mode mapping. Verified against
+    HA's own intent.py source (no native TEXT-vs-SPEECH split, only
+    whether async_set_speech was called) - AUTO/TEXT/SPEECH/TEXT_AND_SPEECH
+    are indistinguishable at this layer and all keep today's behavior;
+    NONE is the one representable case (empty speech, not skipped)."""
+
+    def setUp(self):
+        self.conversation = _load_conversation_module()
+
+    def _completed(self, output_mode, execution_results=()):
+        return ConversationResult(
+            request_id="r1", response_text="Es sind 2 Lichter an.",
+            status=ConversationStatus.COMPLETED, execution_results=execution_results,
+            output_mode=output_mode,
+        )
+
+    def test_auto_speaks_the_response_text(self):
+        response = self.conversation.intent_response_for("de", self._completed("AUTO"))
+        self.assertEqual(response.speech["plain"]["speech"], "Es sind 2 Lichter an.")
+
+    def test_text_and_speech_and_text_and_speech_all_speak_identically(self):
+        for mode in ("TEXT", "SPEECH", "TEXT_AND_SPEECH"):
+            with self.subTest(mode=mode):
+                response = self.conversation.intent_response_for("de", self._completed(mode))
+                self.assertEqual(response.speech["plain"]["speech"], "Es sind 2 Lichter an.")
+
+    def test_none_sets_empty_speech_not_the_real_text(self):
+        response = self.conversation.intent_response_for("de", self._completed("NONE"))
+        self.assertEqual(response.speech["plain"]["speech"], "")
+
+    def test_none_does_not_affect_error_status_text(self):
+        result = ConversationResult(
+            request_id="r1", response_text="Das ist mir hier nicht erlaubt.",
+            status=ConversationStatus.REJECTED, output_mode="NONE",
+        )
+        response = self.conversation.intent_response_for("de", result)
+        self.assertEqual(response.speech["plain"]["speech"], "Das ist mir hier nicht erlaubt.")
+
+    def test_query_answer_response_type_still_set_regardless_of_output_mode(self):
+        execution = ExecutionResult(ExecutionStatus.QUERY_ANSWER, "ok", {"response_text": "2"})
+        response = self.conversation.intent_response_for("de", self._completed("NONE", (execution,)))
+        self.assertEqual(response.response_type, "query_answer")
 
 
 class SpellbookOnlyModeTests(unittest.IsolatedAsyncioTestCase):
@@ -297,6 +349,50 @@ class ScopedPolicyMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(policy.actions.allowed_areas, frozenset({"buero"}))
         self.assertFalse(policy.actions.unrestricted)
         self.assertTrue(policy.queries.unrestricted)
+
+
+class AiTaskCleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_selected_ai_task_rewrites_input_before_spellbook_routing(self):
+        calls = []
+
+        async def cleanup(hass, command, task_entity_id):
+            calls.append((command, task_entity_id))
+            return "nichts passt hier", None, None
+
+        conversation = _load_conversation_module(
+            async_get_spellbook=AsyncStub(returns=_fake_book()),
+            async_cleanup_command=cleanup,
+        )
+        hass = N(data={}, config=N(language="de"))
+        entry = N(
+            entry_id="agent-1",
+            title="HASE-Agent",
+            data={"entry_kind": "spellbooker"},
+            options={
+                "spellbooker_book": "demo",
+                "spellbooker_unrestricted": True,
+                "spellbooker_queries_unrestricted": True,
+                "bridge_ai_task_entity_id": "ai_task.qwen",
+            },
+        )
+        entity = conversation.SpellbookerConversationEntity(hass, entry)
+        captured = {}
+        real_handle = entity._router.handle
+
+        async def spy_handle(request, config):
+            captured["text"] = request.text
+            return await real_handle(request, config)
+
+        entity._router.handle = spy_handle
+        user_input = N(
+            text="Kannst du das bitte machen?", language="de",
+            conversation_id=None, device_id=None, context=None,
+            agent_id="conversation.hase_agent",
+        )
+        await entity._async_handle_message(user_input, N(conversation_id="c-ai"))
+
+        self.assertEqual(calls, [("Kannst du das bitte machen?", "ai_task.qwen")])
+        self.assertEqual(captured["text"], "nichts passt hier")
 
 
 class SatelliteSessionIdentityTests(unittest.IsolatedAsyncioTestCase):

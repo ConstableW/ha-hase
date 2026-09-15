@@ -18,6 +18,13 @@ from .providers.code27 import async_setup_code27_entry, async_unload_code27_entr
 SPELLBOOKER_PLATFORMS = [Platform.CONVERSATION]
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register the shared Studio once; books and client selections stay separate."""
+    from .studio_api import async_setup_studio
+    await async_setup_studio(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a standalone agent or delegate a companion to its provider."""
     kind = entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE)
@@ -30,8 +37,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(
             entry, SPELLBOOKER_PLATFORMS
         )
+        await _async_studio_entry_loaded(hass, entry)
         return True
-    return await async_setup_code27_entry(hass, entry)
+    loaded = await async_setup_code27_entry(hass, entry)
+    if loaded:
+        await _async_studio_entry_loaded(hass, entry)
+    return loaded
+
+
+async def _async_studio_entry_loaded(hass, entry):
+    if getattr(hass, "data", {}).get("hase_studio") is not None:
+        from .studio_api import async_entry_loaded
+        await async_entry_loaded(hass, entry)
 
 
 async def _async_spellbooker_update_listener(
@@ -45,7 +62,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ENTRY_KIND_SPELLBOOKER,
         ENTRY_KIND_SPELLBOOKER_SATELLITE,
     ):
-        return await hass.config_entries.async_unload_platforms(
+        unloaded = await hass.config_entries.async_unload_platforms(
             entry, SPELLBOOKER_PLATFORMS
         )
-    return await async_unload_code27_entry(hass, entry)
+    else:
+        unloaded = await async_unload_code27_entry(hass, entry)
+    if unloaded and getattr(hass, "data", {}).get("hase_studio") is not None:
+        from .studio_api import async_entry_unloaded
+        async_entry_unloaded(hass, entry)
+    return unloaded

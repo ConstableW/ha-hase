@@ -1,0 +1,552 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+import {createHash} from "node:crypto";
+import vm from "node:vm";
+import {studioLanguage, translate, translateMessage, localizedContent, de, en} from "../custom_components/hase/frontend/studio-i18n.js";
+import {bookCover, bookTheme, safeCoverPath, filterBooks} from "../custom_components/hase/frontend/studio-visuals.js";
+
+let Studio;
+globalThis.HTMLElement = class {
+  attachShadow() {this.shadowRoot = {addEventListener() {},getElementById() {return null;},querySelectorAll() {return [];}};}
+};
+globalThis.customElements = {get() {}, define(name, ctor) {Studio = ctor;}};
+await import("../custom_components/hase/frontend/studio.js");
+const spell = {id:"lumos", name:"Lumos", trigger:"Lumos", operation:"light.set_power", arguments:{on:true}, target:{kind:"source_area"}, tags:[]};
+function studio() {
+  const ui = new Studio();
+  ui.language="de";ui.bookLanguage="de";
+  ui.info = {books:[{id:"potter",name:"Potterverse",count:1,active_clients:2,capability:"USER + EXPERT",expert_allowed:false}],actions:[{id:"light-on",label:"Licht einschalten",operation:"light.set_power",arguments:{on:true},targets:["source_area"]}]};
+  ui.current = {default_language:"de",languages:["de","en"],book:{id:"potter",name:"Potterverse",default_language:"de",languages:["de","en"],commands:[spell]}, profiles:[{id:"client",name:"Client"}],capability:"USER + EXPERT",spell_capabilities:{lumos:"USER"}};
+  ui.registry = {areas:[],entities:[]};
+  ui.profile = "client";
+  ui.render = () => {};
+  return ui;
+}
+
+test("covers reject external, script and malformed URLs", () => {
+  for (const path of ["javascript:alert(1)","https://external.test/a.png","//external.test/a.png","/\\external.test/a.png","/\n/evil"]) assert.equal(safeCoverPath(path),null);
+  assert.equal(safeCoverPath("/local/cover.png"),"/local/cover.png");
+  assert.ok(!bookCover({id:"x",name:'"><script>',metadata:{visual:{cover:"//external.test"}}}).includes("<script>"));
+});
+test("books retain distinct optional visual identities", () => {
+  assert.equal(bookTheme({id:"middle_earth"}),"emerald");
+  assert.equal(bookTheme({id:"potter",metadata:{visual:{theme:"sapphire"}}}),"sapphire");
+  assert.equal(filterBooks([{id:"hdr",name:"Middle Earth"},{id:"potter",name:"Potterverse"}],"EARTH").length,1);
+});
+test("overview keeps count, clients, permissions and original book action", () => {
+  const html=studio().homeView();
+  for (const text of ["1 Spells","2 zugeordnete Clients","USER + EXPERT","AUS",'data-id="potter"','data-do="new-book"','data-do="import-new"','data-do="check-all"','data-do="refresh"']) assert.ok(html.includes(text),text);
+});
+test("detail keeps selectors, all filters and editor/import/export actions", () => {
+  const html=studio().bookView();
+  for(const id of ["profile","source","filter-search","filter-tag","filter-action","filter-cap","filter-enabled","filter-valid"]) assert.ok(html.includes(`id="${id}"`),id);
+  for(const action of ["new-spell","metadata","check","import","export","export-selected","edit","toggle"]) assert.ok(html.includes(`data-do="${action}"`),action);
+});
+test("expert presentation mode never grants book execution", async () => {
+  const ui=studio();
+  ui.askConfirmation=async()=>true;
+  ui.api=()=>assert.fail("Opening Expert Mode must not write permissions");
+  await ui.act("expert");
+  assert.equal(ui.expert,true);
+  assert.equal(ui.current.expert_allowed,undefined);
+  assert.ok(ui.bookView().includes('data-do="permission"'));
+});
+test("requests preserve selected book, revision, client and source", async () => {
+  const ui=studio();ui.current.revision="r1";ui.source="living";
+  let request;
+  ui._hass={callWS:async data=>{request=data;}};
+  await ui.api("validate");
+  assert.deepEqual(request.data,{book_id:"potter",revision:"r1",profile_id:"client",source_area_id:"living",language:"de",book_language:"de"});
+});
+test("sidebar changes use a separate UI operation", async () => {
+  const ui=studio();let request;
+  ui.api=async(operation,data)=>{request={operation,data};return data;};
+  await ui.change({target:{id:"show-sidebar",checked:true}});
+  assert.deepEqual(request,{operation:"ui_settings",data:{show_in_sidebar:true}});
+  assert.equal(ui.info.show_in_sidebar,true);
+});
+test("bundled HASE logo is identical to official branding source", async () => {
+  const hash=async path=>createHash("sha256").update(await readFile(new URL(path,import.meta.url))).digest("hex");
+  assert.equal(await hash("../docs/branding/hase-icon.png"),await hash("../custom_components/hase/brand/icon.png"));
+});
+
+test("Integration toolbar has one Studio link even without a Codie", async () => {
+  const queued=[];
+  const rows=["hase","other"].map(domain=>{
+    const row={localName:"ha-config-integration-page",isConnected:true,domain,configEntries:[]};
+    const root={host:row,links:[],querySelectorAll:()=>[],querySelector(selector){
+      if(selector===".actions")return {append:link=>this.links.push(link)};
+      return this.links[0];
+    }};
+    row.shadowRoot=root;
+    return row;
+  });
+  const document={querySelectorAll:()=>rows,createTextNode:text=>text,createElement:tag=>({tag,dataset:{},style:{},setAttribute(){},append(...items){this.children=items;}})};
+  const scope={document,window:{location:{pathname:"/config/integrations/integration/hase"},addEventListener(){}},MutationObserver:class{observe(){} disconnect(){}},queueMicrotask:fn=>queued.push(fn),customElements:{whenDefined:()=>new Promise(()=>{})}};
+  vm.runInNewContext(await readFile(new URL("../custom_components/hase/frontend/assist-entry.js",import.meta.url),"utf8"),scope);
+  queued.shift()();
+  assert.equal(rows[0].shadowRoot.links.length,1);
+  assert.equal(rows[1].shadowRoot.links.length,0);
+  assert.equal(rows[0].shadowRoot.links[0].href,"/hase");
+  assert.equal(rows[0].shadowRoot.links[0].children[1],"Spellbook Studio");
+});
+
+test("HA user locale wins; regional and unavailable languages fall back correctly", () => {
+  assert.equal(studioLanguage({locale:{language:"en"},language:"de"}),"en");
+  assert.equal(studioLanguage({locale:{language:"de-CH"}}),"de");
+  assert.equal(studioLanguage({language:"en_GB"}),"en");
+  assert.equal(studioLanguage({locale:{language:"fr"}}),"en");
+  assert.equal(studioLanguage(),"en");
+  const saved=de["Buchdetails"];
+  delete de["Buchdetails"];
+  try {assert.equal(translate("de","Buchdetails"),"Book details");}
+  finally {de["Buchdetails"]=saved;}
+});
+
+test("language changes rerender without reloading data or losing form state", () => {
+  const ui=studio();ui.loaded=true;const renders=[];
+  ui.render=preserve=>renders.push(preserve);
+  ui.api=()=>assert.fail("Changing language must not reload or save a book");
+  ui.hass={locale:{language:"en"}};
+  assert.equal(ui.language,"en");
+  assert.deepEqual(renders,[true]);
+  ui.hass={locale:{language:"en"}};
+  assert.deepEqual(renders,[true]);
+  ui.hass={locale:{language:"de"}};
+  assert.deepEqual(renders,[true,true]);
+});
+
+test("English covers overview, details, editor, import, diagnostics and confirmations", () => {
+  const ui=studio();ui.language="en";ui.expert=true;ui.edit={...spell};ui.editExisting=true;ui.info.operations=["light.set_power"];
+  const html=[ui.homeView(),ui.bookView(),ui.listView(),ui.editorView(),ui.metadataView(),ui.importView(),ui.newImportView()].join("\n");
+  for(const label of ["Create spellbook","assigned clients","Test with client","Save","Check template / targets","When I say","Import into Potterverse","Turn on lights"]) assert.ok(html.includes(label),label);
+  for(const label of ["Spellbook erstellen","Expert-Ausführung:","Nicht angegeben","Licht einschalten","Speichern","Wenn ich sage"]) assert.ok(!html.includes(label),label);
+  assert.equal(translateMessage("en","Doppelter Trigger mit nox."),"Duplicate trigger with nox.");
+  assert.equal(translateMessage("en","Ein Buchname ist erforderlich."),"A book name is required.");
+  assert.equal(translateMessage("en","Die Aktion „Licht dimmen“ benötigt {value} in jeder Trigger-Formulierung."),"The action “Dim lights” requires {value} in every trigger phrase.");
+  assert.equal(translate("en","Expert-Ausführung für „{name}“ {state}?",{name:"Potter",state:"Enable"}),"Enable Expert execution for “Potter”?");
+  assert.equal(localizedContent({de:"Licht",en:"Light"},"en"),"Light");
+  assert.equal(localizedContent({de:"Licht",en:"Light"},"fr"),"Light");
+});
+
+test("editing an English trigger preserves the German trigger in Expert preview", () => {
+  const ui=studio();ui.expert=true;ui.editExisting=true;ui.editLanguage="en";ui.bookLanguage="en";
+  ui.edit={...spell,trigger:{de:"Licht an",en:"Lights on"}};
+  const fields={"spell-name":"Lumos",tags:"",fallback:"keep",action:"light-on",triggers:"Illuminate","target-kind":"source_area","expert-kind":"template",template:"{{ [] }}","expert-operation":"light.set_power",arguments:'{"on":true}'};
+  ui.value=id=>fields[id] || "";
+  ui.shadowRoot.querySelectorAll=()=>[];ui.shadowRoot.getElementById=()=>({checked:true});
+  assert.deepEqual(ui.collectSpell(true).spell.trigger,{de:"Licht an",en:"Illuminate"});
+});
+
+test("every interface message has an English catalogue entry", async () => {
+  const source=await readFile(new URL("../custom_components/hase/frontend/studio.js",import.meta.url),"utf8");
+  for(const match of source.matchAll(/this\.t\("([^"\n]+)"/g)) assert.ok(Object.hasOwn(en,match[1]),match[1]);
+});
+
+
+test("book fallback order is deterministic and independent of UI locale", async () => {
+  const {resolveBookValue:resolve,setBookValue,bookFallbacks}=await import("../custom_components/hase/frontend/studio-book-languages.js");
+  assert.deepEqual(resolve({de:"DE",en:"EN"},"de-CH","fr"),{value:"DE",used:"de",reason:"requested"});
+  assert.equal(resolve({de:"DE",en:"EN"},"fr","de").used,"en");
+  assert.equal(resolve({de:"DE",fr:"FR"},"it","fr").used,"fr");
+  assert.equal(resolve({de:"DE"},"it","en").reason,"only");
+  assert.deepEqual(resolve({de:"DE",fr:"FR"},"it","en","id"),{value:"id",used:null,reason:"technical"});
+  assert.deepEqual(setBookValue("DE","fr","FR","de"),{de:"DE",fr:"FR"});
+  assert.deepEqual(setBookValue({de:["eins"],en:["one"]},"fr",["un"],"de"),{de:["eins"],en:["one"],fr:["un"]});
+  assert.equal(bookFallbacks({id:"x",commands:[{id:"s",trigger:{en:"Light"}}]},"de","en")[0].used,"en");
+});
+test("automatic PNG cover replaces placeholder; manual cover metadata is ignored", () => {
+  assert.ok(bookCover({id:"x",cover:"data:image/png;base64,iVBORw0KGgo="}).includes('<img src="data:image/png;base64,'));
+  assert.ok(!bookCover({id:"x",metadata:{visual:{cover:"/local/old.png"}}}).includes("<img"));
+});
+test("switching book language preserves drafts and shared controls", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.edit.trigger={de:"Alt",en:"Old"};
+  const fields={"spell-name":"Name DE",triggers:"Neu\nAlias","spell-description":"Beschreibung",tags:"tag","target-kind":"source_area",action:"light-on"};
+  ui.value=id=>fields[id]||"";
+  ui.shadowRoot.querySelectorAll=()=>[];ui.shadowRoot.getElementById=()=>null;
+  await ui.act("book-language","en");
+  assert.deepEqual(ui.edit.trigger,{de:"Neu",en:"Old"});
+  assert.deepEqual(ui.edit.triggers,{de:["Alias"]});
+  fields.triggers="New";fields["spell-name"]="Name EN";
+  const payload=ui.collectSpell();
+  assert.equal(payload.spell.trigger_language,"en");
+  assert.equal(payload.spell.translations.trigger.de,"Neu");
+  assert.equal(payload.spell.translations.description.de,"Beschreibung");
+  assert.equal(ui.language,"de");
+});
+test("delete/reset is confirmation-gated and scoped to the selected book", async () => {
+  const ui=studio();let calls=[];ui.api=async(op,data)=>{calls.push([op,data]);return {restored:false};};ui.refresh=async()=>{};
+  ui.askConfirmation=async()=>false;await ui.act("delete-book");assert.equal(calls.length,0);
+  ui.askConfirmation=async()=>true;await ui.act("delete-book");assert.deepEqual(calls,[["delete_book",{confirmed:true}]]);
+});
+test("book origin selects reset, delete or no destructive action", () => {
+  const ui=studio();ui.current.origin="builtin";
+  assert.ok(!ui.languageView().includes('data-do="delete-book"'));
+  ui.current.can_delete=true;assert.ok(ui.languageView().includes('data-do="delete-book"'));
+  ui.current.can_reset=true;assert.ok(ui.languageView().includes('data-do="reset-book"'));
+  assert.ok(!ui.languageView().includes('data-do="delete-book"'));
+});
+
+
+test("placeholder phrases are rejected before preview, execution confirmation or requests", async () => {
+  const ui=studio();ui.api=()=>assert.fail("No request for an invalid phrase");
+  ui.askConfirmation=()=>assert.fail("No execution confirmation for an invalid phrase");
+  ui.collectSpell=()=>assert.fail("Validate the phrase before building the execution draft");
+  for(const phrase of ["lumos {area}","lumos {area]","lumos area}","lumos [area]",""]) {
+    ui.value=()=>phrase;
+    for(const action of ["test-edit","test-template","execute"])await assert.rejects(ui.act(action),/konkrete Testphrase/);
+  }
+  ui.value=()=>"lumos Gondor";assert.equal(ui.testPhrase(),"lumos Gondor");
+});
+test("concrete test phrase submits the current toggle draft even when Expert persistence is off", async () => {
+  const ui=studio();ui.expert=true;ui.editExisting=true;ui.edit={...spell,trigger:"lumos {area}"};
+  const fields={"spell-name":"Lumos",fallback:"keep",action:"light-on",triggers:"lumos {area}",phrase:"lumos Gondor","target-kind":"source_area","expert-kind":"area_name","expert-operation":"light.toggle",arguments:"{}"};
+  ui.value=id=>fields[id]||"";ui.shadowRoot.querySelectorAll=()=>[];ui.shadowRoot.getElementById=()=>({checked:false});
+  let sent;ui.api=async(operation,data)=>{sent={operation,data};return {};};
+  await ui.act("test-template");
+  assert.equal(sent.data.spell.expert.operation,"light.toggle");
+  assert.deepEqual(sent.data.spell.expert.target,{kind:"area_name",capture:"area"});
+  assert.equal(sent.data.phrase,"lumos Gondor");assert.equal(sent.data.variant,"expert");
+  assert.equal(sent.data.persist_expert,false);
+});
+
+
+test("placeholder chips appear in both new and existing spell editors", () => {
+  const ui=studio();ui.edit=structuredClone(spell);
+  for(const existing of [false,true]){ui.editExisting=existing;const html=ui.editorView();assert.ok(html.includes('data-do="insert-placeholder"'));assert.ok(html.includes('data-id="area"'));assert.ok(html.includes('data-id="value"'));assert.ok(html.includes('data-id="entity"'));}
+  ui.edit.expert={target:{capture:"entity"},arguments:{level:{capture:"level"}}};
+  assert.deepEqual(ui.placeholderNames(),["area","entity","value","target","level"]);
+});
+test("chips insert at the caret, replace selections and preserve other editor fields", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.render=()=>assert.fail("Insertion must not rebuild the form");
+  let focused=false,events=0;
+  const field={value:"",selectionStart:0,selectionEnd:0,focus(){focused=true;},dispatchEvent(){events++;},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=this.selectionEnd=start+text.length;}};
+  ui.shadowRoot.getElementById=id=>id==="triggers"?field:null;
+  for(const [value,start,end,expected] of [["lumos",5,5,"lumos {area}"],["lumos Gondor",6,12,"lumos {area}"],["lumos jetzt",6,6,"lumos {area} jetzt"],["lumos ",6,6,"lumos {area}"],["nox\nlumos",9,9,"nox\nlumos {area}"],["",0,0,"{area}"]]){
+    Object.assign(field,{value,selectionStart:start,selectionEnd:end});await ui.act("insert-placeholder","area");assert.equal(field.value,expected);assert.equal(field.selectionStart,field.selectionEnd);
+  }
+  assert.equal(focused,true);assert.equal(events,6);assert.equal(ui.edit.trigger,"Lumos");
+});
+
+
+test("response chips only offer captures shared by current trigger alternatives", () => {
+  const ui=studio();ui.edit={...spell,trigger:"lumos {area}",triggers:["licht {area}"]};
+  assert.deepEqual(ui.responsePlaceholderNames(),["area"]);
+  for(const field of ["spell-output","spell-catchphrase","expert-catchphrase"]){const html=ui.placeholderChips(field);assert.ok(html.includes(`data-id="${field}:area"`));assert.ok(!html.includes(`data-id="${field}:value"`));}
+  ui.shadowRoot.getElementById=id=>id==="triggers"?{value:"dimme {area} auf {value}\nhelligkeit {value}"}:null;
+  assert.deepEqual(ui.responsePlaceholderNames(),["value"]);
+});
+test("response chip replaces selected text in its own field and returns the caret", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);let focused=false;
+  const trigger={value:"lumos {area}"};
+  const reply={value:"Licht in Gondor an",selectionStart:9,selectionEnd:15,focus(){focused=true;},dispatchEvent(){},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=this.selectionEnd=start+text.length;}};
+  ui.shadowRoot.getElementById=id=>id==="triggers"?trigger:id==="spell-catchphrase"?reply:null;
+  await ui.act("insert-placeholder","spell-catchphrase:area");
+  assert.equal(reply.value,"Licht in {area} an");assert.equal(reply.selectionStart,15);assert.equal(focused,true);assert.equal(trigger.value,"lumos {area}");
+});
+test("spell search filters live and survives a Studio reload", async () => {
+  const previous=globalThis.localStorage;
+  const storage=new Map([["hase-studio-spell-search","Lumos"]]);
+  globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};
+  try {
+    const restored=studio();
+    assert.equal(restored.filters.search,"Lumos");
+    restored.updateSpellSearch({value:"Nox",selectionStart:3});
+    await new Promise(resolve=>queueMicrotask(resolve));
+    assert.equal(restored.filters.search,"Nox");
+    assert.equal(storage.get("hase-studio-spell-search"),"Nox");
+    assert.equal(studio().filters.search,"Nox");
+  } finally {
+    if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous;
+  }
+});
+
+test("New spell asks for Wizard or unchanged Manual creation", async () => {
+  const ui=studio();ui.ensureEditorTargets=async()=>{};
+  await ui.act("new-spell");
+  assert.equal(ui.edit,undefined);assert.equal(ui.newSpellChoice,true);
+  const choice=ui.newSpellChoiceView();
+  assert.ok(choice.includes('data-do="new-spell-wizard"'));
+  assert.ok(choice.includes('data-do="new-spell-manual"'));
+  await ui.act("new-spell-manual");
+  assert.equal(ui.editorMode,"manual");
+  assert.deepEqual({trigger:ui.edit.trigger,target:ui.edit.target,operation:ui.edit.operation,arguments:ui.edit.arguments},{trigger:"",target:{kind:"area_id"},operation:"light.turn_on",arguments:{}});
+  assert.equal(ui.editorDirty,false);
+});
+
+test("Wizard uses the shared draft, action catalogue and Manual switch", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";
+  ui.info.actions=[{id:"dim",label:"Licht dimmen",operation:"light.set_power",arguments:{percentage:{capture:"level"}},targets:["area_name"],target_capture:"room"}];
+  const fields={"spell-name":"Aquamenti",triggers:"aquamenti {room} auf {level}","spell-description":"Wasserlicht", "spell-examples":"aquamenti Küche auf 40",tags:"water",action:"dim","target-kind":"area_name","spell-output":"", "spell-catchphrase":"Aquamenti in {room}."};
+  ui.value=id=>fields[id]||"";ui.shadowRoot.querySelectorAll=()=>[];
+  await ui.act("open-manual");
+  assert.equal(ui.editorMode,"manual");
+  assert.equal(ui.edit.id,"lumos");
+  assert.equal(ui.edit.operation,"light.set_power");
+  assert.deepEqual(ui.edit.arguments,{percentage:{capture:"level"}});
+  assert.deepEqual(ui.edit.target,{kind:"area_name",capture:"room"});
+  assert.equal(ui.edit.trigger.de,"aquamenti {room} auf {level}");
+  assert.equal(ui.edit.catchphrase.de,"Aquamenti in {room}.");
+});
+
+test("Wizard detects arbitrary captures and flags target placeholder mismatches", () => {
+  const ui=studio();ui.edit=structuredClone(spell);
+  ui.info.actions=[{id:"dim",label:"Licht dimmen",operation:"light.set_power",arguments:{percentage:{capture:"level"}},targets:["area_name"],target_capture:"room"}];
+  const fields={"spell-name":"Dimmer",triggers:"dimme {room}",action:"dim","target-kind":"area_name","target-area":""};
+  ui.value=id=>fields[id]||"";ui.shadowRoot.querySelectorAll=()=>[];
+  assert.deepEqual(ui.triggerPlaceholderNames(),["room"]);
+  assert.ok(ui.wizardLocalIssues().some(issue=>issue.field==="target"&&issue.level==="warning"&&issue.message.includes("{level}")));
+  fields.triggers="dimme {room} auf {level}";
+  assert.ok(!ui.wizardLocalIssues().some(issue=>issue.message.includes("{level}")));
+  fields.triggers="dimme {unused}";
+  assert.ok(ui.wizardLocalIssues().some(issue=>issue.message.includes("{unused}")));
+});
+
+test("capability-driven filtering warns when the selected device lacks the required capability", () => {
+  const ui=studio();ui.edit=structuredClone(spell);
+  ui.info.actions=[{id:"set-color",label:"Rot",operation:"light.set_color",arguments:{rgb_color:[255,0,0]},targets:["entity_id"],capability_hint:"rgb"}];
+  const fields={"spell-name":"Farbe",triggers:"rot an","action":"set-color","target-kind":"entity_id"};
+  ui.value=id=>fields[id]||"";
+  ui.registry.entities=[{id:"light.plain",name:"Plain Light",capabilities:{rgb:false}}];
+  ui.shadowRoot.querySelectorAll=sel=>sel==='input[name="entity"]:checked'?[{value:"light.plain"}]:[];
+  assert.ok(ui.wizardLocalIssues().some(issue=>issue.field==="target"&&issue.level==="warning"&&issue.message.includes("may not support")));
+  ui.registry.entities=[{id:"light.rgb",name:"RGB Light",capabilities:{rgb:true}}];
+  ui.shadowRoot.querySelectorAll=sel=>sel==='input[name="entity"]:checked'?[{value:"light.rgb"}]:[];
+  assert.ok(!ui.wizardLocalIssues().some(issue=>issue.message.includes("may not support")));
+});
+
+test("Gerätetyp options show a localized friendly name and the raw domain as two aligned, non-collapsing columns", () => {
+  const ui=studio();
+  ui.info.actions=[
+    {id:"light-on",operation:"light.turn_on",arguments:{},targets:["entity_id"],domain_filter:"light"},
+    {id:"cover-open",operation:"cover.open_cover",arguments:{},targets:["entity_id"],domain_filter:"cover"},
+  ];
+  const label=ui.domainOptionLabel("light");
+  // Non-breaking spaces, not plain ones - HTML would otherwise collapse
+  // plain-space padding and silently undo the column alignment.
+  assert.ok(label.includes(" "),"padding must use non-breaking spaces");
+  assert.ok(label.startsWith("Licht"),"left column is the localized friendly name");
+  assert.ok(label.trimEnd().endsWith("| light"),"right column is the raw HA domain, pipe-separated");
+  // Both options pad to the same width so the "|" separators line up.
+  const lightPipeIndex=ui.domainOptionLabel("light").indexOf("|");
+  const coverPipeIndex=ui.domainOptionLabel("cover").indexOf("|");
+  assert.equal(lightPipeIndex,coverPipeIndex,"separators must align across options");
+});
+
+test("Gerätetyp friendly names are localized (DE default, EN translation) and unknown domains fall back to the raw id", () => {
+  const ui=studio();
+  ui.info.actions=[{id:"a",operation:"select.select_option",arguments:{},targets:["entity_id"],domain_filter:"select"}];
+  ui.language="de";
+  assert.ok(ui.domainOptionLabel("select").startsWith("Auswahl"),"German label");
+  ui.language="en";
+  assert.ok(ui.domainOptionLabel("select").startsWith("Select"),"English translation");
+  // A domain the label map has never heard of (e.g. a future catalogue
+  // addition) must still render usably - the raw domain id itself, not a
+  // crash or an empty label.
+  assert.ok(ui.domainOptionLabel("humidifier").startsWith("humidifier"));
+});
+
+test("Wizard action list is filtered by device type from backend domain_filter metadata, not a JS domain table", () => {
+  const ui=studio();ui.edit={...structuredClone(spell),operation:"light.turn_on",arguments:{}};
+  ui.info.actions=[
+    {id:"light-on",label:"Licht einschalten",operation:"light.turn_on",arguments:{},targets:["entity_id"],domain_filter:"light"},
+    {id:"cover-open",label:"Öffnen",operation:"cover.open_cover",arguments:{},targets:["entity_id"],domain_filter:"cover"},
+    {id:"query",label:"Zustand abfragen",operation:"entity.get_state",arguments:{},targets:["entity_id"],domain_filter:null},
+  ];
+  ui.shadowRoot.querySelectorAll=()=>[];
+  // No filter chosen yet: every action (including the domain-agnostic query) is visible.
+  assert.deepEqual(ui.visibleActionChoices().map(a=>a.id).sort(),["cover-open","light-on","query"]);
+  // Domain list itself comes from the actions' own domain_filter values, not a hardcoded set.
+  assert.deepEqual(ui.availableActionDomains(),["cover","light"]);
+  // Choosing "light" hides the cover action but keeps the domain-agnostic query.
+  ui.wizardActionDomain="light";
+  assert.deepEqual(ui.visibleActionChoices().map(a=>a.id).sort(),["light-on","query"]);
+  // The currently-selected action is never silently dropped by a filter change,
+  // even if it no longer matches - it stays selectable until explicitly changed.
+  assert.deepEqual(ui.visibleActionChoices("cover-open").map(a=>a.id).sort(),["cover-open","light-on","query"]);
+});
+
+test("Wizard action list hides capability-gated actions once a non-supporting device is already selected", () => {
+  const ui=studio();ui.edit={...structuredClone(spell),operation:"light.turn_on",arguments:{}};
+  ui.info.actions=[
+    {id:"set-color",label:"Rot",operation:"light.set_color",arguments:{rgb_color:[255,0,0]},targets:["entity_id"],domain_filter:"light",capability_hint:"rgb"},
+    {id:"light-on",label:"Licht einschalten",operation:"light.turn_on",arguments:{},targets:["entity_id"],domain_filter:"light",capability_hint:null},
+  ];
+  // No device selected yet: capability-gated action stays visible (can't judge yet).
+  ui.shadowRoot.querySelectorAll=()=>[];
+  assert.deepEqual(ui.visibleActionChoices().map(a=>a.id).sort(),["light-on","set-color"]);
+  // A plain on/off light is selected: the RGB-only action is hidden.
+  ui.registry.entities=[{id:"light.plain",name:"Plain Light",capabilities:{rgb:false}}];
+  ui.shadowRoot.querySelectorAll=sel=>sel==='input[name="entity"]:checked'?[{value:"light.plain"}]:[];
+  assert.deepEqual(ui.visibleActionChoices().map(a=>a.id),["light-on"]);
+  // An RGB-capable light is selected instead: both actions are offered again.
+  ui.registry.entities=[{id:"light.rgb",name:"RGB Light",capabilities:{rgb:true}}];
+  ui.shadowRoot.querySelectorAll=sel=>sel==='input[name="entity"]:checked'?[{value:"light.rgb"}]:[];
+  assert.deepEqual(ui.visibleActionChoices().map(a=>a.id).sort(),["light-on","set-color"]);
+});
+
+test("output mode selector reads the valid set and default from backend metadata, never a JS-hardcoded list", () => {
+  const ui=studio();ui.edit=structuredClone(spell);
+  ui.info.output_modes=["AUTO","TEXT","SPEECH","TEXT_AND_SPEECH","NONE"];ui.info.default_output_mode="AUTO";
+  const html=ui.outputModeOptions("TEXT");
+  for(const mode of ui.info.output_modes)assert.ok(html.includes(`value="${mode}"`),mode);
+  assert.ok(html.includes('value="TEXT" selected'));
+  // Falls back to the same five modes even when the backend hasn't supplied
+  // output_modes yet (an older server) - still never invents domain data,
+  // just a stable default for this fixed, non-domain-specific enum.
+  ui.info.output_modes=undefined;
+  assert.ok(ui.outputModeOptions().includes('value="AUTO" selected'));
+});
+
+test("expert argument defaults are derived from backend action metadata, not a per-operation JS table", () => {
+  const ui=studio();
+  ui.info.actions=[
+    {id:"tilt",label:"Lamellen einstellen",operation:"cover.set_cover_tilt_position",arguments:{tilt_position:{capture:"value",type:"int",min:0,max:100}},targets:["entity_id"]},
+    {id:"preset",label:"Eco",operation:"climate.set_preset_mode",arguments:{preset_mode:"eco"},targets:["entity_id"]},
+  ];
+  assert.deepEqual(ui.expertArgumentDefaults("cover.set_cover_tilt_position"),{tilt_position:50});
+  assert.deepEqual(ui.expertArgumentDefaults("climate.set_preset_mode"),{preset_mode:"eco"});
+  assert.deepEqual(ui.expertArgumentDefaults("nonexistent.operation"),{});
+});
+
+test("context help is UI-only and Wizard validation calls the existing validator", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.editorDirty=false;
+  await ui.act("wizard-help","target");
+  assert.equal(ui.wizardHelp.has("target"),true);assert.equal(ui.editorDirty,false);
+  ui.wizardApplyDraft=()=>{};ui.collectSpell=()=>({mode:"user",spell:{id:"lumos"}});
+  let call;ui.api=async(operation,data)=>{call={operation,data};return {spells:[{id:"lumos",errors:[],warnings:[]}]};};
+  await ui.act("wizard-validate");
+  assert.equal(call.operation,"validate");assert.equal(ui.wizardValidation.spells[0].id,"lumos");
+});
+
+test("Wizard renders six guided steps over the Manual Editor field IDs", () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=0;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  const html=ui.wizardView();
+  for(const text of ["Grundinformationen","Auslöser","Aktion","Ziel / Auflösung","Antwort","Prüfen &amp; Testen"])assert.ok(html.includes(text),text);
+  for(const id of ["spell-name","spell-description","spell-examples","tags","triggers","action","target-kind","target-area","wizard-entity-filter","spell-output","spell-catchphrase","phrase"])assert.ok(html.includes(`id="${id}"`),id);
+  assert.ok(html.includes('data-do="open-manual"'));
+  assert.ok(html.includes('data-do="wizard-next"'));
+});
+
+test("Wizard stepper: current and already-visited steps are clickable, upcoming steps are not", () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  const html=ui.wizardView();
+  for(const index of [0,1,2,3])assert.ok(html.includes(`data-do="wizard-goto" data-id="${index}"`),`step ${index} clickable`);
+  for(const index of [4,5])assert.ok(!html.includes(`data-do="wizard-goto" data-id="${index}"`),`step ${index} not clickable`);
+  // The whole circle+label area is one clickable control, not just the number.
+  assert.match(html,/<button type="button" class="step-button" data-do="wizard-goto" data-id="0"[^>]*><span>1<\/span>/);
+  assert.match(html,/<div class="step-button" aria-disabled="true"><span>5<\/span>/);
+});
+
+test("wizard-goto navigates to an already-visited step but refuses to skip ahead", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  await ui.act("wizard-goto","1");
+  assert.equal(ui.wizardStep,1);
+  await ui.act("wizard-goto","4");
+  assert.equal(ui.wizardStep,1,"a step ahead of the current one must be refused");
+  await ui.act("wizard-goto","1");
+  assert.equal(ui.wizardStep,1,"the current step itself stays reachable");
+});
+
+test("Wizard device filter reacts live without changing the spell draft", () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorDirty=false;
+  const rows=[
+    {dataset:{entitySearch:"petkit puramax badezimmer"},hidden:false},
+    {dataset:{entitySearch:"licht küche light.kitchen"},hidden:false},
+  ];
+  ui.shadowRoot.querySelectorAll=selector=>selector==="[data-entity-search]"?rows:[];
+  ui.updateWizardEntityFilter("küche");
+  assert.equal(rows[0].hidden,true);
+  assert.equal(rows[1].hidden,false);
+  assert.equal(ui.wizardEntityFilter,"küche");
+  assert.equal(ui.editorDirty,false);
+});
+
+test("Wizard explains automatic output for state queries", () => {
+  const ui=studio();
+  ui.info.actions=[{id:"get-state",label:"Zustand abfragen",operation:"entity.get_state",arguments:{},targets:["entity_id"],response_fields:{"*":["state","entity_name","entity_id","area"],sensor:["unit"],light:["brightness","brightness_percent"]}}];
+  ui.registry.entities=[{id:"sensor.room",name:"Raumtemperatur",area_name:"Wohnzimmer"}];
+  ui.edit={...structuredClone(spell),operation:"entity.get_state",arguments:{},target:{kind:"entity_id",value:"sensor.room"}};
+  ui.editorMode="wizard";ui.wizardStep=4;ui.wizardHelp.add("response");
+  const fields={"spell-name":"Temperatur","triggers":"temperatur","action":"get-state","target-kind":"entity_id","spell-output":"Die Temperatur ist fest.","spell-catchphrase":""};
+  ui.value=id=>fields[id]||"";
+  ui.shadowRoot.querySelectorAll=selector=>selector==='input[name="entity"]:checked'?[{value:"sensor.room"}]:[];
+
+  const html=ui.wizardView();
+  assert.ok(html.includes("Konfigurierbare Zustandsantwort"));
+  assert.ok(html.includes("{state}"));
+  assert.ok(html.includes("{unit}"));
+  assert.ok(html.includes("{entity_name}"));
+  assert.ok(html.includes("{area}"));
+  assert.ok(!html.includes("{brightness}"));
+  assert.ok(ui.wizardLocalIssues().some(issue=>issue.field==="response"&&issue.level==="warning"));
+  fields["spell-output"]="In {area} sind es {state} {unit}.";
+  assert.ok(!ui.wizardLocalIssues().some(issue=>issue.field==="response"));
+});
+
+test("Wizard review uses the shared client and source-area dry-run context", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=5;
+  ui.current.profiles=[{id:"client",name:"CODE27"},{id:"client-2",name:"Flur-Client"}];
+  ui.registry.areas=[{id:"living",name:"Wohnzimmer"},{id:"hall",name:"Flur"}];
+  ui.source="living";ui.value=id=>({"target-kind":"source_area",action:"light-on",triggers:"Lumos","spell-name":"Lumos"}[id]||"");
+  ui.shadowRoot.querySelectorAll=()=>[];
+  const html=ui.wizardView();
+  for(const id of ["wizard-profile","wizard-source"])assert.ok(html.includes(`id="${id}"`),id);
+  for(const text of ["Testen mit Client","Herkunftsbereich","Flur-Client","Wohnzimmer"])assert.ok(html.includes(text),text);
+
+  await ui.change({target:{id:"wizard-profile",value:"client-2",dataset:{}}});
+  await ui.change({target:{id:"wizard-source",value:"hall",dataset:{}}});
+  let request;ui._hass={callWS:async data=>{request=data;}};
+  await ui.api("dry_run",{phrase:"Lumos"});
+  assert.equal(request.data.profile_id,"client-2");
+  assert.equal(request.data.source_area_id,"hall");
+});
+
+test("Wizard target kinds come directly from action metadata including source_area", () => {
+  const ui=studio();
+  const action={id:"area-action",label:"Area action",operation:"custom.area_action",arguments:{},targets:["area_name","area_id","source_area"]};
+  assert.deepEqual(ui.targetChoices(action).map(row=>row.id),["area_name","area_id","source_area"]);
+  assert.ok(!ui.targetChoices(action).some(row=>row.id==="all_allowed"));
+  ui.wizardHelp.add("target");
+  assert.match(ui.wizardHelpText("target","source_area"),/Home.?Assistant/);
+});
+
+test("new Wizard spells initialize a valid effective language before translated fields", () => {
+  const ui=studio();delete ui.current.book.default_language;delete ui.current.book.language;ui.current.languages=["en"];
+  ui.language="de";ui.ensureEditorTargets=async()=>{};
+  ui.startNewSpell("wizard");
+  assert.equal(ui.bookLanguage,"de");assert.equal(ui.editLanguage,"de");assert.ok(ui.validLanguage(ui.editLanguage));
+  const fields={action:"light-on","target-kind":"source_area",triggers:"lumos","spell-name":"Lumos"};ui.value=id=>fields[id]||"";
+  const automatic=ui.collectUser();assert.equal(automatic.trigger_language,"de");assert.equal(automatic.default_language,"de");
+  ui.startNewSpell("wizard","en");
+  assert.equal(ui.bookLanguage,"en");assert.equal(ui.editLanguage,"en");assert.equal(ui.wizardLanguageExplicit,"en");
+});
+
+test("inherited Spellbook language is marked without changing the stored language", () => {
+  const ui=studio();delete ui.current.book.default_language;delete ui.current.book.language;ui.current.languages=["en"];ui.bookLanguage="de";
+  const html=ui.languageView();
+  assert.ok(html.includes("Deutsch (DE)*"));
+  assert.ok(html.includes('data-id="de"'));
+  assert.ok(!html.includes('data-id="de*"'));
+  assert.equal(ui.storedBookLanguage(),null);
+  ui.current.book.default_language="de";
+  const stored=ui.languageView();
+  assert.ok(stored.includes("Deutsch (DE)"));assert.ok(!stored.includes("Deutsch (DE)*"));
+});
+
+test("opening and system-language changes keep inherited and stored defaults distinct", async () => {
+  const ui=studio();ui.language="de";ui.current=null;ui.ensureAreas=async()=>{};
+  const inherited={default_language:"en",languages:["en"],book:{id:"legacy",name:"Legacy",commands:[]},profiles:[],spell_capabilities:{}};
+  const calls=[];ui.api=async(operation,data)=>{calls.push([operation,data]);return structuredClone(inherited);};
+  await ui.open("legacy");
+  assert.equal(ui.bookLanguage,"de");assert.deepEqual(calls.map(call=>call[0]),["read"]);assert.equal(ui.current.book.default_language,undefined);
+  ui.loaded=true;ui.render=()=>{};ui.hass={locale:{language:"en"}};
+  assert.equal(ui.bookLanguage,"en");assert.equal(ui.current.book.default_language,undefined);
+  ui.startNewSpell("wizard");assert.equal(ui.editLanguage,"en");ui.edit=null;ui.wizardLanguageExplicit=null;
+  ui.current.book.default_language="de";ui.bookLanguage="de";ui.hass={locale:{language:"de"}};ui.hass={locale:{language:"en"}};
+  assert.equal(ui.bookLanguage,"de");
+});
