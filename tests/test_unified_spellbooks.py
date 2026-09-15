@@ -197,6 +197,31 @@ class UnifiedBridgeTests(unittest.IsolatedAsyncioTestCase):
                          models.ActionDraft('light.set_power',models.ActionTarget('area_name','Kitchen'),{'on':True},'Lumos.'))
         assist.assert_not_awaited()
 
+    async def test_light_all_percentage_dim_reports_on_not_off(self):
+        # Regression: light.set_power's percentage variant (the Wizard's
+        # "Licht dimmen" action) targeting all_allowed used to always
+        # speak "aus" (off), because draft.arguments.get("on") is None
+        # for a percentage-based draft - see _handle_typed_action's
+        # light_all branch. The real HA call was always correct; only
+        # the spoken confirmation lied.
+        draft = models.ActionDraft('light.set_power', models.ActionTarget('all_allowed'), {'percentage': 30})
+        adapter = N(execute=AsyncMock(return_value=models.ExecutionResult(models.ExecutionStatus.SUCCESS, 'ok')))
+        with patch.object(support.bridge, 'Code27FrontendAdapter', return_value=adapter, create=True), \
+             patch.object(support.bridge, '_output_speech', AsyncMock()) as speak, \
+             patch.object(support.bridge, '_log_activity'):
+            await support.bridge._handle_typed_action(self.hass, self.entry, self.c, draft, None)
+        self.assertIn('an', speak.call_args.args[3])
+        self.assertNotIn('aus', speak.call_args.args[3])
+
+    async def test_light_all_percentage_zero_reports_off(self):
+        draft = models.ActionDraft('light.set_power', models.ActionTarget('all_allowed'), {'percentage': 0})
+        adapter = N(execute=AsyncMock(return_value=models.ExecutionResult(models.ExecutionStatus.SUCCESS, 'ok')))
+        with patch.object(support.bridge, 'Code27FrontendAdapter', return_value=adapter, create=True), \
+             patch.object(support.bridge, '_output_speech', AsyncMock()) as speak, \
+             patch.object(support.bridge, '_log_activity'):
+            await support.bridge._handle_typed_action(self.hass, self.entry, self.c, draft, None)
+        self.assertIn('aus', speak.call_args.args[3])
+
     async def test_canonical_vacuum_uses_generic_execution_and_frontend_toggle(self):
         book = engine.load_spellbook_from_path(ROOT / 'spellbooks/middle_earth.yaml')
         self.entry.options['bridge_vacuum_enabled'] = True

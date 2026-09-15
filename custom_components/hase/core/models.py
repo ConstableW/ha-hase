@@ -183,6 +183,53 @@ class QueryPlan:
 
 
 @dataclass(frozen=True)
+class ActionStep:
+    """One action within a Combined Spell's `steps` list - the same
+    operation/target/arguments shape ActionDraft already carries, minus the
+    spell-wide concerns (catchphrase/output_mode/expert/user_fallback) that
+    apply once per spell, not once per step. `alias` is optional (item:
+    "should optionally have a stable human-readable alias") - a step
+    without one still executes, it just contributes no named response
+    variables. Steps are USER-tier only in v1: core.executor.ActionExecutor
+    builds a plain (expert=False) ActionDraft from this at run time, so an
+    expert_only operation used as a step is denied exactly like any other
+    expert-gated action with no fallback - no separate per-step expert
+    layer this pass."""
+
+    alias: str | None
+    operation: str
+    target: ActionTarget
+    arguments: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class QueryStep:
+    """One multi-source query within a Combined Spell's `steps` list - the
+    exact same QuerySourceSpec list the existing flat `sources:` field
+    already uses, just scoped under this one step's `alias` instead of
+    being the whole spell. Each source's own `variable`/`unit_variable`
+    becomes the attribute name inside that alias's namespace
+    ({alias.variable})."""
+
+    alias: str | None
+    sources: tuple[QuerySourceSpec, ...]
+
+
+@dataclass(frozen=True)
+class StepPlan:
+    """The Combined-Spell sibling of QueryPlan - a spell declares `steps`
+    instead of a single `operation` or a single flat `sources` list.
+    Resolved/executed by core.executor.ActionExecutor.execute_steps, which
+    reuses execute()/_resolve_query_source per step rather than introducing
+    a parallel execution path."""
+
+    steps: tuple[ActionStep | QueryStep, ...]
+    response_template: str | None
+    catchphrase: str | None = None
+    output_mode: str = DEFAULT_OUTPUT_MODE
+
+
+@dataclass(frozen=True)
 class EngineMatch:
     # Exactly one of action_draft/query_plan is set for a real match (both
     # None only for the free-text output-only path, which never reaches
@@ -196,6 +243,8 @@ class EngineMatch:
     matched_text: str
     is_exact: bool
     query_plan: QueryPlan | None = None
+    # Kept last, same positional-compat convention query_plan already uses.
+    step_plan: StepPlan | None = None
 
 
 @dataclass(frozen=True)

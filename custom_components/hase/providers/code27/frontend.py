@@ -8,7 +8,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.executor import ActionExecutor
-from ...core.models import ActionDraft, AreaPolicy, ExecutionResult, ScopedAreaPolicy
+from ...core.models import (
+    ActionDraft,
+    AreaPolicy,
+    ExecutionResult,
+    ScopedAreaPolicy,
+    StepPlan,
+)
 from ...spellbooker_ha import HaServiceCaller, HaTargetResolver
 
 if TYPE_CHECKING:
@@ -34,4 +40,12 @@ class Code27FrontendAdapter:
     ) -> ExecutionResult:
         return await self._executor.execute(
             draft, _UNRESTRICTED_POLICY, context=context, source_area_id=source_area_id,
+        )
+
+    async def execute_steps(
+        self, plan: StepPlan, *, context: object | None = None,
+        source_area_id: str | None = None,
+    ) -> ExecutionResult:
+        return await self._executor.execute_steps(
+            plan, _UNRESTRICTED_POLICY, context=context, source_area_id=source_area_id,
         )

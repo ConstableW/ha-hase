@@ -347,6 +347,8 @@ class SpellbookRouter:
             )
 
         assert isinstance(result, EngineMatch)
+        if result.step_plan is not None:
+            return await self._execute_steps_and_respond(request, result.step_plan, config.policy)
         if result.query_plan is not None:
             return await self._execute_query_plan_and_respond(request, result.query_plan, config.policy)
         return await self._execute_and_respond(request, result.action_draft, config.policy)
@@ -399,6 +401,31 @@ class SpellbookRouter:
         return ConversationResult(
             request_id=request.request_id, response_text=text, status=status,
             execution_results=(execution,), output_mode=query_plan.output_mode,
+        )
+
+    async def _execute_steps_and_respond(self, request, step_plan, policy) -> ConversationResult:
+        """Combined Spells' sibling of _execute_query_plan_and_respond -
+        same status mapping (QUERY_ANSWER/DENIED/else), since a Combined
+        Spell always reports through execute_steps' one QUERY_ANSWER-
+        shaped result (see core/executor.py's execute_steps docstring),
+        never a bare SUCCESS."""
+        execution = await self._executor.execute_steps(
+            step_plan, policy, context=request.context, source_area_id=request.source_area_id
+        )
+
+        if execution.status is ExecutionStatus.QUERY_ANSWER:
+            text = _response_text_for_success(execution)
+            status = ConversationStatus.COMPLETED
+        elif execution.status is ExecutionStatus.DENIED:
+            text = _REJECTED_TEXT
+            status = ConversationStatus.REJECTED
+        else:
+            text = _ERROR_TEXT
+            status = ConversationStatus.ERROR
+
+        return ConversationResult(
+            request_id=request.request_id, response_text=text, status=status,
+            execution_results=(execution,), output_mode=step_plan.output_mode,
         )
 
     async def _consult_backend(

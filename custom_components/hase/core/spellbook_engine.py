@@ -24,6 +24,7 @@ from .models import (
     OUTPUT_MODES,
     QUERY_RESPONSE_FIELDS,
     ActionDraft,
+    ActionStep,
     ActionTarget,
     AmbiguousOption,
     EngineAmbiguous,
@@ -32,7 +33,10 @@ from .models import (
     EngineResult,
     QueryPlan,
     QuerySourceSpec,
+    QueryStep,
+    StepPlan,
 )
+from .step_variables import action_step_fields
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,16 +54,40 @@ _TARGET_KINDS_REQUIRING_CAPTURE_OR_VALUE = {"area_name", "area_id", "entity_name
 # SET. "entity_ids"/"template"/"none" are deliberately not offered for
 # sources - the Wizard's whole point here is a normal user picking
 # area+domain+aggregation, not writing a template.
-_QUERY_SOURCE_KINDS = {"state", "attribute", "count", "min", "max", "avg", "sum"}
-_AGGREGATE_SOURCE_KINDS = {"count", "min", "max", "avg", "sum"}
+# "names"/"states" (matched entities' friendly names / individual state
+# strings) are additional aggregate kinds - usable both here and inside a
+# Combined Spell step's own `sources`, since they're plain new
+# QuerySourceSpec kinds, not a steps-only concept.
+_QUERY_SOURCE_KINDS = {"state", "attribute", "count", "min", "max", "avg", "sum", "names", "states"}
+_AGGREGATE_SOURCE_KINDS = {"count", "min", "max", "avg", "sum", "names", "states"}
 _SINGLE_SOURCE_TARGET_KINDS = {"area_name", "area_id", "entity_name", "entity_id", "source_area"}
 _AGGREGATE_SOURCE_TARGET_KINDS = {"area_name", "area_id", "all_allowed", "source_area"}
 _MAX_SOURCES_PER_COMMAND = 12
+# Combined Spells (docs/SPELLBOOK-STUDIO-CAPABILITY-EXPANSION.md's deferred
+# "Multi-Step Aktionen") - a `steps` list, mutually exclusive with both a
+# top-level `operation` and a top-level `sources` list. Each entry is
+# either a single action (operation+target+arguments) or a query (its own
+# `sources` list, same shape as the flat field above) - see _parse_steps.
+_MAX_STEPS_PER_COMMAND = 12
 
 # How close two same-tier candidates' scores must be to treat an
 # opposite-outcome tie as genuinely ambiguous rather than trusting the
 # higher score. The established empirical margin is retained.
 _AMBIGUITY_SCORE_EPSILON = 0.05
+
+
+def _valid_response_field_name(name: str) -> bool:
+    """A response placeholder's field name is either a bare identifier
+    (unchanged, existing behavior - trigger captures, entity.get_state's
+    fixed vocabulary, a flat `sources:` variable) or exactly one
+    `alias.field` pair (Combined Spells' namespaced step outputs) where
+    both halves are identifiers - chained/nested dots (`a.b.c`) are
+    naturally rejected because the field half would itself contain a dot
+    and fail its own .isidentifier() check."""
+    if name.isidentifier():
+        return True
+    alias, sep, field = name.partition(".")
+    return bool(sep) and alias.isidentifier() and bool(field) and field.isidentifier()
 
 
 def _valid_localized(value: Any) -> bool:
@@ -96,6 +124,10 @@ class EngineCommand:
     # as target_spec/arguments_spec -> ActionDraft via build_draft.
     sources: tuple[dict[str, Any], ...] = ()
     output_mode: str = DEFAULT_OUTPUT_MODE
+    # Raw per-step dicts (see _parse_steps) - resolved into a StepPlan by
+    # build_step_plan once captures are known, same two-stage pattern as
+    # target_spec/arguments_spec -> ActionDraft and sources -> QueryPlan.
+    steps: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,11 +137,37 @@ class EngineSpellbook:
     commands: tuple[EngineCommand, ...]
 
 
+class _MissingField:
+    """Returned by _KeepMissingFields.__missing__ for a name not yet known
+    at this early capture-substitution stage (e.g. a Combined Spell's
+    {alias.field} response variable, only filled in after execution).
+    Python's format machinery does getattr(mapping[key], "field") for a
+    dotted {key.field} placeholder - the plain string _KeepMissingFields
+    used to return broke exactly this case with an AttributeError (caught
+    by the caller's bare `except`), which meant the WHOLE template's
+    substitution silently failed, not just the missing field. This proxy
+    chains attribute access instead and reconstructs the original
+    "{path}" text on stringification, so two-stage substitution keeps
+    working for dotted names exactly as it already does for bare ones."""
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def __getattr__(self, name: str) -> _MissingField:
+        return _MissingField(f"{self._path}.{name}")
+
+    def __format__(self, spec: str) -> str:
+        return "{" + self._path + "}"
+
+    def __str__(self) -> str:
+        return "{" + self._path + "}"
+
+
 class _KeepMissingFields(dict):
     """Format known captures while leaving runtime response fields intact."""
 
     def __missing__(self, key):
-        return "{" + key + "}"
+        return _MissingField(key)
 
 
 def _resolve_target(spec: dict[str, Any], captures: dict[str, str]) -> ActionTarget | None:
@@ -142,7 +200,23 @@ def _resolve_target(spec: dict[str, Any], captures: dict[str, str]) -> ActionTar
 def _resolve_arguments(spec: dict[str, Any], captures: dict[str, str]) -> dict[str, Any] | None:
     """Fill an arguments template from captures.
 
-    Captured arguments support boolean word mappings and bounded integers.
+    Captured arguments support boolean word mappings, bounded integers/
+    floats, and multi-value word mappings (value_map - e.g. a spoken
+    color word to Home Assistant's color_name).
+
+    There is deliberately no "this capture is optional, skip it if
+    absent" mode here: every alias in a command's `triggers:` list is
+    validated independently against the SAME arguments_spec (see
+    _load_command, which re-runs _load_base_command per alias with only
+    `trigger` swapped) - a placeholder referenced by arguments_spec must
+    therefore appear in EVERY phrasing that command can match, not just
+    some. A spell needing "color only" / "brightness only" / "color and
+    brightness" phrasings is three separate commands sharing the same
+    operation (each with the argument subset ITS OWN trigger actually
+    captures), not one command with an optional argument - core/
+    operations.py's OperationSpec.optional_argument_types is what makes
+    all three of those distinct argument shapes valid for that one
+    operation/HA call.
     """
     resolved: dict[str, Any] = {}
     for key, value_spec in spec.items():
@@ -160,9 +234,10 @@ def _resolve_arguments(spec: dict[str, Any], captures: dict[str, str]) -> dict[s
         if not captured_raw:
             return None
 
-        if value_spec.get("type") == "int":
+        conversion_type = value_spec.get("type")
+        if conversion_type in ("int", "float"):
             try:
-                converted = int(captured_raw, 10)
+                converted = int(captured_raw, 10) if conversion_type == "int" else float(captured_raw)
             except ValueError:
                 return None
             minimum = value_spec.get("min")
@@ -172,6 +247,14 @@ def _resolve_arguments(spec: dict[str, Any], captures: dict[str, str]) -> dict[s
             if maximum is not None and converted > maximum:
                 return None
             resolved[key] = converted
+            continue
+
+        if "value_map" in value_spec:
+            value_map = {k.lower(): v for k, v in value_spec["value_map"].items()}
+            mapped = value_map.get(captured_raw.lower())
+            if mapped is None:
+                return None
+            resolved[key] = mapped
             continue
 
         captured = captured_raw.lower()
@@ -201,17 +284,44 @@ def _valid_arguments_spec(spec: dict[str, Any], placeholder_names: set[str]) -> 
 
         conversion_type = value_spec.get("type")
         if conversion_type is not None:
-            if conversion_type != "int":
+            if conversion_type not in ("int", "float"):
                 return False
             if "true_values" in value_spec or "false_values" in value_spec:
                 return False
             minimum = value_spec.get("min")
             maximum = value_spec.get("max")
-            if minimum is not None and (not isinstance(minimum, int) or isinstance(minimum, bool)):
-                return False
-            if maximum is not None and (not isinstance(maximum, int) or isinstance(maximum, bool)):
-                return False
+            # "int" keeps its original strict-int bound check unchanged;
+            # "float" (climate.set_temperature, number.set_value,
+            # input_number.set_value's own user_choices in
+            # core/operations.py all declare "min"/"max" as plain Python
+            # ints, e.g. min=5/max=35 for a float capture) accepts either
+            # - this was the actual missing piece: _resolve_arguments
+            # below never had a "float" branch at all, so every spell
+            # built from one of those three operations' Wizard presets
+            # failed to even LOAD (rejected right here), not just to
+            # match - found via direct repro, not just static reading.
+            if conversion_type == "int":
+                if minimum is not None and (not isinstance(minimum, int) or isinstance(minimum, bool)):
+                    return False
+                if maximum is not None and (not isinstance(maximum, int) or isinstance(maximum, bool)):
+                    return False
+            else:
+                if minimum is not None and (not isinstance(minimum, (int, float)) or isinstance(minimum, bool)):
+                    return False
+                if maximum is not None and (not isinstance(maximum, (int, float)) or isinstance(maximum, bool)):
+                    return False
             if minimum is not None and maximum is not None and minimum > maximum:
+                return False
+            continue
+
+        if "value_map" in value_spec:
+            value_map = value_spec["value_map"]
+            if "true_values" in value_spec or "false_values" in value_spec:
+                return False
+            if not isinstance(value_map, dict) or not value_map or any(
+                not isinstance(word, str) or not word.strip() or not isinstance(mapped, str) or not mapped.strip()
+                for word, mapped in value_map.items()
+            ):
                 return False
             continue
 
@@ -356,6 +466,113 @@ def _parse_sources(
     return tuple(parsed)
 
 
+def _parse_action_step(
+    spell_id: str, index: int, raw_step: dict[str, Any], placeholder_names: set[str]
+) -> dict[str, Any] | None:
+    """Load-time parse+validate for one action-shaped `steps[]` entry -
+    the exact same operation/target/arguments checks _load_base_command
+    already applies to a flat `operation`+`target`+`arguments` command,
+    reused verbatim rather than duplicated."""
+    operation = raw_step.get("operation")
+    if not isinstance(operation, str) or not operation.strip():
+        _LOGGER.warning("spellbook engine: command %s's steps[%d] has an invalid operation, skipping", spell_id, index)
+        return None
+    target_spec = raw_step.get("target")
+    if not isinstance(target_spec, dict) or target_spec.get("kind") not in _VALID_TARGET_KINDS:
+        _LOGGER.warning("spellbook engine: command %s's steps[%d] has an invalid target, skipping", spell_id, index)
+        return None
+    if "capture" in target_spec and (
+        not isinstance(target_spec["capture"], str) or target_spec["capture"] not in placeholder_names
+    ):
+        _LOGGER.warning(
+            "spellbook engine: command %s's steps[%d] target references an unknown capture, skipping", spell_id, index,
+        )
+        return None
+    if (
+        target_spec["kind"] in _TARGET_KINDS_REQUIRING_CAPTURE_OR_VALUE
+        and "capture" not in target_spec
+        and not (isinstance(target_spec.get("value"), str) and target_spec["value"].strip())
+    ):
+        _LOGGER.warning(
+            "spellbook engine: command %s's steps[%d] target has neither a capture nor a value, skipping",
+            spell_id, index,
+        )
+        return None
+    arguments_spec = raw_step.get("arguments", {})
+    if not isinstance(arguments_spec, dict) or not _valid_arguments_spec(arguments_spec, placeholder_names):
+        _LOGGER.warning("spellbook engine: command %s's steps[%d] has invalid arguments, skipping", spell_id, index)
+        return None
+    return {"operation": operation, "target": target_spec, "arguments": arguments_spec}
+
+
+def _parse_steps(
+    spell_id: str, raw_steps: Any, placeholder_names: set[str]
+) -> tuple[dict[str, Any], ...] | None:
+    """Load-time parse+validate for a Combined Spell's `steps` list - each
+    entry is either an action (operation+target+arguments, validated by
+    _parse_action_step) or a query (its own `sources` list, validated by
+    the exact same _parse_sources already used for the flat `sources:`
+    field). Returns raw dicts tagged with kind="action"|"query" (mirroring
+    how target_spec/arguments_spec/sources stay raw on EngineCommand,
+    resolved into concrete types only once captures are known - see
+    build_step_plan) or None on any validation failure."""
+    if not isinstance(raw_steps, list) or not raw_steps or len(raw_steps) > _MAX_STEPS_PER_COMMAND:
+        _LOGGER.warning(
+            "spellbook engine: command %s has an invalid steps list (empty, not a list, or over %d "
+            "entries), skipping", spell_id, _MAX_STEPS_PER_COMMAND,
+        )
+        return None
+
+    parsed: list[dict[str, Any]] = []
+    seen_aliases: set[str] = set()
+    for i, raw_step in enumerate(raw_steps):
+        if not isinstance(raw_step, dict):
+            _LOGGER.warning("spellbook engine: command %s's steps[%d] is not a mapping, skipping", spell_id, i)
+            return None
+
+        alias = raw_step.get("alias")
+        if alias is not None:
+            if (
+                not isinstance(alias, str) or not alias.isidentifier()
+                or alias in placeholder_names or alias in seen_aliases
+            ):
+                _LOGGER.warning(
+                    "spellbook engine: command %s's steps[%d] has an invalid, reserved or duplicate alias, "
+                    "skipping", spell_id, i,
+                )
+                return None
+            seen_aliases.add(alias)
+
+        has_op = isinstance(raw_step.get("operation"), str) and bool(raw_step["operation"].strip())
+        has_src = isinstance(raw_step.get("sources"), list) and len(raw_step["sources"]) > 0
+        if has_op == has_src:
+            # Exactly one of the two is required - a step is either an
+            # action or a query, never both, never neither.
+            _LOGGER.warning(
+                "spellbook engine: command %s's steps[%d] must be either an action (operation) or a "
+                "query (sources), skipping", spell_id, i,
+            )
+            return None
+
+        if has_op:
+            if set(raw_step) - {"alias", "operation", "target", "arguments"}:
+                _LOGGER.warning("spellbook engine: command %s's steps[%d] has unknown fields, skipping", spell_id, i)
+                return None
+            action = _parse_action_step(spell_id, i, raw_step, placeholder_names)
+            if action is None:
+                return None
+            parsed.append({"alias": alias, "kind": "action", **action})
+        else:
+            if set(raw_step) - {"alias", "sources"}:
+                _LOGGER.warning("spellbook engine: command %s's steps[%d] has unknown fields, skipping", spell_id, i)
+                return None
+            sources = _parse_sources(f"{spell_id}#steps[{i}]", raw_step["sources"], placeholder_names)
+            if sources is None:
+                return None
+            parsed.append({"alias": alias, "kind": "query", "sources": sources})
+    return tuple(parsed)
+
+
 def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | None:
     if not isinstance(raw, dict):
         return None
@@ -366,6 +583,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
     catchphrase = raw.get("catchphrase")
     output = raw.get("output")
     sources_raw = raw.get("sources")
+    steps_raw = raw.get("steps")
     output_mode_raw = raw.get("output_mode")
 
     if not _valid_localized(trigger):
@@ -379,14 +597,16 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
         return None
     has_operation = isinstance(operation, str) and bool(operation.strip())
     has_sources = isinstance(sources_raw, list) and len(sources_raw) > 0
-    if has_operation and has_sources:
-        # A command is either a single/multi-step action OR a multi-source
-        # query, never both - keeps "what does this command DO" a single
+    has_steps = isinstance(steps_raw, list) and len(steps_raw) > 0
+    if sum((has_operation, has_sources, has_steps)) > 1:
+        # A command is a single action (operation), a multi-source query
+        # (sources) OR a Combined Spell (steps) - never more than one of
+        # the three, keeps "what does this command DO" a single
         # unambiguous question, matching the same user/expert exclusivity
         # philosophy as the rest of this loader.
         _LOGGER.warning(
-            "spellbook engine: command %s has both an operation and sources - a command must be either "
-            "an action or a query, skipping", spell_id,
+            "spellbook engine: command %s has more than one of operation/sources/steps - a command must "
+            "be exactly one of these, skipping", spell_id,
         )
         return None
     if output_mode_raw is not None and (not isinstance(output_mode_raw, str) or output_mode_raw not in OUTPUT_MODES):
@@ -396,14 +616,15 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
     if output is not None and not _valid_localized(output):
         _LOGGER.warning("spellbook engine: command %s has an invalid output, skipping", spell_id)
         return None
-    if not has_operation and not has_sources and output is None:
+    if not has_operation and not has_sources and not has_steps and output is None:
         # Etappe 7: a command needs a typed form (operation), a
-        # multi-source query form (sources), a free-text form for some
-        # other caller to use (output, this engine never acts on it
-        # itself), or some combination - none of the three means nothing
-        # in the entire system could ever do anything with it.
+        # multi-source query form (sources), a Combined Spell form
+        # (steps), a free-text form for some other caller to use (output,
+        # this engine never acts on it itself), or some combination -
+        # none of the four means nothing in the entire system could ever
+        # do anything with it.
         _LOGGER.warning(
-            "spellbook engine: command %s has neither an operation, sources nor output, skipping", spell_id
+            "spellbook engine: command %s has none of operation, sources, steps or output, skipping", spell_id
         )
         return None
     if has_operation and not isinstance(target_spec, dict):
@@ -444,6 +665,35 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
         if isinstance(name, str) and name.isidentifier()
     ) if has_sources else frozenset()
 
+    # Same lightweight pre-extraction as declared_variable_names above -
+    # needed only to widen the response-placeholder allowlist below before
+    # steps are actually parsed by _parse_steps. Reads the raw per-step
+    # dicts directly rather than calling _parse_steps twice.
+    declared_step_field_names: frozenset[str] = frozenset()
+    if has_steps:
+        names: set[str] = set()
+        for raw_step in steps_raw:
+            if not isinstance(raw_step, dict):
+                continue
+            alias = raw_step.get("alias")
+            if not isinstance(alias, str) or not alias.isidentifier():
+                continue
+            step_operation = raw_step.get("operation")
+            if isinstance(step_operation, str) and step_operation.strip():
+                step_target = raw_step.get("target")
+                target_kind = step_target.get("kind") if isinstance(step_target, dict) else None
+                if isinstance(target_kind, str):
+                    for field_name in action_step_fields(step_operation, target_kind):
+                        names.add(f"{alias}.{field_name}")
+            elif isinstance(raw_step.get("sources"), list):
+                for source in raw_step["sources"]:
+                    if not isinstance(source, dict):
+                        continue
+                    for field_name in (source.get("variable"), source.get("unit_variable")):
+                        if isinstance(field_name, str) and field_name.isidentifier():
+                            names.add(f"{alias}.{field_name}")
+        declared_step_field_names = frozenset(names)
+
     languages = {"en", "de"}
     for localized in (trigger, output, catchphrase):
         if isinstance(localized, dict):
@@ -464,11 +714,12 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
                 QUERY_RESPONSE_FIELDS
                 if is_response and operation == "entity.get_state"
                 else frozenset()
-            ) | (declared_variable_names if is_response and has_sources else frozenset())
+            ) | (declared_variable_names if is_response and has_sources else frozenset()
+            ) | (declared_step_field_names if is_response and has_steps else frozenset())
             try:
                 for _, name, spec, conversion in Formatter().parse(template):
                     if name is not None and (
-                        not name.isidentifier() or spec or conversion or name not in allowed
+                        not _valid_response_field_name(name) or spec or conversion or name not in allowed
                     ):
                         return None
             except ValueError:
@@ -493,6 +744,28 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
             sort_key=literal_word_count(compiled[reference_trigger]),
             output=output,
             sources=parsed_sources,
+            output_mode=output_mode_value,
+        )
+
+    if has_steps:
+        placeholder_names = {
+            name for segments in compiled.values() for kind, name in segments if kind == "ph"
+        }
+        parsed_steps = _parse_steps(spell_id, steps_raw, placeholder_names)
+        if parsed_steps is None:
+            return None
+        reference_trigger = resolve_localized(trigger, "en") or trigger_variants[0]
+        return EngineCommand(
+            spell_id=spell_id,
+            trigger=trigger,
+            operation=None,
+            target_spec={},
+            arguments_spec={},
+            catchphrase=catchphrase,
+            compiled=compiled,
+            sort_key=literal_word_count(compiled[reference_trigger]),
+            output=output,
+            steps=parsed_steps,
             output_mode=output_mode_value,
         )
 
@@ -572,7 +845,17 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
 def _load_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | None:
     if not isinstance(raw, dict):
         return None
-    user = _load_base_command(spell_id, raw) if raw.get("operation") or raw.get("output") or raw.get("sources") else None
+    if raw.get("steps") and isinstance(raw.get("expert"), dict):
+        # Combined Spells are USER-tier only in v1 (see core/models.py's
+        # ActionStep docstring) - no separate per-command Expert override
+        # layer for a `steps` command. Reject explicitly rather than
+        # silently ignoring the `expert` dict an author supplied.
+        _LOGGER.warning(
+            "spellbook engine: command %s declares both steps and an expert variant, which isn't "
+            "supported yet, skipping", spell_id,
+        )
+        return None
+    user = _load_base_command(spell_id, raw) if raw.get("operation") or raw.get("output") or raw.get("sources") or raw.get("steps") else None
     expert = None
     if isinstance(raw.get("expert"), dict):
         technical = {**raw, **raw["expert"]}
@@ -701,6 +984,26 @@ def build_draft(command: EngineCommand, captures: dict[str, str], lang: str) -> 
                        output_mode=command.output_mode)
 
 
+def _resolve_query_source_spec(source_spec: dict[str, Any], captures: dict[str, str]) -> QuerySourceSpec | None:
+    """Resolve one raw per-source dict (from either the flat `sources:`
+    field or a Combined Spell step's own `sources`) into a concrete
+    QuerySourceSpec, shared by build_query_plan and build_step_plan so
+    the two never duplicate this resolution."""
+    target = _resolve_target(source_spec["target"], captures)
+    if target is None:
+        return None
+    return QuerySourceSpec(
+        kind=source_spec["kind"],
+        target=target,
+        domain_filter=source_spec.get("domain_filter"),
+        device_class=source_spec.get("device_class"),
+        attribute=source_spec.get("attribute"),
+        state_filter=source_spec.get("state_filter"),
+        variable=source_spec["variable"],
+        unit_variable=source_spec.get("unit_variable"),
+    )
+
+
 def build_query_plan(command: EngineCommand, captures: dict[str, str], lang: str) -> QueryPlan | None:
     """The multi-source-query sibling of build_draft - resolves each raw
     source dict's target through the exact same _resolve_target captures
@@ -714,19 +1017,10 @@ def build_query_plan(command: EngineCommand, captures: dict[str, str], lang: str
         return None
     resolved_sources = []
     for source_spec in command.sources:
-        target = _resolve_target(source_spec["target"], captures)
-        if target is None:
+        source = _resolve_query_source_spec(source_spec, captures)
+        if source is None:
             return None
-        resolved_sources.append(QuerySourceSpec(
-            kind=source_spec["kind"],
-            target=target,
-            domain_filter=source_spec.get("domain_filter"),
-            device_class=source_spec.get("device_class"),
-            attribute=source_spec.get("attribute"),
-            state_filter=source_spec.get("state_filter"),
-            variable=source_spec["variable"],
-            unit_variable=source_spec.get("unit_variable"),
-        ))
+        resolved_sources.append(source)
     catchphrase = resolve_localized(command.catchphrase, lang, command.default_language)
     if catchphrase:
         try:
@@ -741,6 +1035,57 @@ def build_query_plan(command: EngineCommand, captures: dict[str, str], lang: str
             pass
     return QueryPlan(
         sources=tuple(resolved_sources),
+        response_template=catchphrase or output,
+        catchphrase=catchphrase,
+        output_mode=command.output_mode,
+    )
+
+
+def build_step_plan(command: EngineCommand, captures: dict[str, str], lang: str) -> StepPlan | None:
+    """Combined Spells' sibling of build_draft/build_query_plan - resolves
+    each raw step dict's target(s) through the same _resolve_target
+    captures already fill in for a single action or a flat multi-source
+    query, deferring actual HA reads/dispatch to
+    core.executor.ActionExecutor.execute_steps (this module has zero HA
+    imports)."""
+    if not command.steps:
+        return None
+    resolved_steps: list[ActionStep | QueryStep] = []
+    for step_spec in command.steps:
+        alias = step_spec.get("alias")
+        if step_spec["kind"] == "action":
+            target = _resolve_target(step_spec["target"], captures)
+            if target is None:
+                return None
+            arguments = _resolve_arguments(step_spec["arguments"], captures)
+            if arguments is None:
+                return None
+            resolved_steps.append(ActionStep(
+                alias=alias, operation=step_spec["operation"], target=target, arguments=arguments,
+            ))
+        else:
+            sources = []
+            for source_spec in step_spec["sources"]:
+                source = _resolve_query_source_spec(source_spec, captures)
+                if source is None:
+                    return None
+                sources.append(source)
+            resolved_steps.append(QueryStep(alias=alias, sources=tuple(sources)))
+
+    catchphrase = resolve_localized(command.catchphrase, lang, command.default_language)
+    if catchphrase:
+        try:
+            catchphrase = catchphrase.format_map(_KeepMissingFields(captures))
+        except (KeyError, IndexError, ValueError, AttributeError, TypeError):
+            pass
+    output = resolve_localized(command.output, lang, command.default_language)
+    if output:
+        try:
+            output = output.format_map(_KeepMissingFields(captures))
+        except (KeyError, IndexError, ValueError, AttributeError, TypeError):
+            pass
+    return StepPlan(
+        steps=tuple(resolved_steps),
         response_template=catchphrase or output,
         catchphrase=catchphrase,
         output_mode=command.output_mode,
@@ -788,6 +1133,7 @@ class CommandMatch:
     output: str | None
     catchphrase: str | None
     query_plan: QueryPlan | None = None
+    step_plan: StepPlan | None = None
 
     @property
     def spoken_trigger(self) -> str:
@@ -801,12 +1147,13 @@ class CommandAmbiguity:
 
 
 def _opposite(a: CommandMatch, b: CommandMatch, lang: str) -> bool:
-    if a.query_plan is not None or b.query_plan is not None:
-        # A query reports a value, it doesn't DO anything - there's no
-        # "opposite outcome" analogous to a boolean action flipped the
-        # wrong way (stage-1/README.md's whole reason this mechanism
-        # exists). Never raise ambiguity for a query candidate; just let
-        # the higher score win, same as any other non-opposite pair.
+    if a.query_plan is not None or b.query_plan is not None or a.step_plan is not None or b.step_plan is not None:
+        # A query (or a Combined Spell, which may itself contain queries
+        # and/or several actions) reports a value or a batch outcome, not
+        # a single boolean flipped the wrong way - there's no "opposite
+        # outcome" analogous to stage-1/README.md's original reason this
+        # mechanism exists. Never raise ambiguity for either candidate;
+        # just let the higher score win, same as any other non-opposite pair.
         return False
     if a.action_draft is not None and b.action_draft is not None:
         return _drafts_are_opposite(a.action_draft, b.action_draft)
@@ -847,7 +1194,7 @@ def find_command(
         for command in tier:
             if (
                 typed_only and command.operation is None and command.expert_command is None
-                and not command.sources
+                and not command.sources and not command.steps
             ):
                 continue
             trigger_text = resolve_localized(command.trigger, lang, command.default_language)
@@ -863,14 +1210,17 @@ def find_command(
             query_plan = build_query_plan(command, found.captures, lang) if command.sources else None
             if command.sources and query_plan is None:
                 continue
-            # An operation/sources permanently selects the typed path, even if execution fails.
+            step_plan = build_step_plan(command, found.captures, lang) if command.steps else None
+            if command.steps and step_plan is None:
+                continue
+            # An operation/sources/steps permanently selects the typed path, even if execution fails.
             output = None
             catchphrase = resolve_localized(command.catchphrase, lang, command.default_language)
             try:
-                if command.operation is None and draft is None and not command.sources:
+                if command.operation is None and draft is None and not command.sources and not command.steps:
                     output = resolve_localized(command.output, lang, command.default_language).format(**found.captures)
                 if catchphrase:
-                    if command.operation == "entity.get_state" or command.sources:
+                    if command.operation == "entity.get_state" or command.sources or command.steps:
                         catchphrase = catchphrase.format_map(_KeepMissingFields(found.captures))
                     else:
                         catchphrase = catchphrase.format(**found.captures)
@@ -879,6 +1229,7 @@ def find_command(
             candidates.append(CommandMatch(
                 command, found.captures, trigger_text, found.matched_text,
                 found.is_exact, found.score, draft, output, catchphrase, query_plan,
+                step_plan=step_plan,
             ))
         if not candidates:
             continue
@@ -903,4 +1254,5 @@ def match(book: EngineSpellbook, text: str, lang: str = "en") -> EngineResult:
                                    candidate.matched_text, candidate.spoken_trigger)
         return EngineAmbiguous(option(result.option_a), option(result.option_b))
     return EngineMatch(result.action_draft, result.command.spell_id,
-                       result.matched_text, result.is_exact, query_plan=result.query_plan)
+                       result.matched_text, result.is_exact, query_plan=result.query_plan,
+                       step_plan=result.step_plan)

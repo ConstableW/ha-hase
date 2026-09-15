@@ -30,7 +30,7 @@ from homeassistant.helpers import intent
 from ... import spellbook_loader
 from ...const import DOMAIN
 from ...core import spellbook_engine
-from ...core.models import ActionDraft, ActionTarget, ExecutionStatus
+from ...core.models import ActionDraft, ActionTarget, ExecutionStatus, StepPlan
 from . import entity_correction as spellbook
 from .const import (
     CONF_BRIDGE_ACK_PHRASE,
@@ -699,6 +699,17 @@ async def _handle_bridge_message(
                     )
                     await _handle_typed_action(
                         hass, entry, coordinator, match.action_draft, entity_id,
+                    )
+                    return
+                if match.step_plan is not None:
+                    _log_activity(
+                        hass, entry,
+                        _msg(hass, "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
+                             book=book.name, trigger=trigger_text, matched=matched_text,
+                             command=f"{len(match.step_plan.steps)} steps"), entity_id,
+                    )
+                    await _handle_typed_steps(
+                        hass, entry, coordinator, match.step_plan, entity_id,
                     )
                     return
                 if is_exact:
@@ -1613,13 +1624,52 @@ async def _handle_typed_action(
         )
         return
     if draft.operation == "light.set_power" and draft.target.kind == "all_allowed":
+        on = draft.arguments.get("on")
+        if on is None and "percentage" in draft.arguments:
+            # The dispatched draft used light.set_power's percentage
+            # variant, not its boolean "on" variant - draft.arguments.get
+            # ("on") is then always None, which used to make the spoken
+            # confirmation always say "aus"/"off" regardless of the real
+            # percentage. Mirror the executor's own percentage==0 -> off
+            # threshold (core/executor.py's _dispatch_action) so the
+            # wording matches what was actually sent to Home Assistant.
+            on = draft.arguments["percentage"] > 0
         await _handle_light_all_action(
-            hass, entry, coordinator, draft.arguments.get("on"),
+            hass, entry, coordinator, on,
             draft.catchphrase, entity_id, execution=execution,
         )
         return
     if execution.status is ExecutionStatus.SUCCESS:
         speech = draft.catchphrase or str(execution.data.get("state") or "OK.")
+    else:
+        speech = _msg(hass, "typed_action_error", error=execution.reason_code)
+    _log_activity(hass, entry, speech, entity_id)
+    await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
+
+
+async def _handle_typed_steps(
+    hass, entry, coordinator, plan: StepPlan, entity_id,
+) -> None:
+    """Combined Spells' sibling of _handle_typed_action - a spellbook
+    trigger that resolved to a step_plan (multiple actions/queries, one
+    combined response) used to fall through to the generic
+    _forward_to_assist text-relay below, which only ever had a plain
+    catchphrase/output string to forward - never a fully self-contained
+    plan like this one that already knows how to execute and render its
+    own response. Forwarding produced no usable command text at all
+    ("None"), which _forward_to_assist/_ask_assist then choked on.
+    Combined Spells execute directly here, the same way a single typed
+    action already does, reusing execute_steps' own QUERY_ANSWER/DENIED
+    status mapping (core/router.py's _execute_steps_and_respond)."""
+    _COMMAND_RECOGNIZED.set(True)
+    request = _current_request(hass, entry, coordinator)
+    execution = await Code27FrontendAdapter(
+        hass, entry.options.get(CONF_BRIDGE_SPELLBOOK),
+        vacuum_allowed=entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False) is True,
+    ).execute_steps(plan)
+    if execution.status is ExecutionStatus.QUERY_ANSWER:
+        response_text = execution.data.get("response_text")
+        speech = response_text if isinstance(response_text, str) else "Erledigt."
     else:
         speech = _msg(hass, "typed_action_error", error=execution.reason_code)
     _log_activity(hass, entry, speech, entity_id)

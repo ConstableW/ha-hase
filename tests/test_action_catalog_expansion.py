@@ -164,9 +164,22 @@ class NewOperationsExecuteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caller.service_calls[0][:2], ("timer", service))
 
     async def test_light_set_color_dispatches_preset_rgb(self):
+        # HA has no standalone "light.set_color" service - color is a
+        # light.turn_on data field, same as effect (see the next test).
         result, caller = await self._run("light.set_color", {"rgb_color": [255, 0, 0]}, "light.lamp")
         self.assertEqual(result.status, ExecutionStatus.SUCCESS)
-        self.assertEqual(caller.service_calls[0], ("light", "set_color", ("light.lamp",), {"rgb_color": [255, 0, 0]}, None))
+        self.assertEqual(caller.service_calls[0], ("light", "turn_on", ("light.lamp",), {"rgb_color": [255, 0, 0]}, None))
+
+    async def test_light_set_color_temperature_uses_turn_on_service(self):
+        # Same bug class as set_color: HA has no standalone
+        # "light.set_color_temperature" service, and the real turn_on
+        # field is "color_temp_kelvin", not the catalog's user-facing
+        # "kelvin" argument key.
+        result, caller = await self._run("light.set_color_temperature", {"kelvin": 3000}, "light.lamp")
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
+        self.assertEqual(
+            caller.service_calls[0], ("light", "turn_on", ("light.lamp",), {"color_temp_kelvin": 3000}, None),
+        )
 
     async def test_light_set_effect_uses_turn_on_service(self):
         result, caller = await self._run("light.set_effect", {"effect": "colorloop"}, "light.lamp")
@@ -293,6 +306,258 @@ class EntityCapabilityFlagsTests(unittest.TestCase):
     def test_missing_or_malformed_attributes_do_not_crash(self):
         self.assertEqual(studio_core.entity_capability_flags("light", {}), {"rgb": False, "color_temp": False, "effect": []})
         self.assertEqual(studio_core.entity_capability_flags("cover", None), {"position": False, "tilt": False})
+
+
+# --- Generic HA service-call forwarding audit ---------------------------
+#
+# Regressions found and fixed alongside these tests (2026-09-15):
+#   - light.set_color / light.set_color_temperature declared services
+#     ("light.set_color" / "light.set_color_temperature") that do not
+#     exist in Home Assistant - color and color temperature are both
+#     light.turn_on data fields. Every call unconditionally failed with
+#     service_call_rejected regardless of the chosen color/kelvin value.
+#   - core/spellbook_engine.py's captured-argument resolver
+#     (_resolve_arguments/_valid_arguments_spec) never had a "float"
+#     branch, only "int" - climate.set_temperature, number.set_value and
+#     input_number.set_value all declare a "float" capture in their own
+#     user_choices, so any spell built from those Wizard presets failed
+#     to even LOAD, let alone match or execute.
+#   - providers/code27/bridge.py's all-lights bridge shortcut read
+#     draft.arguments.get("on"), which is always None for a
+#     percentage-based light.set_power draft - the real HA call was
+#     correct, but the spoken confirmation always said "off" regardless
+#     of the actual percentage (see test_unified_spellbooks.py).
+#
+# The two classes below are a generic, parameterized regression guard
+# against the same bug CLASS recurring for a future operation: a wrong/
+# invented HA service name, a silently dropped or renamed argument, or a
+# capture type nothing actually resolves.
+
+
+def _sample_arguments_for_spec(spec) -> dict:
+    """One valid, in-range argument dict built directly from an
+    OperationSpec's own declared types/ranges - independent of whether
+    the operation has any user_choices, so this also covers Manual/
+    Expert-only operations (lock.lock, light.set_effect, ...) that the
+    simple Wizard picker doesn't offer a preset for."""
+    sample: dict = {}
+    for name, expected_type in spec.argument_types.items():
+        if expected_type is bool:
+            sample[name] = True
+        elif expected_type is int:
+            minimum, maximum = spec.int_ranges.get(name, (0, 100))
+            sample[name] = (minimum + maximum) // 2
+        elif expected_type is float:
+            minimum, maximum = spec.float_ranges.get(name, (0.0, 100.0))
+            sample[name] = (minimum + maximum) / 2
+        elif expected_type is str:
+            sample[name] = "sample"
+        elif expected_type is list:
+            sample[name] = [10, 20, 30]
+    return sample
+
+
+def _sample_capture_text(value_spec: dict) -> str:
+    """The spoken/typed text a trigger capture would need to produce
+    `value_spec`'s declared sample - mirrors core/studio.py's
+    static_report() int/float midpoint sampling and studio.js's
+    expertArgumentDefaults(), so a gap in any of the three (like the
+    missing "float" branch found above) shows up here too."""
+    if value_spec.get("type") in ("int", "float"):
+        minimum, maximum = value_spec.get("min", 0), value_spec.get("max", 100)
+        midpoint = (minimum + maximum) / 2
+        return str(int(midpoint)) if midpoint == int(midpoint) else str(midpoint)
+    for key in ("true_values", "false_values"):
+        values = value_spec.get(key) or []
+        if values:
+            return values[0]
+    return "sample"
+
+
+# core/executor.py's _dispatch_action applies a small, explicit set of
+# translations between the catalog's user-facing argument key/value and
+# Home Assistant's real service data (see that module for the canonical
+# list). Kept as an INDEPENDENT table here, not shared code, so a change
+# to one without the other is caught by this test rather than silently
+# staying in sync.
+_EXPECTED_SERVICE_DATA_TRANSLATIONS = {
+    "media_player.volume_set": lambda args: {"volume_level": args["volume_level"] / 10.0},
+    "media_player.volume_mute": lambda args: {"is_volume_muted": True},
+    "light.set_color_temperature": lambda args: {"color_temp_kelvin": args["kelvin"]},
+}
+
+
+def _expected_service_data(operation: str, resolved_arguments: dict) -> dict:
+    translate = _EXPECTED_SERVICE_DATA_TRANSLATIONS.get(operation)
+    return translate(resolved_arguments) if translate else dict(resolved_arguments)
+
+
+# Dispatched through their own ServiceCaller method (skip_track) or a
+# different resolution path entirely (a query, or area-based/provider-
+# routed) - not the generic call_service forwarding these tests audit.
+# Each already has its own dedicated coverage elsewhere.
+_NOT_CALL_SERVICE_DISPATCHED = frozenset({"entity.get_state", "vacuum.clean_area"})
+
+
+class FullCatalogDispatchContractTests(unittest.IsolatedAsyncioTestCase):
+    """Every OPERATION_CATALOG entry, dispatched directly via a synthetic
+    ActionDraft built from the operation's own declared argument types/
+    ranges - covers Manual/Expert-only operations with no user_choices
+    too (lock.lock, light.set_effect, climate.set_fan_mode, ...), so a
+    future catalog entry with a wrong service mapping is caught even
+    before anyone builds a Wizard preset for it."""
+
+    async def test_every_catalog_entry_dispatches_correctly(self):
+        for operation, spec in OPERATION_CATALOG.items():
+            if operation in _NOT_CALL_SERVICE_DISPATCHED:
+                continue
+            domain = spec.domain_filter or "light"
+            entity_id = f"{domain}.contract_target"
+            arguments = _sample_arguments_for_spec(spec)
+            with self.subTest(operation=operation):
+                resolver = _resolver_for(entity_id)
+                caller = FakeCallServiceCaller()
+                executor = ActionExecutor(resolver, caller, expert_allowed=lambda: True)
+                draft = ActionDraft(operation, ActionTarget("entity_id", entity_id), arguments)
+                result = await executor.execute(draft, _scoped(AreaPolicy(allowed_areas=None, unrestricted=True)))
+                self.assertEqual(result.status, ExecutionStatus.SUCCESS, f"{operation}: {result.reason_code}")
+
+                if operation == "light.set_power":
+                    domain_called, service_called, entity_ids_called, data_called, _ = caller.service_calls[-1]
+                    self.assertEqual((domain_called, service_called), ("light", "turn_on"))
+                    self.assertEqual(data_called, {"brightness_pct": arguments["percentage"]})
+                    continue
+                if operation == "media_player.skip_track":
+                    self.assertEqual(caller.calls[-1], ((entity_id,), arguments["forward"]))
+                    continue
+
+                domain_called, service_called, entity_ids_called, data_called, _ = caller.service_calls[-1]
+                self.assertEqual((domain_called, service_called), spec.service, operation)
+                self.assertEqual(entity_ids_called, (entity_id,))
+                self.assertEqual(data_called, _expected_service_data(operation, arguments), operation)
+
+
+class WizardChoiceForwardingContractTests(unittest.IsolatedAsyncioTestCase):
+    """Complements FullCatalogDispatchContractTests by walking every row
+    of user_actions() (the Wizard's real action-picker data) through the
+    REAL trigger -> capture -> build_draft -> execute chain, not a
+    directly-constructed ActionDraft - this is the layer that had the
+    "float" capture-type gap (climate.set_temperature, number.set_value,
+    input_number.set_value all failed to even load a spell built from
+    their own user_choices preset)."""
+
+    async def test_every_wizard_user_choice_forwards_its_resolved_value(self):
+        for row in studio_core.user_actions():
+            operation = row["operation"]
+            if operation in _NOT_CALL_SERVICE_DISPATCHED:
+                continue
+            spec = OPERATION_CATALOG[operation]
+            domain = spec.domain_filter or "light"
+            entity_id = f"{domain}.contract_target"
+
+            captures: dict[str, str] = {}
+            for value in row["arguments"].values():
+                if isinstance(value, dict) and isinstance(value.get("capture"), str):
+                    captures[value["capture"]] = _sample_capture_text(value)
+            trigger = "do it" + "".join(f" {{{name}}}" for name in captures)
+
+            command = {
+                "id": "t", "trigger": trigger, "operation": operation,
+                "target": {"kind": "entity_id", "value": entity_id},
+                "arguments": row["arguments"],
+            }
+            with self.subTest(operation=operation, choice=row["label"]):
+                book = core.spellbook_engine.load_spellbook_from_dict(
+                    "t", {"id": "t", "name": "T", "commands": [command]},
+                )
+                self.assertIsNotNone(book, f"{operation}: spell failed to load")
+                phrase = trigger.format(**captures)
+                found = core.spellbook_engine.find_command(book, phrase, "de")
+                self.assertIsNotNone(found, f"{operation}: no match for {phrase!r}")
+                draft = found.action_draft
+                self.assertIsNotNone(draft, f"{operation}: draft failed to resolve")
+
+                resolver = _resolver_for(entity_id)
+                caller = FakeCallServiceCaller()
+                executor = ActionExecutor(resolver, caller, expert_allowed=lambda: True)
+                result = await executor.execute(draft, _scoped(AreaPolicy(allowed_areas=None, unrestricted=True)))
+                self.assertEqual(result.status, ExecutionStatus.SUCCESS, f"{operation}: {result.reason_code}")
+
+                if operation == "media_player.skip_track":
+                    self.assertEqual(caller.calls[-1], ((entity_id,), draft.arguments["forward"]))
+                    continue
+                if operation == "light.set_power":
+                    # No explicit `service` (dispatched via its own
+                    # early-return branch in _dispatch_action) - see
+                    # FullCatalogDispatchContractTests above for the
+                    # same check.
+                    domain_called, service_called, entity_ids_called, data_called, _ = caller.service_calls[-1]
+                    self.assertEqual((domain_called, service_called), ("light", "turn_on"))
+                    self.assertEqual(data_called, {"brightness_pct": draft.arguments["percentage"]})
+                    continue
+
+                domain_called, service_called, entity_ids_called, data_called, _ = caller.service_calls[-1]
+                self.assertEqual((domain_called, service_called), spec.service, operation)
+                self.assertEqual(entity_ids_called, (entity_id,))
+                self.assertEqual(data_called, _expected_service_data(operation, draft.arguments), operation)
+
+
+class FloatCaptureRegressionTests(unittest.IsolatedAsyncioTestCase):
+    """Dedicated regression coverage for the "float" capture-type gap
+    (see the module comment above) - one explicit test per affected
+    operation, in addition to the generic parameterized coverage above."""
+
+    async def _dim_via_capture(self, operation, target_kind, target_value, arg_key, spec_extra, captured_text):
+        command = {
+            "id": "t", "trigger": "set {value}", "operation": operation,
+            "target": {"kind": target_kind, "value": target_value},
+            "arguments": {arg_key: {"capture": "value", "type": "float", **spec_extra}},
+        }
+        book = core.spellbook_engine.load_spellbook_from_dict("t", {"id": "t", "name": "T", "commands": [command]})
+        self.assertIsNotNone(book, f"{operation}: spell with a float capture failed to load")
+        found = core.spellbook_engine.find_command(book, f"set {captured_text}", "de")
+        return found.action_draft if found is not None else None
+
+    async def test_climate_set_temperature_float_capture_resolves_and_dispatches(self):
+        draft = await self._dim_via_capture(
+            "climate.set_temperature", "entity_id", "climate.living", "temperature",
+            {"min": 5, "max": 35}, "21",
+        )
+        self.assertEqual(draft.arguments, {"temperature": 21.0})
+        resolver = _resolver_for("climate.living")
+        caller = FakeCallServiceCaller()
+        result = await ActionExecutor(resolver, caller).execute(
+            draft, _scoped(AreaPolicy(allowed_areas=None, unrestricted=True)),
+        )
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
+        self.assertEqual(caller.service_calls[0][:4], ("climate", "set_temperature", ("climate.living",), {"temperature": 21.0}))
+
+    async def test_number_set_value_float_capture_resolves_and_dispatches(self):
+        draft = await self._dim_via_capture(
+            "number.set_value", "entity_id", "number.target", "value", {"min": -1000, "max": 1000}, "42",
+        )
+        self.assertEqual(draft.arguments, {"value": 42.0})
+        resolver = _resolver_for("number.target")
+        caller = FakeCallServiceCaller()
+        result = await ActionExecutor(resolver, caller).execute(
+            draft, _scoped(AreaPolicy(allowed_areas=None, unrestricted=True)),
+        )
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
+        self.assertEqual(caller.service_calls[0][:4], ("number", "set_value", ("number.target",), {"value": 42.0}))
+
+    async def test_input_number_set_value_float_capture_resolves_and_dispatches(self):
+        draft = await self._dim_via_capture(
+            "input_number.set_value", "entity_id", "input_number.target", "value",
+            {"min": -1000, "max": 1000}, "42",
+        )
+        self.assertEqual(draft.arguments, {"value": 42.0})
+
+    async def test_out_of_range_float_capture_fails_to_resolve(self):
+        draft = await self._dim_via_capture(
+            "climate.set_temperature", "entity_id", "climate.living", "temperature",
+            {"min": 5, "max": 35}, "50",
+        )
+        self.assertIsNone(draft)
 
 
 if __name__ == "__main__":

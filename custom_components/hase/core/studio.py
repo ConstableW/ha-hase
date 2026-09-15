@@ -9,19 +9,26 @@ import yaml
 
 from .book_languages import LIST_FIELDS, TEXT_FIELDS, language_objects
 from .executor import OPERATION_CATALOG, ActionExecutor
-from .models import QUERY_RESPONSE_FIELDS_BY_DOMAIN
+from .models import QUERY_RESPONSE_FIELDS_BY_DOMAIN, ActionDraft, ActionStep
 from .spellbook_engine import (
+    _AGGREGATE_SOURCE_KINDS,
+    _AGGREGATE_SOURCE_TARGET_KINDS,
+    _MAX_STEPS_PER_COMMAND,
+    _QUERY_SOURCE_KINDS,
+    _SINGLE_SOURCE_TARGET_KINDS,
     _load_base_command,
     _load_command,
     build_draft,
     build_query_plan,
+    build_step_plan,
 )
+from .step_variables import action_step_fields
 
 BOOK_FIELDS = {"id", "name", "commands", "description", "author", "version", "language",
                "languages", "default_language", "examples", "hase_min_version", "tags", "metadata"}
 SPELL_FIELDS = {"id", "name", "trigger", "triggers", "operation", "target", "arguments",
                 "output", "catchphrase", "examples", "expert", "enabled", "tags", "description", "metadata",
-                "sources", "output_mode"}
+                "sources", "output_mode", "steps"}
 EXPERT_FIELDS = {"operation", "target", "arguments", "catchphrase"}
 MAX_BYTES = 1_000_000
 
@@ -113,17 +120,18 @@ def check_document(raw: dict) -> None:
 def spell_capability(raw: dict) -> str:
     command = (
         _load_base_command(raw.get("id", "spell"), raw)
-        if raw.get("operation") or raw.get("output") or raw.get("sources") else None
+        if raw.get("operation") or raw.get("output") or raw.get("sources") or raw.get("steps") else None
     )
     has_user = command is not None and raw.get("target", {}).get("kind") != "template"
     if has_user and command.operation:
         spec = OPERATION_CATALOG.get(command.operation)
         has_user = spec is not None and bool(spec.user_choices) and command.target_spec.get("kind") in spec.allowed_target_kinds
-    # Multi-source queries (item 4/5) have no expert_only concept of their
-    # own - execute_query_plan never checks the local Expert setting, by
-    # design (see core/executor.py) - so a successfully-parsed sources
-    # command is always USER-tier, same as command.operation being None
-    # (falls through has_user's default True) already implies above.
+    # Multi-source queries (item 4/5) and Combined Spells' `steps` (both
+    # USER-tier only, no per-command Expert override for either - see
+    # core/spellbook_engine.py's _load_command) have no expert_only
+    # concept of their own - a successfully-parsed sources/steps command
+    # is always USER-tier, same as command.operation being None (falls
+    # through has_user's default True) already implies above.
     has_expert = "expert" in raw or raw.get("target", {}).get("kind") == "template"
     return "USER + EXPERT" if has_user and has_expert else "EXPERT ONLY" if has_expert else "USER"
 
@@ -134,15 +142,19 @@ def spell_variables(raw: dict) -> list[dict]:
     chip UI should read instead of maintaining its own separate lists for
     trigger captures, entity.get_state's fixed per-domain fields, and
     multi-source query variables. Each row is
-    {"name": ..., "source": "capture" | "query_field" | "source_variable"},
-    with "domain" added for query_field rows (which HA domain that field
-    applies to, or "*") and "kind" for source_variable rows (the
-    QuerySourceSpec kind it came from) - purely descriptive metadata for
-    the frontend to group/label chips with, never re-derived by it."""
+    {"name": ..., "source": "capture" | "query_field" | "source_variable"
+    | "step_field"}, with "domain" added for query_field rows (which HA
+    domain that field applies to, or "*"), "kind" for source_variable rows
+    (the QuerySourceSpec kind it came from), and "alias"/"field"/"kind"
+    (kind: "action" | "query") for step_field rows (a Combined Spell's own
+    {alias.field} variables, "name" already the fully-qualified
+    "alias.field" the response template actually uses) - purely
+    descriptive metadata for the frontend to group/label chips with,
+    never re-derived by it."""
     rows: list[dict] = []
     command = (
         _load_base_command(raw.get("id", "spell"), raw)
-        if raw.get("operation") or raw.get("output") or raw.get("sources") else None
+        if raw.get("operation") or raw.get("output") or raw.get("sources") or raw.get("steps") else None
     )
     if command is None:
         return rows
@@ -163,6 +175,27 @@ def spell_variables(raw: dict) -> list[dict]:
             if isinstance(name, str) and name and name not in seen:
                 seen.add(name)
                 rows.append({"name": name, "source": "source_variable", "kind": source.get("kind")})
+    for step in command.steps:
+        alias = step.get("alias")
+        if not isinstance(alias, str):
+            continue
+        if step["kind"] == "action":
+            target_kind = step["target"].get("kind")
+            for field in action_step_fields(step["operation"], target_kind):
+                name = f"{alias}.{field}"
+                if name not in seen:
+                    seen.add(name)
+                    rows.append({"name": name, "source": "step_field", "kind": "action",
+                                "alias": alias, "field": field, "operation": step["operation"]})
+        else:
+            for source in step["sources"]:
+                for field in (source.get("variable"), source.get("unit_variable")):
+                    if isinstance(field, str) and field:
+                        name = f"{alias}.{field}"
+                        if name not in seen:
+                            seen.add(name)
+                            rows.append({"name": name, "source": "step_field", "kind": "query",
+                                        "alias": alias, "field": field})
     return rows
 
 
@@ -177,6 +210,22 @@ USER_ACTION_TARGET_CAPTURES = {
     # instead of forcing every area_name action to use {area}.
     "vacuum.clean_area": "target",
 }
+
+
+def query_source_capabilities() -> dict:
+    """The small, fixed vocabulary a Combined Spell's query-step builder
+    needs (kind/target-kind choices) - backend-derived from
+    core/spellbook_engine.py's own private constants (the single source
+    of truth `_parse_sources` already validates against) so the Wizard
+    never hardcodes a second copy, same rule `user_actions()` already
+    follows for operations/domains."""
+    return {
+        "kinds": sorted(_QUERY_SOURCE_KINDS),
+        "aggregate_kinds": sorted(_AGGREGATE_SOURCE_KINDS),
+        "single_target_kinds": sorted(_SINGLE_SOURCE_TARGET_KINDS),
+        "aggregate_target_kinds": sorted(_AGGREGATE_SOURCE_TARGET_KINDS),
+        "max_steps": _MAX_STEPS_PER_COMMAND,
+    }
 
 
 def user_actions() -> list[dict]:
@@ -353,13 +402,27 @@ def static_report(raw: dict) -> dict:
                 if plan is None:
                     errors.append(f"{variant}: Datenquellen oder Ziel ungültig.")
                 continue
+            if candidate.steps:
+                captures = {name: "test" for segments in candidate.compiled.values() for kind, name in segments if kind == "ph"}
+                from dataclasses import replace as _replace
+                plan = build_step_plan(_replace(candidate, expert_command=None), captures, "de")
+                if plan is None:
+                    errors.append(f"{variant}: Schritte oder Ziel ungültig.")
+                elif any(
+                    isinstance(step, ActionStep) and not checker.validate_shape(
+                        ActionDraft(operation=step.operation, target=step.target, arguments=step.arguments)
+                    )
+                    for step in plan.steps
+                ):
+                    errors.append(f"{variant}: Schritt-Aktion, Ziel oder Parameter ungültig.")
+                continue
             if candidate.operation is None:
                 warnings.append("Reine Textausgabe: keine typisierte HASE-Aktion; Ausführung hängt vom Client ab.")
                 continue
             captures = {name: "test" for segments in candidate.compiled.values() for kind, name in segments if kind == "ph"}
             for value in candidate.arguments_spec.values():
                 if isinstance(value, dict) and value.get("capture"):
-                    if value.get("type") == "int":
+                    if value.get("type") in ("int", "float"):
                         minimum = value.get("min", 0)
                         maximum = value.get("max", 100)
                         sample = 50 if minimum <= 50 <= maximum else minimum

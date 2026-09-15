@@ -17,13 +17,16 @@ from typing import Literal, Protocol
 from .models import (
     QUERY_RESPONSE_FIELDS_BY_DOMAIN,
     ActionDraft,
+    ActionStep,
     ActionTarget,
     AreaPolicy,
     ExecutionResult,
     ExecutionStatus,
     QueryPlan,
     QuerySourceSpec,
+    QueryStep,
     ScopedAreaPolicy,
+    StepPlan,
 )
 
 # The declarative operation/capability catalog lives in core/operations.py -
@@ -32,6 +35,12 @@ from .models import (
 # working unchanged: `from .core.executor import OPERATION_CATALOG` remains
 # valid, it just re-reads the one shared dict instead of owning a copy.
 from .operations import OPERATION_CATALOG, OperationSpec
+from .step_variables import (
+    CONFIRMABLE_ACTION_END_STATES,
+    MAX_CONFIRMATION_ENTITIES,
+    SINGLE_ENTITY_TARGET_KINDS,
+    action_step_fields,
+)
 
 
 @dataclass(frozen=True)
@@ -161,8 +170,21 @@ def _entity_permitted(entity: ResolvedEntity, policy: AreaPolicy) -> bool:
 _MISSING_VALUE_TOKEN = "?"
 
 
+def _sanitize_response_value(value: object) -> object:
+    """None -> the missing-value token (unchanged existing behavior); a
+    list/tuple (the "names"/"states" aggregate kinds, or a Combined Spell
+    step's failed_names) -> a human-joined string, since a raw Python list
+    formatted into a sentence would read as "['a', 'b']" - never a
+    special case per kind, just "any list/tuple value gets joined"."""
+    if value is None:
+        return _MISSING_VALUE_TOKEN
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value) if value else _MISSING_VALUE_TOKEN
+    return value
+
+
 def _render_query_response(template: str, variables: dict) -> str:
-    safe_values = {name: (_MISSING_VALUE_TOKEN if value is None else value) for name, value in variables.items()}
+    safe_values = {name: _sanitize_response_value(value) for name, value in variables.items()}
     try:
         return template.format_map(safe_values)
     except (KeyError, IndexError, ValueError, AttributeError, TypeError):
@@ -170,6 +192,21 @@ def _render_query_response(template: str, variables: dict) -> str:
         # variable names against declared sources at save time) - degrade
         # to the raw template rather than losing the whole response.
         return template
+
+
+class _AliasNamespace:
+    """A per-alias response-variable namespace for a Combined Spell step
+    ({alias.field} response variables) - `str.format`'s dotted-field
+    syntax resolves via ordinary getattr for free once a plain identifier
+    is bound to an object exposing that attribute. Built exhaustively (see
+    ActionExecutor.execute_steps) so every declared field is present -
+    never left absent, since a genuinely missing attribute would raise
+    AttributeError, which _render_query_response's `except` would then
+    (incorrectly, for this per-field case) degrade the WHOLE response text
+    over, not just this one field."""
+
+    def __init__(self, values: dict[str, object]) -> None:
+        self.__dict__.update(values)
 
 
 _TARGET_KINDS_REQUIRING_A_VALUE = frozenset({"area_name", "area_id", "entity_name", "entity_id"})
@@ -219,13 +256,28 @@ def _validate_arguments(spec: OperationSpec, arguments) -> bool:
     if not isinstance(arguments, dict):
         return False
 
-    schemas = (spec.argument_types, *spec.argument_variants)
-    if not any(
-        set(arguments) == set(schema)
-        and all(_argument_type_matches(arguments[name], expected)
-                for name, expected in schema.items())
-        for schema in schemas
-    ):
+    # The primary schema tolerates any subset of spec.optional_argument_types
+    # alongside the REQUIRED argument_types keys (light.turn_on's color_name/
+    # brightness_pct: either, both, or neither may be present in one call) -
+    # argument_variants stay an exact-match ALTERNATIVE schema, unaffected
+    # (a mutually exclusive representation, e.g. light.set_power's {"on": bool}
+    # instead of {"percentage": int}, never combined with optional additions).
+    # optional_argument_types defaults to {} for every operation that doesn't
+    # declare any, which collapses this back to the original "== required"
+    # check - zero behavior change for the rest of the catalog.
+    present = set(arguments)
+    required = set(spec.argument_types)
+    optional = spec.optional_argument_types
+    primary_ok = required <= present <= required | set(optional) and all(
+        _argument_type_matches(arguments[name], spec.argument_types.get(name, optional.get(name)))
+        for name in present
+    )
+    variant_ok = any(
+        present == set(schema)
+        and all(_argument_type_matches(arguments[name], expected) for name, expected in schema.items())
+        for schema in spec.argument_variants
+    )
+    if not (primary_ok or variant_ok):
         return False
 
     for name, (minimum, maximum) in spec.int_ranges.items():
@@ -468,7 +520,13 @@ class ActionExecutor:
                 data={"operation": draft.operation},
             )
         if not accepted:
-            return ExecutionResult(status=ExecutionStatus.FAILED, reason_code="service_call_rejected")
+            # entity_ids is included even on rejection (not just SUCCESS,
+            # below) so a Combined Spell step (core.executor.ActionExecutor.
+            # execute_steps) can still report a real target_count/
+            # failed_names for a batch the service call rejected outright -
+            # no existing caller reads a "data" key on this result today.
+            return ExecutionResult(status=ExecutionStatus.FAILED, reason_code="service_call_rejected",
+                                   data={"entity_ids": entity_ids})
         return ExecutionResult(
             status=ExecutionStatus.SUCCESS, reason_code="ok", data={"entity_ids": entity_ids}
         )
@@ -531,6 +589,13 @@ class ActionExecutor:
             elif draft.operation == "media_player.volume_mute":
                 # This expert operation means mute-on, not toggle.
                 service_data = {"is_volume_muted": True}
+            elif draft.operation == "light.set_color_temperature":
+                # Home Assistant's light.turn_on expects "color_temp_kelvin",
+                # not the catalog's user-facing "kelvin" argument key (kept
+                # as-is so a spell authored against this operation needs no
+                # migration) - same translate-only-at-the-final-call pattern
+                # as volume_set/volume_mute above.
+                service_data = {"color_temp_kelvin": draft.arguments["kelvin"]}
 
             return await self._caller.call_service(
                 domain,
@@ -623,6 +688,175 @@ class ActionExecutor:
             data={"response_text": response_text, "variables": variables, "sources": source_reports},
         )
 
+    async def execute_steps(
+        self,
+        plan: StepPlan,
+        policies: ScopedAreaPolicy,
+        *,
+        context: object | None = None,
+        source_area_id: str | None = None,
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Combined Spells' sibling of execute()/execute_query_plan() -
+        runs every step SEQUENTIALLY (no real parallelism this pass - the
+        brief permits it "only where simple/bounded/safe", punting on it
+        entirely is the safer choice for a first implementation), reusing
+        execute() for an ActionStep and _resolve_query_source for a
+        QueryStep's own sources - the exact same TargetResolver/AreaPolicy/
+        ServiceCaller machinery a single action or a flat multi-source
+        query already uses, never a parallel execution path.
+
+        Every step's alias contributes its own namespace of response
+        variables regardless of THAT step's own outcome - a later step's
+        results are never blanked out by an earlier step's failure, so a
+        response like "8 von 9 Rollos wurden geschlossen... Noch offen:
+        Küchenfenster" (some steps ok, one failed) stays possible. Only a
+        DENIED step (a policy/security boundary, same as
+        execute_query_plan's "a named target with a forbidden member
+        denies the whole request" rule) aborts every remaining step -
+        anything else (INVALID/FAILED/UNSUPPORTED) degrades only that
+        step's own alias and continues.
+
+        A single HA service call is a batch accept/reject, not per-entity
+        confirmation - see step_variables.CONFIRMABLE_ACTION_END_STATES'
+        docstring for exactly which operations get a real per-entity
+        success/failure count (via a bounded post-action state re-read)
+        versus the honest batch-level fallback every other operation gets.
+
+        `dry_run=True` (the Studio's "Testen - ohne Geräteaufruf" preview,
+        same flag execute() already has) threads straight through to each
+        action step's own execute() call - no service is actually called,
+        and the per-entity confirmation re-read is skipped too (there is
+        nothing new to confirm when nothing happened - see
+        _execute_action_step). Query steps are read-only already, so
+        nothing changes for them."""
+        variables: dict[str, dict[str, object]] = {}
+        step_reports: list[dict] = []
+        for step in plan.steps:
+            if isinstance(step, ActionStep):
+                fields, report = await self._execute_action_step(
+                    step, policies, context=context, source_area_id=source_area_id, dry_run=dry_run,
+                )
+            else:
+                fields, report = await self._execute_query_step(
+                    step, policies.queries, source_area_id=source_area_id,
+                )
+            step_reports.append(report)
+            if report["status"] == "denied":
+                return ExecutionResult(
+                    status=ExecutionStatus.DENIED,
+                    reason_code=report.get("reason_code") or "area_not_permitted",
+                    data={"steps": step_reports},
+                )
+            if step.alias:
+                variables[step.alias] = fields
+
+        # `variables` (returned in data["variables"], same convention as
+        # execute_query_plan's own raw dict above) keeps raw values -
+        # sanitizing (None -> "?", list -> joined string) happens only for
+        # the ephemeral namespace objects used to render response_text,
+        # never mutating what's reported back to a caller/the Studio.
+        render_namespace = {
+            alias: _AliasNamespace({name: _sanitize_response_value(value) for name, value in fields.items()})
+            for alias, fields in variables.items()
+        }
+        response_text = (
+            _render_query_response(plan.response_template, render_namespace)
+            if plan.response_template else None
+        )
+        any_soft_failure = any(report["status"] != "ok" for report in step_reports)
+        return ExecutionResult(
+            status=ExecutionStatus.QUERY_ANSWER,
+            reason_code="ok" if not any_soft_failure else "partial",
+            data={"response_text": response_text, "variables": variables, "steps": step_reports},
+        )
+
+    async def _execute_action_step(
+        self, step: ActionStep, policies: ScopedAreaPolicy, *, context, source_area_id, dry_run: bool = False,
+    ) -> tuple[dict[str, object], dict]:
+        """Runs one action step through the ordinary execute() path
+        unchanged, then derives its declared response fields (see
+        step_variables.action_step_fields) from the outcome. USER-tier
+        only (see ActionStep's docstring) - an expert_only operation
+        used as a step is denied by execute() itself exactly like any
+        other expert-gated action with no fallback.
+
+        `dry_run=True` threads straight into execute() (no service is
+        actually called) and skips the per-entity confirmation re-read
+        below - there is nothing new to confirm when nothing happened,
+        so a dry-run's aggregate outcome always uses the honest batch
+        semantics (target_count/success_count from the resolved targets
+        and the dry-run's own accept/reject, same as a real but
+        non-confirmable operation would report)."""
+        draft = ActionDraft(operation=step.operation, target=step.target, arguments=step.arguments)
+        execution = await self.execute(draft, policies, context=context, source_area_id=source_area_id, dry_run=dry_run)
+        if execution.status is ExecutionStatus.DENIED:
+            return {}, {"alias": step.alias, "status": "denied", "reason_code": execution.reason_code}
+
+        success = execution.status is ExecutionStatus.SUCCESS
+        entity_ids = tuple(execution.data.get("entity_ids") or ())
+        fields = action_step_fields(step.operation, step.target.kind)
+        values: dict[str, object] = {}
+
+        if step.target.kind in SINGLE_ENTITY_TARGET_KINDS:
+            entity_id = entity_ids[0] if entity_ids else None
+            state = await self._caller.get_entity_state(entity_id) if entity_id else None
+            for field in fields:
+                values[field] = success if field == "success" else (state.get(field) if state is not None else None)
+        else:
+            target_count = len(entity_ids)
+            confirmable = step.operation in CONFIRMABLE_ACTION_END_STATES
+            if not dry_run and success and confirmable and 0 < target_count <= MAX_CONFIRMATION_ENTITIES:
+                expected = CONFIRMABLE_ACTION_END_STATES[step.operation]
+                success_count = 0
+                failed_names: list[str] = []
+                for entity_id in entity_ids:
+                    state = await self._caller.get_entity_state(entity_id)
+                    if state is not None and state.get("state") == expected:
+                        success_count += 1
+                    else:
+                        failed_names.append(state.get("entity_name") if state is not None else entity_id)
+                values = {
+                    "target_count": target_count, "success_count": success_count,
+                    "failed_count": target_count - success_count, "failed_names": failed_names,
+                }
+            else:
+                # Honest batch semantics: a single HA service call is
+                # accept/reject for the whole set, not per-entity - see
+                # execute_steps' own docstring.
+                values = {
+                    "target_count": target_count,
+                    "success_count": target_count if success else 0,
+                    "failed_count": 0 if success else target_count,
+                    "failed_names": [],
+                }
+
+        return values, {
+            "alias": step.alias, "status": "ok" if success else "failed", "reason_code": execution.reason_code,
+        }
+
+    async def _execute_query_step(
+        self, step: QueryStep, policy: AreaPolicy, *, source_area_id,
+    ) -> tuple[dict[str, object], dict]:
+        """Runs one query step's sources through _resolve_query_source
+        unchanged - the exact same per-source resolution a flat
+        `sources:` query already uses, just merged into this step's own
+        alias namespace instead of one flat variables dict."""
+        values: dict[str, object] = {}
+        source_reports: list[dict] = []
+        for source in step.sources:
+            value, unit_value, report = await self._resolve_query_source(
+                source, policy, source_area_id=source_area_id,
+            )
+            if report["status"] == "denied":
+                return {}, {"alias": step.alias, "status": "denied", "reason_code": "area_not_permitted"}
+            values[source.variable] = value
+            if source.unit_variable:
+                values[source.unit_variable] = unit_value
+            source_reports.append(report)
+        status = "ok" if all(r["status"] == "ok" for r in source_reports) else "partial"
+        return values, {"alias": step.alias, "status": status, "sources": source_reports}
+
     async def _resolve_query_source(
         self, source: QuerySourceSpec, policy: AreaPolicy, *, source_area_id: str | None,
     ) -> tuple[object, object, dict]:
@@ -655,7 +889,7 @@ class ActionExecutor:
                     filtered.append(entity)
             entities = tuple(filtered)
 
-        is_aggregate = source.kind in ("count", "min", "max", "avg", "sum")
+        is_aggregate = source.kind in ("count", "min", "max", "avg", "sum", "names", "states")
         if not is_aggregate:
             if not entities:
                 return None, None, {"variable": source.variable, "status": "target_not_found"}
@@ -688,6 +922,20 @@ class ActionExecutor:
 
         if source.kind == "count":
             return len(entities), None, {"variable": source.variable, "status": "ok", "matched": len(entities)}
+
+        if source.kind in ("names", "states"):
+            # A zero-match set is a valid, reported answer here too - same
+            # "count of zero is not an error" convention as above, degraded
+            # to the missing-value token only at render time (an empty
+            # list has nothing useful to join into a sentence).
+            values: list[object] = []
+            for entity in entities:
+                state = await self._caller.get_entity_state(entity.entity_id)
+                if source.kind == "names":
+                    values.append(state.get("entity_name") if state is not None else entity.entity_id)
+                else:
+                    values.append(state.get("state") if state is not None else None)
+            return values, None, {"variable": source.variable, "status": "ok", "matched": len(values)}
 
         numeric_values = []
         for entity in entities:

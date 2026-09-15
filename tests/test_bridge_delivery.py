@@ -261,7 +261,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.entry.options["bridge_spellbook"] = "test"
         book = N(name="test")
         match = N(output="Licht Buero einschalten", catchphrase=None, trigger_text="lumos",
-                  matched_text="lumos", is_exact=True, captures={}, action_draft=None)
+                  matched_text="lumos", is_exact=True, captures={}, action_draft=None, step_plan=None)
         with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
              patch.object(engine, "find_command", return_value=match), \
              patch.object(bridge, "_forward_to_assist", AsyncMock(return_value=(None, None, "new"))) as forward, \
@@ -269,6 +269,32 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             await bridge._handle_bridge_message(self.hass, self.entry, self.c, "lumos Buero", None)
         self.assertIsNone(self.c.pending_correction)
         self.assertEqual(forward.call_args.args[3], "Licht Buero einschalten")
+
+    async def test_combined_spell_trigger_executes_steps_directly_not_via_assist_relay(self):
+        # A spellbook trigger that resolves to a step_plan (Combined
+        # Spells) used to fall through to the generic _forward_to_assist
+        # text relay below - which only ever had a plain output/
+        # catchphrase string to forward, never a step_plan. That path
+        # produced no usable command text ("None"), which the relay then
+        # choked on trying to process further. Combined Spells must
+        # execute directly, the same way a single typed action already
+        # does, and never reach _forward_to_assist at all.
+        self.entry.options["bridge_spellbook"] = "test"
+        book = N(name="test")
+        plan = N(steps=(N(), N()))
+        match = N(output=None, catchphrase=None, trigger_text="zwergstadt abendmodus",
+                  matched_text="zwergstadt abendmodus", is_exact=True, captures={},
+                  action_draft=None, step_plan=plan)
+        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
+             patch.object(engine, "find_command", return_value=match), \
+             patch.object(bridge, "_handle_typed_steps", AsyncMock()) as handle_steps, \
+             patch.object(bridge, "_forward_to_assist", AsyncMock()) as forward, \
+             patch.object(bridge, "_log_activity"):
+            await bridge._handle_bridge_message(
+                self.hass, self.entry, self.c, "zwergstadt abendmodus", None,
+            )
+        handle_steps.assert_awaited_once_with(self.hass, self.entry, self.c, plan, None)
+        forward.assert_not_awaited()
 
     async def test_missing_configured_spellbook_warns_instead_of_silent_fallback(self):
         # Second-round audit: a spellbook_id that no longer resolves

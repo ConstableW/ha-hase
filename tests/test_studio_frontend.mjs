@@ -262,17 +262,195 @@ test("spell search filters live and survives a Studio reload", async () => {
   }
 });
 
-test("New spell asks for Wizard or unchanged Manual creation", async () => {
+test("New spell top-level choice is Wizard vs Manual; Manual still creates the unchanged single-action draft directly", async () => {
   const ui=studio();ui.ensureEditorTargets=async()=>{};
   await ui.act("new-spell");
-  assert.equal(ui.edit,undefined);assert.equal(ui.newSpellChoice,true);
+  assert.equal(ui.edit,undefined);assert.equal(ui.newSpellChoice,true);assert.equal(ui.newSpellStep,0);
   const choice=ui.newSpellChoiceView();
-  assert.ok(choice.includes('data-do="new-spell-wizard"'));
+  assert.ok(choice.includes('data-do="new-spell-wizard-menu"'));
   assert.ok(choice.includes('data-do="new-spell-manual"'));
+  assert.ok(!choice.includes('data-do="new-spell-wizard"'),"the single-action and combined choices only appear after picking Wizard");
+  assert.ok(!choice.includes('data-do="new-spell-steps"'));
   await ui.act("new-spell-manual");
   assert.equal(ui.editorMode,"manual");
   assert.deepEqual({trigger:ui.edit.trigger,target:ui.edit.target,operation:ui.edit.operation,arguments:ui.edit.arguments},{trigger:"",target:{kind:"area_id"},operation:"light.turn_on",arguments:{}});
   assert.equal(ui.editorDirty,false);
+});
+
+test("New spell Wizard choice opens a second screen offering a single action/query or Actions & Queries, with a working back button", async () => {
+  const ui=studio();ui.ensureEditorTargets=async()=>{};
+  await ui.act("new-spell");
+  ui.value=id=>id==="new-spell-language"?"en":"";
+  await ui.act("new-spell-wizard-menu");
+  assert.equal(ui.newSpellStep,1);
+  let choice=ui.newSpellChoiceView();
+  assert.ok(choice.includes('data-do="new-spell-wizard"'));
+  assert.ok(choice.includes('data-do="new-spell-steps"'));
+  assert.ok(choice.includes('data-do="new-spell-back"'));
+  await ui.act("new-spell-back");
+  assert.equal(ui.newSpellStep,0);
+  choice=ui.newSpellChoiceView();
+  assert.ok(choice.includes('data-do="new-spell-wizard-menu"'),"back must return to the top-level Wizard/Manual choice");
+});
+
+test("Combined Spells: New spell Wizard choice offers Actions & Queries (via the sub-menu) and initializes an empty steps list", async () => {
+  const ui=studio();ui.ensureEditorTargets=async()=>{};
+  await ui.act("new-spell");
+  await ui.act("new-spell-wizard-menu");
+  const choice=ui.newSpellChoiceView();
+  assert.ok(choice.includes('data-do="new-spell-steps"'));
+  await ui.act("new-spell-steps");
+  assert.equal(ui.editorMode,"steps");
+  assert.deepEqual(ui.edit.steps,[]);
+});
+
+test("New spell: the language chosen on the top-level screen survives into the Wizard sub-menu", async () => {
+  const ui=studio();ui.ensureEditorTargets=async()=>{};
+  await ui.act("new-spell");
+  ui.value=id=>id==="new-spell-language"?"en":"";
+  await ui.act("new-spell-wizard-menu");
+  ui.value=()=>"";
+  await ui.act("new-spell-wizard");
+  assert.equal(ui.wizardLanguageExplicit,"en");
+});
+
+test("Combined Spells: adding an action step opens it for editing and collectSteps() forwards it", async () => {
+  const ui=studio();
+  ui.edit={id:"night",trigger:"",steps:[]};ui.editorMode="steps";
+  ui.ensureAreas=async()=>{};ui.ensureEntitiesForAction=async()=>{};
+  ui.info.actions=[{id:"cover.close_cover:0",label:"Schließen",operation:"cover.close_cover",arguments:{},targets:["all_allowed","area_id","entity_id"]}];
+  await ui.act("add-step","action");
+  assert.equal(ui.editingStepIndex,0);
+  assert.equal(ui.edit.steps.length,1);
+  assert.equal(ui.edit.steps[0].kind,"action");
+  const fields={"step-alias":"shutters","step-action":"cover.close_cover:0","step-target-kind":"all_allowed","triggers":"gute nacht","spell-name":"Gute Nacht"};
+  ui.value=id=>fields[id]||"";
+  ui.shadowRoot.querySelectorAll=()=>[];
+  const payload=ui.collectSteps();
+  assert.equal(payload.steps.length,1);
+  assert.deepEqual(payload.steps[0],{alias:"shutters",kind:"action",action:"cover.close_cover:0",target_kind:"all_allowed",target_value:null});
+  assert.equal(payload.triggers[0],"gute nacht");
+});
+
+test("Combined Spells: adding a query step's data source and collectSteps() forwards it", async () => {
+  const ui=studio();
+  ui.edit={id:"contacts",trigger:"",steps:[]};ui.editorMode="steps";
+  ui.ensureAreas=async()=>{};ui.ensureEntitiesForAction=async()=>{};
+  ui.info.query_source_capabilities={kinds:["count","names","states","state","attribute","min","max","avg","sum"],aggregate_kinds:["count","names","states","min","max","avg","sum"],single_target_kinds:["area_id","entity_id","source_area"],aggregate_target_kinds:["area_id","all_allowed","source_area"]};
+  await ui.act("add-step","query");
+  assert.equal(ui.edit.steps[0].kind,"query");
+  assert.equal(ui.edit.steps[0].sources.length,1);
+  const fields={"step-alias":"open_contacts","source-0-kind":"count","source-0-target-kind":"all_allowed","source-0-domain-filter":"binary_sensor","source-0-device-class":"","source-0-state-filter":"on","source-0-variable":"count","source-0-unit-variable":"","triggers":"wie viele fenster sind offen"};
+  ui.value=id=>fields[id]||"";
+  ui.shadowRoot.querySelectorAll=()=>[];
+  const payload=ui.collectSteps();
+  assert.equal(payload.steps[0].alias,"open_contacts");
+  assert.deepEqual(payload.steps[0].sources[0],{kind:"count",target_kind:"all_allowed",target_value:null,domain_filter:"binary_sensor",device_class:undefined,attribute:undefined,state_filter:"on",variable:"count",unit_variable:undefined});
+});
+
+test("Combined Spells: response chips are grouped by alias with dotted variable names", () => {
+  const ui=studio();
+  ui.edit={id:"night",trigger:"",steps:[]};
+  ui.wizardValidation={spell_variables:[
+    {name:"shutters.target_count",source:"step_field",kind:"action",alias:"shutters",field:"target_count",operation:"cover.close_cover"},
+    {name:"shutters.success_count",source:"step_field",kind:"action",alias:"shutters",field:"success_count",operation:"cover.close_cover"},
+    {name:"open_contacts.count",source:"step_field",kind:"query",alias:"open_contacts",field:"count"},
+  ]};
+  const html=ui.stepsResponseChips("spell-output");
+  assert.ok(html.includes("shutters"));
+  assert.ok(html.includes("open_contacts"));
+  assert.ok(html.includes('data-id="spell-output:shutters.target_count"'));
+  assert.ok(html.includes('data-id="spell-output:open_contacts.count"'));
+});
+
+test("Combined Spells: insertPlaceholder accepts a dotted step-field variable", () => {
+  const ui=studio();
+  ui.edit={id:"night",trigger:"",steps:[]};
+  ui.wizardValidation={spell_variables:[{name:"shutters.target_count",source:"step_field",kind:"action",alias:"shutters",field:"target_count"}]};
+  let dispatched=false;
+  const field={value:"Fertig: ",selectionStart:8,selectionEnd:8,focus(){},setRangeText(token){this.value+=token;},dispatchEvent(){dispatched=true;}};
+  ui.shadowRoot.getElementById=id=>id==="spell-output"?field:null;
+  ui.insertPlaceholder("spell-output:shutters.target_count");
+  assert.ok(dispatched);
+  assert.ok(field.value.includes("{shutters.target_count}"));
+});
+
+test("Combined Spells: opening an existing steps spell routes to the steps wizard", async () => {
+  const ui=studio();
+  const stepsSpell={id:"night",name:"Gute Nacht",trigger:"gute nacht",steps:[{alias:"a",operation:"light.turn_off",target:{kind:"all_allowed"},arguments:{}}]};
+  ui.current.book.commands.push(stepsSpell);
+  ui.ensureEditorTargets=async()=>{};
+  await ui.act("edit","night");
+  assert.equal(ui.editorMode,"steps");
+  assert.equal(ui.edit.steps.length,1);
+});
+
+test("Combined Spells: reopening a saved spell converts raw stored steps into the editor's internal shape", async () => {
+  const ui=studio();
+  const stepsSpell={id:"night",name:"Gute Nacht",trigger:"gute nacht",steps:[
+    {alias:"a",operation:"light.set_power",target:{kind:"area_id",value:"wohnzimmer"},arguments:{on:true}},
+    {alias:"b",sources:[{kind:"count",target:{kind:"area_id",value:"wohnzimmer"},variable:"count",domain_filter:"light",state_filter:"on"}]},
+  ]};
+  ui.current.book.commands.push(stepsSpell);
+  ui.ensureEditorTargets=async()=>{};
+  await ui.act("edit","night");
+  assert.equal(ui.editorMode,"steps");
+  assert.deepEqual(ui.edit.steps[0],{alias:"a",kind:"action",action:"light-on",target_kind:"area_id",target_value:"wohnzimmer"});
+  assert.deepEqual(ui.edit.steps[1],{alias:"b",kind:"query",sources:[{kind:"count",target_kind:"area_id",target_value:"wohnzimmer",domain_filter:"light",device_class:"",attribute:"",state_filter:"on",variable:"count",unit_variable:""}]});
+  const html=ui.stepListView();
+  assert.ok(html.includes("Licht einschalten"),"reopened action step must show its real action label, not a blank one");
+  assert.equal(ui.wizardMaxStep,4,"reopening an existing steps spell must unlock direct navigation to every step, not just Next");
+});
+
+test("Combined Spells: the review step offers real device execution, but only for an already-saved spell", () => {
+  const ui=studio();
+  ui.edit={id:"night",trigger:"gute nacht",steps:[]};
+  ui.editorMode="steps";ui.wizardStep=4;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  ui.editExisting=false;
+  assert.ok(!ui.stepsWizardView().includes('data-do="execute"'),"a not-yet-saved spell must not offer real execution");
+  ui.editExisting=true;
+  const html=ui.stepsWizardView();
+  assert.ok(html.includes('data-do="execute"'),"an already-saved Combined Spell must offer real execution, not just the dry run");
+  assert.ok(html.includes('data-do="test-edit"'),"the dry-run test must stay available alongside real execution");
+});
+
+test("light.set_color: hex/RGB conversion round-trips", () => {
+  const ui=studio();
+  assert.deepEqual(ui.hexToRgb(ui.rgbToHex([127,255,0])),[127,255,0]);
+  assert.equal(ui.rgbToHex(null),"#ffffff");
+  assert.deepEqual(ui.hexToRgb("not-a-color"),[255,255,255]);
+});
+
+test("light.set_color: visual picker only renders for that operation, and reflects the currently configured color", () => {
+  const ui=studio();
+  assert.equal(ui.lightColorPickerView("light.turn_on",{}),"");
+  const html=ui.lightColorPickerView("light.set_color",{rgb_color:[127,255,0]});
+  assert.ok(html.includes('id="action-color-picker"'));
+  assert.ok(html.includes('value="#7fff00"'));
+  const named=ui.lightColorPickerView("light.set_color",{color_name:"chartreuse"});
+  assert.ok(named.includes('value="chartreuse"'));
+});
+
+test("light.set_color: picking a color visually overrides the preset arguments via the existing __preserve__ mechanism", async () => {
+  const ui=studio();
+  ui.edit={...spell,operation:"light.set_color",arguments:{rgb_color:[255,0,0]},target:{kind:"all_allowed"}};
+  await ui.change({target:{id:"action-color-picker",value:"#7fff00",dataset:{}}});
+  assert.equal(ui.edit.operation,"light.set_color");
+  assert.deepEqual(ui.edit.arguments,{rgb_color:[127,255,0]});
+  // The custom RGB no longer matches any curated preset, so the existing
+  // editorActions "__preserve__" row (built for exactly this case) picks
+  // it up automatically - no backend change needed to round-trip it.
+  const preserved=ui.editorActions.find(a=>a.id==="__preserve__");
+  assert.ok(preserved);
+  assert.deepEqual(preserved.arguments,{rgb_color:[127,255,0]});
+});
+
+test("light.set_color: typing an HA color name overrides rgb_color with color_name", async () => {
+  const ui=studio();
+  ui.edit={...spell,operation:"light.set_color",arguments:{rgb_color:[255,0,0]},target:{kind:"all_allowed"}};
+  await ui.change({target:{id:"action-color-name",value:"chartreuse",dataset:{}}});
+  assert.deepEqual(ui.edit.arguments,{color_name:"chartreuse"});
 });
 
 test("Wizard uses the shared draft, action catalogue and Manual switch", async () => {
@@ -420,6 +598,16 @@ test("context help is UI-only and Wizard validation calls the existing validator
   assert.equal(call.operation,"validate");assert.equal(ui.wizardValidation.spells[0].id,"lumos");
 });
 
+test("light.set_color: reopening a saved spell shows the configured color pre-filled in the Wizard's Action step", () => {
+  const ui=studio();
+  ui.edit={...spell,operation:"light.set_color",arguments:{rgb_color:[127,255,0]},target:{kind:"all_allowed"}};
+  ui.editorMode="wizard";ui.wizardStep=2;ui.wizardMaxStep=2;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  const html=ui.wizardView();
+  assert.ok(html.includes('id="action-color-picker"'));
+  assert.ok(html.includes('value="#7fff00"'));
+});
+
 test("Wizard renders six guided steps over the Manual Editor field IDs", () => {
   const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=0;
   ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
@@ -430,8 +618,8 @@ test("Wizard renders six guided steps over the Manual Editor field IDs", () => {
   assert.ok(html.includes('data-do="wizard-next"'));
 });
 
-test("Wizard stepper: current and already-visited steps are clickable, upcoming steps are not", () => {
-  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;
+test("Wizard stepper: current, already-visited, and previously-reached steps are clickable, never-reached steps are not", () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;ui.wizardMaxStep=3;
   ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
   const html=ui.wizardView();
   for(const index of [0,1,2,3])assert.ok(html.includes(`data-do="wizard-goto" data-id="${index}"`),`step ${index} clickable`);
@@ -441,15 +629,31 @@ test("Wizard stepper: current and already-visited steps are clickable, upcoming 
   assert.match(html,/<div class="step-button" aria-disabled="true"><span>5<\/span>/);
 });
 
-test("wizard-goto navigates to an already-visited step but refuses to skip ahead", async () => {
-  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;
+test("wizard-goto navigates freely within already-reached steps, forward and backward, but refuses to skip past the furthest reached step", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=3;ui.wizardMaxStep=3;
   ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
   await ui.act("wizard-goto","1");
   assert.equal(ui.wizardStep,1);
+  assert.equal(ui.wizardMaxStep,3,"jumping backward must not shrink the furthest reached step");
   await ui.act("wizard-goto","4");
-  assert.equal(ui.wizardStep,1,"a step ahead of the current one must be refused");
+  assert.equal(ui.wizardStep,1,"a step never yet reached must be refused");
+  await ui.act("wizard-goto","3");
+  assert.equal(ui.wizardStep,3,"jumping forward again to an already-reached step must work directly, not only via Next");
   await ui.act("wizard-goto","1");
   assert.equal(ui.wizardStep,1,"the current step itself stays reachable");
+});
+
+test("wizard-next advances the furthest reached step so it stays unlocked after navigating back", async () => {
+  const ui=studio();ui.edit=structuredClone(spell);ui.editorMode="wizard";ui.wizardStep=0;ui.wizardMaxStep=0;
+  ui.value=()=>"";ui.shadowRoot.querySelectorAll=()=>[];
+  await ui.act("wizard-next");
+  await ui.act("wizard-next");
+  assert.equal(ui.wizardStep,2);
+  assert.equal(ui.wizardMaxStep,2);
+  await ui.act("wizard-goto","0");
+  assert.equal(ui.wizardMaxStep,2,"going back must not forget steps already reached");
+  await ui.act("wizard-goto","2");
+  assert.equal(ui.wizardStep,2,"the previously reached step must be directly reachable again");
 });
 
 test("Wizard device filter reacts live without changing the spell draft", () => {
@@ -549,4 +753,166 @@ test("opening and system-language changes keep inherited and stored defaults dis
   ui.startNewSpell("wizard");assert.equal(ui.editLanguage,"en");ui.edit=null;ui.wizardLanguageExplicit=null;
   ui.current.book.default_language="de";ui.bookLanguage="de";ui.hass={locale:{language:"de"}};ui.hass={locale:{language:"en"}};
   assert.equal(ui.bookLanguage,"de");
+});
+
+test("User Management button is admin-only, real enforcement stays server-side", () => {
+  const ui=studio();
+  ui._hass={user:{is_admin:false}};
+  assert.ok(!ui.topbarToolsView().includes('data-do="user-management"'));
+  ui._hass={user:{is_admin:true}};
+  assert.ok(ui.topbarToolsView().includes('data-do="user-management"'));
+});
+
+test("access-denied screen names the signed-in user in both languages and never shows the Studio", () => {
+  const ui=studio();
+  ui._hass={user:{is_admin:false,name:"Nils"}};
+  const de=ui.accessDeniedView();
+  assert.ok(de.includes("Nils"));
+  assert.ok(de.includes("Kein Zugriff auf HASE Studio"));
+  ui.language="en";
+  const en=ui.accessDeniedView();
+  assert.ok(en.includes("Nils"));
+  assert.ok(en.includes("No access to HASE Studio"));
+});
+
+test("init() shows the access-denied state only for an unauthorized WebSocket rejection", async () => {
+  const ui=new Studio();
+  ui.language="de";
+  ui.render=()=>{};
+  ui._hass={callWS:async()=>{throw {code:"unauthorized",message:"Kein Zugriff auf HASE Studio."};}};
+  await ui.init();
+  assert.equal(ui.authorized,false);
+  assert.equal(ui.loaded,true);
+});
+
+test("init() surfaces a non-authorization WebSocket error normally instead of hiding it", async () => {
+  const ui=new Studio();
+  ui.language="de";
+  ui.render=()=>{};
+  ui._hass={callWS:async()=>{throw new Error("boom");}};
+  await assert.rejects(() => ui.init());
+});
+
+test("User Management loads lazily on open and shows a loading state before access_get resolves", async () => {
+  const ui=studio();
+  ui._hass={user:{is_admin:true}};
+  assert.ok(ui.userManagementView().includes("Nutzerverwaltung"));
+  let requested=null;
+  ui.api=async operation=>{requested=operation; return {config:{mode:"admin",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]};};
+  await ui.act("user-management");
+  assert.equal(requested,"access_get");
+  assert.equal(ui.userManagementOpen,true);
+  assert.deepEqual(ui.accessDraft,{mode:"admin",allowed_user_ids:new Set(),allowed_group_ids:new Set()});
+});
+
+test("User Management: CUSTOM mode renders groups/users with an understandable effective-access reason", async () => {
+  const ui=studio();
+  ui._hass={user:{is_admin:true,name:"Admin"}};
+  const snapshot={
+    config:{mode:"custom",allowed_user_ids:["u-ben"],allowed_group_ids:["g-family"]},
+    groups:[{id:"g-family",name:"Family",member_count:2,allowed:true}],
+    users:[
+      {id:"admin-1",name:"Admin",is_admin:true,group_ids:[],access:"admin",allowed:false},
+      {id:"u-ben",name:"Benjamin",is_admin:false,group_ids:[],access:"user",allowed:true},
+      {id:"u-anika",name:"Anika",is_admin:false,group_ids:["g-family"],access:"group",allowed:false},
+      {id:"u-nils",name:"Nils",is_admin:false,group_ids:[],access:"denied",allowed:false},
+    ],
+  };
+  ui.api=async operation=>{assert.equal(operation,"access_get"); return snapshot;};
+  await ui.act("user-management");
+  const html=ui.userManagementView();
+  assert.ok(html.includes("checklist"));
+  assert.ok(html.includes("Family"));
+  assert.ok(html.includes("2 Mitglieder"));
+  assert.ok(html.includes("Benjamin") && html.includes("Explizit erlaubt"));
+  assert.ok(html.includes("Anika") && html.includes("Über Gruppe erlaubt"));
+  assert.ok(html.includes("Nils") && html.includes("Kein Zugriff"));
+  assert.ok(html.includes("Admin") && html.includes("Administrator"));
+
+  await ui.change({target:{name:undefined, dataset:{accessGroup:"g-family"}, checked:false}});
+  assert.deepEqual(ui.accessDraft.allowed_group_ids, new Set());
+  await ui.change({target:{name:undefined, dataset:{accessUser:"u-nils"}, checked:true}});
+  assert.deepEqual(ui.accessDraft.allowed_user_ids, new Set(["u-ben","u-nils"]));
+});
+
+test("only CUSTOM mode renders the groups/users pickers", () => {
+  const ui=studio();
+  ui.access={config:{mode:"all",allowed_user_ids:[],allowed_group_ids:[]},groups:[{id:"g",name:"G",member_count:1,allowed:false}],users:[]};
+  ui.accessDraft={mode:"all",allowed_user_ids:new Set(),allowed_group_ids:new Set()};
+  assert.ok(!ui.userManagementView().includes("checklist"));
+  ui.accessDraft.mode="custom";
+  assert.ok(ui.userManagementView().includes("checklist"));
+});
+
+test("changing the access-mode radio updates the draft, not the saved config, until Save", async () => {
+  const ui=studio();
+  ui.access={config:{mode:"admin",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]};
+  ui.accessDraft={mode:"admin",allowed_user_ids:new Set(),allowed_group_ids:new Set()};
+  await ui.change({target:{name:"access-mode",value:"all",dataset:{}}});
+  assert.equal(ui.accessDraft.mode,"all");
+  assert.equal(ui.access.config.mode,"admin");
+});
+
+test("access-save confirms, then persists the draft through access_set", async () => {
+  const ui=studio();
+  ui.access={config:{mode:"admin",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]};
+  ui.accessDraft={mode:"all",allowed_user_ids:new Set(),allowed_group_ids:new Set()};
+  let confirmed=false;
+  ui.askConfirmation=async()=>{confirmed=true; return true;};
+  let savedPayload=null;
+  ui.api=async(operation,data)=>{
+    assert.equal(operation,"access_set");
+    savedPayload=data;
+    return {config:{mode:"all",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]};
+  };
+  await ui.act("access-save");
+  assert.ok(confirmed);
+  assert.deepEqual(savedPayload,{mode:"all",allowed_user_ids:[],allowed_group_ids:[]});
+  assert.equal(ui.access.config.mode,"all");
+});
+
+test("declining the access-save confirmation leaves the stored config untouched", async () => {
+  const ui=studio();
+  ui.access={config:{mode:"admin",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]};
+  ui.accessDraft={mode:"all",allowed_user_ids:new Set(),allowed_group_ids:new Set()};
+  ui.askConfirmation=async()=>false;
+  ui.api=()=>assert.fail("must not save without explicit confirmation");
+  await ui.act("access-save");
+  assert.equal(ui.access.config.mode,"admin");
+});
+
+test("access-cancel discards draft edits back to the last saved config", async () => {
+  const ui=studio();
+  ui.access={config:{mode:"admin",allowed_user_ids:["a"],allowed_group_ids:[]},groups:[],users:[]};
+  ui.accessDraft={mode:"custom",allowed_user_ids:new Set(),allowed_group_ids:new Set(["x"])};
+  await ui.act("access-cancel");
+  assert.deepEqual(ui.accessDraft,{mode:"admin",allowed_user_ids:new Set(["a"]),allowed_group_ids:new Set()});
+});
+
+test("opening Nutzerverwaltung closes Studio-Einstellungen and vice versa", async () => {
+  const ui=studio();
+  ui._hass={user:{is_admin:true}};
+  ui.api=async()=>({config:{mode:"admin",allowed_user_ids:[],allowed_group_ids:[]},groups:[],users:[]});
+  await ui.act("user-management");
+  assert.equal(ui.userManagementOpen,true);
+  await ui.act("settings");
+  assert.equal(ui.settingsOpen,true);
+  assert.equal(ui.userManagementOpen,false);
+});
+
+test("User Management i18n has both German and English text for every new label", () => {
+  for (const [de_key, english] of [
+    ["Nutzerverwaltung","User Management"],
+    ["Alle Benutzer","All users"],
+    ["Nur Administratoren","Administrators only"],
+    ["Benutzer & Gruppen individuell","Custom users & groups"],
+    ["Explizit erlaubt","Explicitly allowed"],
+    ["Über Gruppe erlaubt","Allowed through group"],
+    ["Kein Zugriff","No access"],
+    ["Administrator","Administrator"],
+    ["Kein Zugriff auf HASE Studio","No access to HASE Studio"],
+  ]) {
+    assert.equal(translate("de",de_key),de_key);
+    assert.equal(translate("en",de_key),english);
+  }
 });

@@ -40,6 +40,7 @@ from .core.studio import (
     merge_book,
     parse_document,
     preserve_user,
+    query_source_capabilities,
     spell_capability,
     spell_variables,
     static_report,
@@ -485,6 +486,19 @@ class SpellbookStudio:
             return {"status": "NO_MATCH", "reason_code": "no_match", "data": {}}
         if isinstance(found, CommandAmbiguity):
             return {"status": "AMBIGUOUS", "reason_code": "ambiguous", "data": {}}
+        if found.step_plan is not None:
+            # Combined Spells are USER-tier only (see core/models.py's
+            # ActionStep docstring) - no expert/preview_variant concept,
+            # just the same dry_run-vs-execute distinction execute()
+            # already gives every single-action test.
+            executor = ActionExecutor(HaTargetResolver(self.hass), HaServiceCaller(self.hass),
+                                      expert_allowed=lambda: self.expert_allowed(raw["id"]),
+                                      operation_allowed=lambda operation: self.operation_allowed(payload.get("profile_id"), operation))
+            result = await executor.execute_steps(found.step_plan, self.studio_policy(payload.get("profile_id")),
+                                                  source_area_id=payload.get("source_area_id"),
+                                                  context=payload.get("context"), dry_run=not execute)
+            return {**asdict(result), "spell_id": found.command.spell_id,
+                    "captures": found.captures, "operation": None, "preview_only": not execute}
         if found.action_draft is None:
             return {"status": "UNSUPPORTED", "reason_code": "output_only", "data": {}, "spell_id": found.command.spell_id}
         preview_variant = payload.get("variant", "runtime") if not execute else "runtime"
@@ -648,6 +662,156 @@ class SpellbookStudio:
                     result.pop(field, None)
         return result
 
+    _STEP_TARGET_KINDS = frozenset({"area_id", "entity_id", "entity_ids", "all_allowed", "source_area"})
+
+    def _resolve_step_target(self, kind, value, *, label):
+        """One step's target - the same area_id/entity_id/entity_ids
+        validation user_spell() already does for a single action,
+        minus area_name/entity_name: a spoken-area capture would need
+        its own reserved placeholder name per step (and a design
+        decision for what it means when two steps share one), which
+        this first guided step-list builder pass deliberately doesn't
+        offer yet - still reachable by hand-editing a step's YAML
+        through the Manual/Expert editor, since the backend schema and
+        execution already support it fully."""
+        if kind not in self._STEP_TARGET_KINDS:
+            raise StudioError(f"{label}: dieses Ziel wird für Schritte noch nicht unterstützt.")
+        target = {"kind": kind}
+        if kind == "area_id":
+            if value not in {a["id"] for a in self.areas()}:
+                raise StudioError(f"{label}: bitte einen vorhandenen Bereich auswählen.")
+            target["value"] = value
+        elif kind in ("entity_id", "entity_ids"):
+            values = value if kind == "entity_ids" else [value]
+            if not isinstance(values, list) or not values or any(
+                not isinstance(v, str) or self.hass.states.get(v) is None for v in values
+            ):
+                raise StudioError(f"{label}: bitte vorhandene Geräte auswählen.")
+            target["value"] = values if kind == "entity_ids" else value
+        return target
+
+    def steps_spell(self, data, old=None):
+        """Combined Spells' sibling of user_spell() - turns the Wizard's
+        step-list builder payload into a spell dict's `steps` field.
+        USER-tier only this pass (see core/models.py's ActionStep
+        docstring) - no Expert variant for a steps spell."""
+        old = deepcopy(old or {})
+        draft = data.get("translations", {})
+        if not isinstance(draft, dict) or set(draft) - set(TEXT_FIELDS + LIST_FIELDS):
+            raise StudioError("Invalid translated content")
+        old.update(deepcopy(draft))
+
+        triggers = data.get("triggers")
+        if not isinstance(triggers, list) or not triggers or not all(isinstance(t, str) and t.strip() for t in triggers):
+            raise StudioError("Mindestens ein gesprochener Trigger ist erforderlich.")
+
+        raw_steps = data.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise StudioError("Mindestens ein Schritt ist erforderlich.")
+
+        action_choices = {a["id"]: a for a in user_actions()}
+        seen_aliases = set()
+        steps = []
+        for i, raw_step in enumerate(raw_steps):
+            label = f"Schritt {i + 1}"
+            if not isinstance(raw_step, dict):
+                raise StudioError(f"{label}: ungültig.")
+            alias = raw_step.get("alias") or None
+            if alias is not None:
+                if not (isinstance(alias, str) and alias.isidentifier()):
+                    raise StudioError(f"{label}: ungültiger Name.")
+                if alias in seen_aliases:
+                    raise StudioError(f"{label}: Name „{alias}“ ist bereits vergeben.")
+                seen_aliases.add(alias)
+
+            if raw_step.get("kind") == "action":
+                action = action_choices.get(raw_step.get("action"))
+                if action is None:
+                    raise StudioError(f"{label}: bitte eine unterstützte Aktion auswählen.")
+                target = self._resolve_step_target(raw_step.get("target_kind"), raw_step.get("target_value"), label=label)
+                steps.append({"alias": alias, "operation": action["operation"],
+                             "target": target, "arguments": deepcopy(action["arguments"])})
+            elif raw_step.get("kind") == "query":
+                raw_sources = raw_step.get("sources")
+                if not isinstance(raw_sources, list) or not raw_sources:
+                    raise StudioError(f"{label}: mindestens eine Datenquelle ist erforderlich.")
+                sources = []
+                for j, raw_source in enumerate(raw_sources):
+                    source_label = f"{label}, Quelle {j + 1}"
+                    if not isinstance(raw_source, dict):
+                        raise StudioError(f"{source_label}: ungültig.")
+                    source_kind = raw_source.get("kind")
+                    if source_kind not in {"state", "attribute", "count", "min", "max", "avg", "sum", "names", "states"}:
+                        raise StudioError(f"{source_label}: ungültige Art.")
+                    is_aggregate = source_kind != "state" and source_kind != "attribute"
+                    target_kind = raw_source.get("target_kind")
+                    if target_kind == "entity_id" and is_aggregate:
+                        raise StudioError(f"{source_label}: diese Auswertung benötigt ein Bereichs- oder Sammelziel.")
+                    target = self._resolve_step_target(target_kind, raw_source.get("target_value"), label=source_label)
+                    variable = raw_source.get("variable")
+                    if not (isinstance(variable, str) and variable.isidentifier()):
+                        raise StudioError(f"{source_label}: ungültiger Variablenname.")
+                    source = {"kind": source_kind, "target": target, "variable": variable}
+                    if raw_source.get("domain_filter"):
+                        source["domain_filter"] = raw_source["domain_filter"]
+                    if raw_source.get("device_class"):
+                        source["device_class"] = raw_source["device_class"]
+                    if source_kind == "attribute":
+                        attribute = raw_source.get("attribute")
+                        if not (isinstance(attribute, str) and attribute.strip()):
+                            raise StudioError(f"{source_label}: Attributname erforderlich.")
+                        source["attribute"] = attribute
+                    if is_aggregate and raw_source.get("state_filter"):
+                        source["state_filter"] = raw_source["state_filter"]
+                    if source_kind == "state" and raw_source.get("unit_variable"):
+                        unit_variable = raw_source["unit_variable"]
+                        if not (isinstance(unit_variable, str) and unit_variable.isidentifier()):
+                            raise StudioError(f"{source_label}: ungültiger Einheit-Variablenname.")
+                        source["unit_variable"] = unit_variable
+                    sources.append(source)
+                steps.append({"alias": alias, "sources": sources})
+            else:
+                raise StudioError(f"{label}: unbekannte Schrittart.")
+
+        output_mode = data.get("output_mode") or old.get("output_mode") or DEFAULT_OUTPUT_MODE
+        if output_mode not in OUTPUT_MODES:
+            raise StudioError("Ungültiger Output-Modus.")
+
+        edit_language = data.get("trigger_language")
+        first_trigger = triggers[0]
+        if edit_language:
+            previous = (old or {}).get("trigger")
+            first_trigger = dict(previous) if isinstance(previous, dict) else ({data.get("default_language", edit_language): previous} if previous else {})
+            first_trigger[edit_language] = triggers[0]
+        elif old and isinstance(old.get("trigger"), dict):
+            language = edit_language or next(iter(old["trigger"]))
+            first_trigger = {**old["trigger"], language: first_trigger}
+
+        result = deepcopy(old or {})
+        for legacy_field in ("operation", "target", "arguments", "sources"):
+            result.pop(legacy_field, None)
+        result.update(id=data.get("id") or uuid.uuid4().hex, name=data.get("name") or triggers[0],
+                      trigger=first_trigger, triggers=triggers[1:], steps=steps,
+                      tags=data.get("tags", old.get("tags", [])), enabled=data.get("enabled", old.get("enabled", True)),
+                      output_mode=output_mode)
+        if edit_language:
+            for field, value in (("name", data.get("name") or triggers[0]), ("description", data.get("description", "")),
+                                 ("examples", data.get("examples", [])), ("triggers", triggers[1:]),
+                                 ("output", data.get("output")), ("catchphrase", data.get("catchphrase"))):
+                if value is None:
+                    continue
+                previous = (old or {}).get(field)
+                mapping = dict(previous) if isinstance(previous, dict) else ({data.get("default_language", edit_language): previous} if previous else {})
+                if value:
+                    mapping[edit_language] = value
+                else:
+                    mapping.pop(edit_language, None)
+                if mapping:
+                    result[field] = mapping
+                else:
+                    result.pop(field, None)
+        return result
+
     async def dispatch(self, operation, data, context):
         if operation in {"import_book_preview", "import_book_apply"}:
             incoming = parse_document(data.get("text"))
@@ -673,6 +837,7 @@ class SpellbookStudio:
                               **await self.file_info(book_id, cover=False)})
             return {"books": books, "actions": user_actions(), "operations": list(OPERATION_CATALOG),
                     "output_modes": sorted(OUTPUT_MODES), "default_output_mode": DEFAULT_OUTPUT_MODE,
+                    "query_source_capabilities": query_source_capabilities(),
                     "show_in_sidebar": self.hass.data.get("hase_studio_sidebar", False)}
         if operation == "ui_settings":
             allowed = data.get("show_in_sidebar")
@@ -766,6 +931,8 @@ class SpellbookStudio:
                 old = next((s for s in raw["commands"] if s["id"] == data["spell"].get("id")), None)
                 if data.get("mode") == "user":
                     spell = self.user_spell(data["spell"], old)
+                elif data.get("mode") == "steps":
+                    spell = self.steps_spell(data["spell"], old)
                 else:
                     spell = _preserve_existing_user_variant(
                         old, data["spell"], data.get("fallback_mode")
@@ -773,7 +940,15 @@ class SpellbookStudio:
                 candidate["commands"] = [spell]
             payload = {**data, "context": context}
             if operation == "validate":
-                return await self.report(candidate, payload)
+                result = await self.report(candidate, payload)
+                if data.get("spell") is not None:
+                    # The live, unsaved candidate's own variable catalogue -
+                    # lets the Wizard's Response step show accurate chips
+                    # while the draft is still being edited, not just after
+                    # a real save. Pure/no HA calls, same as spell_variables()
+                    # itself.
+                    result["spell_variables"] = spell_variables(candidate["commands"][0])
+                return result
             if operation == "execute" and data.get("confirmed") is not True:
                 raise StudioError("Echte Ausführung muss bewusst bestätigt werden.")
             if operation == "execute" and data.get("revision") != revision:
@@ -838,6 +1013,8 @@ class SpellbookStudio:
                     raise StudioError("Ungültiger Spell.")
                 if data.get("mode") == "user":
                     spell = self.user_spell(candidate, old)
+                elif data.get("mode") == "steps":
+                    spell = self.steps_spell(candidate, old)
                 else:
                     spell = _preserve_existing_user_variant(
                         old, candidate, data.get("fallback_mode")

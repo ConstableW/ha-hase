@@ -24,7 +24,10 @@ class PanelTests(IsolatedAsyncioTestCase):
         kwargs = self.custom.async_register_panel.call_args.kwargs
         self.assertIsNone(kwargs["sidebar_title"])
         self.assertEqual(kwargs["frontend_url_path"], "hase")
-        self.assertTrue(kwargs["require_admin"])
+        # The panel route itself must stay reachable by any authenticated
+        # user - real Studio authorization is enforced by studio_command()'s
+        # WebSocket-level check, not by this HA panel flag.
+        self.assertFalse(kwargs["require_admin"])
 
     async def test_visibility_updates_keep_route_and_module(self):
         for enabled in (True, False):
@@ -34,7 +37,7 @@ class PanelTests(IsolatedAsyncioTestCase):
             self.assertEqual(kwargs["sidebar_title"], "HASE" if enabled else None)
             self.assertEqual(kwargs["frontend_url_path"], "hase")
             self.assertTrue(kwargs["update"])
-            self.assertTrue(kwargs["require_admin"])
+            self.assertFalse(kwargs["require_admin"])
             self.assertIn("studio.js", kwargs["config"]["_panel_custom"]["module_url"])
         self.frontend.async_remove_panel.assert_not_called()
 

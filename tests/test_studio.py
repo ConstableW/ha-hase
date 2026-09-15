@@ -113,6 +113,70 @@ class DataTests(unittest.TestCase):
 
     def test_spell_variables_returns_empty_for_unparseable_spell(self):
         self.assertEqual(studio_core.spell_variables({"id": "x"}), [])
+
+    def _steps_spell(self):
+        return {
+            "id": "night_mode", "trigger": "gute nacht",
+            "steps": [
+                {"alias": "shutters", "operation": "cover.close_cover", "target": {"kind": "all_allowed"}},
+                {"alias": "front_door", "operation": "lock.lock", "target": {"kind": "entity_id", "value": "lock.front_door"}},
+                {"alias": "open_contacts", "sources": [
+                    {"kind": "count", "target": {"kind": "all_allowed"}, "domain_filter": "binary_sensor",
+                     "state_filter": "on", "variable": "count"},
+                    {"kind": "names", "target": {"kind": "all_allowed"}, "domain_filter": "binary_sensor",
+                     "state_filter": "on", "variable": "names"},
+                ]},
+            ],
+            "catchphrase": "{shutters.target_count} Rollos, Tür {front_door.state}, {open_contacts.count} offen: {open_contacts.names}.",
+        }
+
+    def test_steps_spell_passes_check_document_and_is_user_capability(self):
+        raw = book(commands=[self._steps_spell()])
+        studio_core.check_document(raw)  # must not raise
+        self.assertEqual(studio_core.spell_capability(raw["commands"][0]), "USER")
+        self.assertEqual(studio_core.book_capability(raw), "USER")
+
+    def test_spell_variables_reports_namespaced_step_fields(self):
+        rows = {row["name"]: row for row in studio_core.spell_variables(self._steps_spell())}
+        self.assertEqual(rows["shutters.target_count"]["source"], "step_field")
+        self.assertEqual(rows["shutters.target_count"]["kind"], "action")
+        self.assertEqual(rows["shutters.target_count"]["alias"], "shutters")
+        self.assertEqual(rows["shutters.target_count"]["operation"], "cover.close_cover")
+        # front_door targets a single entity_id -> single-entity vocabulary.
+        self.assertIn("front_door.state", rows)
+        self.assertIn("front_door.success", rows)
+        self.assertNotIn("front_door.target_count", rows)
+        self.assertEqual(rows["open_contacts.count"]["kind"], "query")
+        self.assertIn("open_contacts.names", rows)
+
+    def test_static_report_validates_steps_spell(self):
+        report = studio_core.static_report(book(commands=[self._steps_spell()]))
+        self.assertEqual(report["errors"], 0)
+        self.assertTrue(report["spells"][0]["valid"])
+
+    def test_static_report_flags_invalid_step_action(self):
+        broken = self._steps_spell()
+        broken["steps"][0]["target"] = {"kind": "nonsense"}
+        with self.assertRaises(studio_core.StudioError):
+            studio_core.check_document(book(commands=[broken]))
+
+    def test_steps_and_operation_together_rejected_by_check_document(self):
+        broken = self._steps_spell()
+        broken["operation"] = "light.turn_on"
+        broken["target"] = {"kind": "all_allowed"}
+        with self.assertRaises(studio_core.StudioError):
+            studio_core.check_document(book(commands=[broken]))
+
+    def test_query_source_capabilities_exposes_backend_derived_vocabulary(self):
+        caps = studio_core.query_source_capabilities()
+        self.assertIn("names", caps["kinds"])
+        self.assertIn("states", caps["kinds"])
+        self.assertIn("count", caps["aggregate_kinds"])
+        self.assertNotIn("state", caps["aggregate_kinds"])
+        self.assertIn("all_allowed", caps["aggregate_target_kinds"])
+        self.assertIn("entity_id", caps["single_target_kinds"])
+        self.assertIsInstance(caps["max_steps"], int)
+
     def test_capability_and_independent_books(self):
         user = book()
         mixed = book("hdr", [spell(expert={"target": {"kind": "template", "value": "{{ [] }}"}})])
@@ -375,6 +439,55 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(studio_core.StudioError):
             self.studio.user_spell({"action":"light.turn_on:0", "target_kind":"source_area",
                 "trigger_language":"de", "triggers":["Licht an"], "output_mode":"LOUD"}, old)
+
+    async def test_steps_spell_builds_multi_step_command(self):
+        edited = self.studio.steps_spell({
+            "triggers": ["gute nacht"], "trigger_language": "de", "default_language": "de",
+            "steps": [
+                {"kind": "action", "alias": "shutters", "action": "cover.close_cover:0",
+                 "target_kind": "all_allowed"},
+                {"kind": "query", "alias": "open_contacts", "sources": [
+                    {"kind": "count", "target_kind": "all_allowed", "domain_filter": "binary_sensor",
+                     "state_filter": "on", "variable": "count"},
+                ]},
+            ],
+        }, None)
+        self.assertEqual(len(edited["steps"]), 2)
+        self.assertEqual(edited["steps"][0]["operation"], "cover.close_cover")
+        self.assertEqual(edited["steps"][0]["alias"], "shutters")
+        self.assertEqual(edited["steps"][1]["sources"][0]["variable"], "count")
+        self.assertNotIn("operation", edited)
+        studio_core.check_document(book(commands=[edited]))  # must round-trip validly
+
+    async def test_steps_spell_rejects_duplicate_alias(self):
+        with self.assertRaises(studio_core.StudioError):
+            self.studio.steps_spell({
+                "triggers": ["do it"], "trigger_language": "de",
+                "steps": [
+                    {"kind": "action", "alias": "a", "action": "light.turn_on:0", "target_kind": "all_allowed"},
+                    {"kind": "action", "alias": "a", "action": "light.turn_off:0", "target_kind": "all_allowed"},
+                ],
+            }, None)
+
+    async def test_steps_spell_rejects_unknown_action(self):
+        with self.assertRaises(studio_core.StudioError):
+            self.studio.steps_spell({
+                "triggers": ["do it"], "trigger_language": "de",
+                "steps": [{"kind": "action", "action": "not.a.real.action", "target_kind": "all_allowed"}],
+            }, None)
+
+    async def test_steps_spell_requires_at_least_one_step(self):
+        with self.assertRaises(studio_core.StudioError):
+            self.studio.steps_spell({"triggers": ["do it"], "trigger_language": "de", "steps": []}, None)
+
+    async def test_steps_spell_rejects_area_name_target(self):
+        # Not offered by this first guided builder pass - see
+        # SpellbookStudio._resolve_step_target's docstring.
+        with self.assertRaises(studio_core.StudioError):
+            self.studio.steps_spell({
+                "triggers": ["do it {area}"], "trigger_language": "de",
+                "steps": [{"kind": "action", "action": "light.turn_on:0", "target_kind": "area_name"}],
+            }, None)
 
     async def test_translate_text_only_spell_without_turning_it_into_a_device_action(self):
         original = {"id":"greeting", "trigger":{"de":"Hallo"}, "output":{"de":"Guten Tag"}, "enabled":False}
