@@ -26,8 +26,10 @@ from .const import (
     CONF_SPELLBOOKER_UNRESTRICTED,
     DOMAIN,
     ENTRY_KIND_CODE27_DEVICE,
+    ENTRY_KIND_MCP_SERVER,
     ENTRY_KIND_SPELLBOOKER,
     SPELLBOOKER_MODE_SPELLBOOK_ONLY,
+    SUBENTRY_TYPE_MCP_BRIDGE,
     SUBENTRY_TYPE_SATELLITE,
 )
 from .providers.code27.config_flow import (
@@ -36,10 +38,16 @@ from .providers.code27.config_flow import (
     SatelliteSubentryFlow,
 )
 from .providers.code27.const import CONF_BRIDGE_AI_TASK_ENTITY_ID
+from .providers.mcp.config_flow import (
+    McpBridgeSubentryFlow,
+    McpFlowMixin,
+    McpServerOptionsFlow,
+    async_mcp_server_exists,
+)
 from .spellbook_loader import async_discover_spellbooks
 
 
-class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
+class HaseConfigFlow(Code27FlowMixin, McpFlowMixin, ConfigFlow, domain=DOMAIN):
     """Configure HASE agents and companion providers."""
 
     VERSION = 1
@@ -47,19 +55,22 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Two independent things live behind "Add Integration -> HASE":
-        pairing an actual CODE27 device, or a standalone SPELLBOOK_ONLY
-        Spellbooker agent that needs no device at all. A plain
-        spellbooker entry must never require CONF_HOST - see
-        __init__.py's entry_kind branch and stage-1/README.md's
-        Policy-und-Entry-Lifecycle section. A SATELLITE agent is NOT
-        created here - it's a subentry added from an existing CODE27
-        device's own entry page (SatelliteSubentryFlow below), so it
-        renders nested under that device's hub instead of as its own
-        top-level entry."""
-        return self.async_show_menu(
-            step_id="user", menu_options=["code27_device", "spellbooker"]
-        )
+        """Three independent things live behind "Add Integration -> HASE":
+        pairing an actual CODE27 device, a standalone SPELLBOOK_ONLY
+        Spellbooker agent that needs no device at all, or the singleton
+        MCP Server. A plain spellbooker entry must never require
+        CONF_HOST - see __init__.py's entry_kind branch and stage-1/
+        README.md's Policy-und-Entry-Lifecycle section. Neither a
+        SATELLITE agent nor an MCP Bridge is created here - both are
+        subentries added from an existing parent entry's own page
+        (SatelliteSubentryFlow/McpBridgeSubentryFlow below), so each
+        renders nested under its parent hub instead of as its own
+        top-level entry. Once an MCP Server already exists, its menu
+        option is omitted entirely - see async_mcp_server_exists."""
+        menu_options = ["code27_device", "spellbooker"]
+        if not async_mcp_server_exists(self.hass):
+            menu_options.append("mcp_server")
+        return self.async_show_menu(step_id="user", menu_options=menu_options)
 
     async def async_step_spellbooker(
         self, user_input: dict[str, Any] | None = None
@@ -145,6 +156,8 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
         entry_kind = config_entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE)
         if entry_kind == ENTRY_KIND_SPELLBOOKER:
             return SpellbookerOptionsFlow(config_entry)
+        if entry_kind == ENTRY_KIND_MCP_SERVER:
+            return McpServerOptionsFlow(config_entry)
         return Code27OptionsFlow(config_entry)
 
     @classmethod
@@ -157,12 +170,14 @@ class HaseConfigFlow(Code27FlowMixin, ConfigFlow, domain=DOMAIN):
         it render nested under that device's own hub instead of as a
         separate top-level entry (see SatelliteSubentryFlow, and
         ENTRY_KIND_SPELLBOOKER_SATELLITE's own note on why this
-        replaced a second top-level entry kind)."""
-        if (
-            config_entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE)
-            == ENTRY_KIND_CODE27_DEVICE
-        ):
+        replaced a second top-level entry kind). An MCP Bridge is offered
+        the identical way, but only on the singleton MCP Server entry -
+        see McpBridgeSubentryFlow's own docstring."""
+        entry_kind = config_entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE)
+        if entry_kind == ENTRY_KIND_CODE27_DEVICE:
             return {SUBENTRY_TYPE_SATELLITE: SatelliteSubentryFlow}
+        if entry_kind == ENTRY_KIND_MCP_SERVER:
+            return {SUBENTRY_TYPE_MCP_BRIDGE: McpBridgeSubentryFlow}
         return {}
 
 

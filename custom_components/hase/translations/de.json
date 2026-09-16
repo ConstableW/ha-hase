@@ -1,4 +1,10 @@
 {
+  "issues": {
+    "mcp_bridge_invalid_area": {
+      "title": "MCP-Bridge „{bridge_name}“ hat einen ungültigen Bereich",
+      "description": "Der konfigurierte Bereich dieser Bridge (ID: {area_id}) existiert in Home Assistant nicht mehr - vermutlich gelöscht oder umbenannt. Spells, die auf den eigenen Sprachgeräte-Bereich dieser Bridge angewiesen sind, können erst wieder ausgeführt werden, wenn das behoben ist.\n\nÖffne die Einstellungen dieser Bridge und wähle entweder einen gültigen Bereich, oder leere das Bereichsfeld, um bewusst eine bereichslose (\"Master\"-)Bridge daraus zu machen, die immer ein ausdrückliches Ziel benötigt."
+    }
+  },
   "config": {
     "step": {
       "verify": {
@@ -10,7 +16,18 @@
         "description": "Womit möchtest du HASE einrichten?",
         "menu_options": {
           "code27_device": "CODE27-Gerät verbinden",
-          "spellbooker": "HASE-Sprachassistent anlegen"
+          "spellbooker": "HASE-Sprachassistent anlegen",
+          "mcp_server": "MCP-Server einrichten"
+        }
+      },
+      "mcp_server": {
+        "title": "HASE MCP-Server einrichten",
+        "description": "Reine Infrastruktur - besitzt selbst kein Spellbook, keinen Bereich und keine Berechtigungen, und ist ein Singleton (dieses Formular erscheint nur einmal). Füge danach MCP-Bridges hinzu, eine pro externem MCP-Client-Gerät.",
+        "data": {
+          "mcp_server_port": "Listener-Port"
+        },
+        "data_description": {
+          "mcp_server_port": "Der interne TCP-Port, auf dem der MCP-Streamable-HTTP-Endpunkt lauscht. Dieser bindet an alle Netzwerkschnittstellen dieses Geräts - jedes Gerät in deinem lokalen Netzwerk kann ihn erreichen, nicht nur dieses Gerät selbst. Der einzige Schutz vor unbefugten Geräten in deinem LAN ist das Bearer-Token der jeweiligen Bridge - behandle diese Tokens daher als Geheimnis und dein lokales Netzwerk als Sicherheitsgrenze. HASE gibt diesen Port selbst nicht öffentlich im Internet frei - route bei Bedarf über deinen eigenen Reverse Proxy (mit eigener Authentifizierung/TLS) einen externen Hostnamen/Pfad dorthin. Du kannst dies später in den Optionen des MCP-Servers ändern, was den Listener sofort auf dem neuen Port neu startet."
         }
       },
       "code27_device": {
@@ -65,7 +82,8 @@
       "wrong_device": "Die Adresse gehört zu einem anderen Gerät. Der bestehende Eintrag wurde nicht geändert.",
       "invalid_identity": "Das Gerät hat keine gültige Kennung geliefert.",
       "already_configured": "Dieses CODE27-Gerät ist bereits eingerichtet.",
-      "reauth_successful": "Die erneute Authentifizierung war erfolgreich."
+      "reauth_successful": "Die erneute Authentifizierung war erfolgreich.",
+      "mcp_server_already_configured": "Es ist bereits ein MCP-Server eingerichtet. Füge stattdessen eine MCP-Bridge hinzu."
     }
   },
   "options": {
@@ -123,6 +141,16 @@
           "bridge_ai_task_entity_id": "Optional. Wenn ausgewählt, bereinigt diese AI-Task jeden gesprochenen Satz, bevor der HASE-Agent ihn mit dem Spellbook abgleicht.",
           "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf (z. B. \"wie warm ist es in X\"). Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
           "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf."
+        }
+      },
+      "mcp_server": {
+        "title": "MCP-Server-Optionen",
+        "description": "Reine Infrastruktur - Spellbook, Bereich und Berechtigungen werden pro MCP-Bridge festgelegt.",
+        "data": {
+          "mcp_server_port": "Listener-Port"
+        },
+        "data_description": {
+          "mcp_server_port": "Der interne TCP-Port, auf dem der MCP-Streamable-HTTP-Endpunkt lauscht. Dieser bindet an alle Netzwerkschnittstellen dieses Geräts - jedes Gerät in deinem lokalen Netzwerk kann ihn erreichen, nicht nur dieses Gerät selbst. Der einzige Schutz vor unbefugten Geräten in deinem LAN ist das Bearer-Token der jeweiligen Bridge - behandle diese Tokens daher als Geheimnis und dein lokales Netzwerk als Sicherheitsgrenze. HASE gibt diesen Port selbst nicht öffentlich im Internet frei - route bei Bedarf über deinen eigenen Reverse Proxy (mit eigener Authentifizierung/TLS) einen externen Hostnamen/Pfad dorthin. Eine Änderung startet den Listener sofort auf dem neuen Port neu."
         }
       }
     }
@@ -610,6 +638,71 @@
         "areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich, oder aktiviere \"Aktionen uneingeschränkt\".",
         "queries_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich für Abfragen, oder aktiviere \"Abfragen uneingeschränkt\".",
         "invalid_profile_id": "Gib den Charakter-Slot als reine Zahl ein, z. B. \"1\"."
+      }
+    },
+    "mcp_bridge": {
+      "initiate_flow": {
+        "user": "MCP-Bridge hinzufügen",
+        "reconfigure": "MCP-Bridge neu konfigurieren"
+      },
+      "entry_type": "MCP-Bridge",
+      "step": {
+        "user": {
+          "title": "Eine MCP-Bridge hinzufügen",
+          "description": "Ein logischer externer MCP-Client bzw. ein Gerät (z. B. ein Stackchan, ein virtueller Assistent). Verwendet dasselbe Spellbook-/Bereichsmodell wie ein Satellite.",
+          "data": {
+            "name": "Name",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
+            "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
+            "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
+            "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)",
+            "mcp_bridge_area_id": "Bereich (optional)",
+            "mcp_bridge_language": "Sprachüberschreibung"
+          },
+          "data_description": {
+            "spellbooker_book": "Welches Spellbook diese Bridge als MCP-Werkzeuge bereitstellt. Eine spätere Änderung wirkt sich sofort auf die bereitgestellten Werkzeuge aus.",
+            "spellbooker_allowed_areas": "In welchen Bereichen diese Bridge Aktionen ausführen darf. Wird ignoriert, wenn \"Aktionen uneingeschränkt\" aktiviert ist.",
+            "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn diese Bridge bewusst keine Einschränkung haben soll.",
+            "spellbooker_queries_allowed_areas": "In welchen Bereichen diese Bridge Statusabfragen beantworten darf. Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
+            "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen diese Bridge Aktionen ausführen darf.",
+            "mcp_bridge_area_id": "Der eigene Sprachgeräte-Bereich dieser Bridge - der Bereich, auf den ein Spell ohne ausdrücklich genanntes Ziel wirkt. Leer lassen für eine \"Master\"-Bridge ohne eigenen Bereich; sie benötigt dann für jeden Spell, der eines braucht, ein ausdrückliches Ziel.",
+            "mcp_bridge_language": "Optional. Legt fest, welche Trigger-/Alias-Formulierung für MCP-Werkzeugbeschreibungen verwendet wird. Bietet die Sprachen des zugewiesenen Spellbooks an; wähle \"Home-Assistant-Sprache verwenden\" (oder lasse das Feld leer), um stattdessen die in Home Assistant eingestellte Sprache zu verwenden. Ein Wert, den das aktuelle Buch nicht mehr hat (z. B. nach einem Buchwechsel), funktioniert weiterhin - er fällt genauso zurück wie die Sprachauflösung von Spellbook Studio selbst."
+          }
+        },
+        "reconfigure": {
+          "title": "Diese MCP-Bridge neu konfigurieren",
+          "description": "Das aktuelle Token endet auf: …{credential_suffix}. Aktiviere \"Neues Token erzeugen\" unten, um ein neues auszustellen - das alte funktioniert danach sofort nicht mehr.",
+          "data": {
+            "name": "Name",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
+            "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
+            "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
+            "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)",
+            "mcp_bridge_area_id": "Bereich (optional)",
+            "mcp_bridge_language": "Sprachüberschreibung",
+            "regenerate_credential": "Neues Token erzeugen"
+          },
+          "data_description": {
+            "spellbooker_book": "Welches Spellbook diese Bridge als MCP-Werkzeuge bereitstellt. Eine Änderung wirkt sich sofort auf die bereitgestellten Werkzeuge aus.",
+            "spellbooker_allowed_areas": "In welchen Bereichen diese Bridge Aktionen ausführen darf. Wird ignoriert, wenn \"Aktionen uneingeschränkt\" aktiviert ist.",
+            "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn diese Bridge bewusst keine Einschränkung haben soll.",
+            "spellbooker_queries_allowed_areas": "In welchen Bereichen diese Bridge Statusabfragen beantworten darf. Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
+            "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen diese Bridge Aktionen ausführen darf.",
+            "mcp_bridge_area_id": "Der eigene Sprachgeräte-Bereich dieser Bridge. Leer lassen für eine \"Master\"-Bridge ohne eigenen Bereich.",
+            "mcp_bridge_language": "Optional. Bietet die Sprachen des zugewiesenen Spellbooks an; wähle \"Home-Assistant-Sprache verwenden\" (oder lasse das Feld leer), um stattdessen die in Home Assistant eingestellte Sprache zu verwenden. Ein Wert, den das aktuelle Buch nicht mehr hat, funktioniert weiterhin - über dieselbe Rückfall-Logik wie in Spellbook Studio selbst.",
+            "regenerate_credential": "Stellt ein neues Bearer-Token aus und macht das aktuelle sofort ungültig. Das neue Token wird auf dem nächsten Bildschirm einmalig angezeigt - kopiere es jetzt, danach kann es nicht erneut angezeigt werden."
+          }
+        },
+        "reveal_credential": {
+          "title": "Bridge-Zugangsdaten",
+          "description": "Bearer-Token für diese MCP-Bridge:\n\n`{token}`\n\n**Dieses Token wird nur einmal angezeigt.** Kopiere es jetzt und hinterlege es dort, wo dein MCP-Client (z. B. ein Stackchan) es benötigt. Sobald du diese Seite verlässt, kann Home Assistant es dir nicht erneut anzeigen - in den Bridge-Einstellungen bleibt nur eine maskierte Endung sichtbar. Falls du es verlierst: Konfiguriere diese Bridge neu und aktiviere \"Neues Token erzeugen\", um ein neues auszustellen - das alte Token funktioniert ab diesem Moment nicht mehr."
+        }
+      },
+      "error": {
+        "areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich, oder aktiviere \"Aktionen uneingeschränkt\".",
+        "queries_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich für Abfragen, oder aktiviere \"Abfragen uneingeschränkt\"."
       }
     }
   }

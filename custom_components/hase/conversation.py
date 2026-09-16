@@ -61,6 +61,7 @@ from .providers.code27.bridge import async_cleanup_command
 from .providers.code27.const import CONF_BRIDGE_AI_TASK_ENTITY_ID, MANUFACTURER
 from .spellbook_loader import async_get_spellbook
 from .spellbooker_ha import (
+    HaAssistForwarder,
     HaServiceCaller,
     HaTargetResolver,
     resolve_source_area_id,
@@ -236,13 +237,24 @@ class SpellbookerConversationEntity(ConversationEntity):
         # which recreates this entity and so also discards any dialog
         # left open under the old book/policy - never answered against
         # a stale configuration.
-        self._router = SpellbookRouter(ActionExecutor(
-            HaTargetResolver(hass), HaServiceCaller(hass),
-            expert_allowed=lambda: getattr(hass, "data", {}).get("hase_studio_permissions", {}).get(
-                (self._subentry.data if self._subentry is not None else self._config_entry.options).get(CONF_SPELLBOOKER_BOOK),
-                False,
-            ) is True,
-        ))
+        self._router = SpellbookRouter(
+            ActionExecutor(
+                HaTargetResolver(hass), HaServiceCaller(hass),
+                expert_allowed=lambda: getattr(hass, "data", {}).get("hase_studio_permissions", {}).get(
+                    (self._subentry.data if self._subentry is not None else self._config_entry.options).get(CONF_SPELLBOOKER_BOOK),
+                    False,
+                ) is True,
+            ),
+            # Reused verbatim from providers/mcp/transport.py's own wiring -
+            # the SAME real AssistForwarder implementation, not a second
+            # one, lets a text-only Spell's assist_redirect=True execution
+            # kind reach Home Assistant's own configured conversation agent
+            # through native voice/Satellite too (core.router.SpellbookRouter
+            # ._execute_text_only_and_respond), closing the gap where this
+            # execution kind was previously invisible to SATELLITE/
+            # SPELLBOOK_ONLY matching entirely (spellbook_engine.match()).
+            assist_forwarder=HaAssistForwarder(hass),
+        )
 
     @property
     def supported_languages(self) -> list[str] | str:

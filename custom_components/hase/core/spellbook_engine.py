@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from .book_languages import default_language
+from .book_languages import languages as book_languages
 from .book_languages import text as resolve_localized
 from .matching import (
     Segment,
@@ -20,6 +21,7 @@ from .matching import (
     tokenize_with_spans,
 )
 from .models import (
+    DEFAULT_ASSIST_REDIRECT,
     DEFAULT_OUTPUT_MODE,
     OUTPUT_MODES,
     QUERY_RESPONSE_FIELDS,
@@ -128,6 +130,13 @@ class EngineCommand:
     # build_step_plan once captures are known, same two-stage pattern as
     # target_spec/arguments_spec -> ActionDraft and sources -> QueryPlan.
     steps: tuple[dict[str, Any], ...] = ()
+    # ONLY meaningful for a text-only command (operation/sources/steps all
+    # absent) - see models.DEFAULT_ASSIST_REDIRECT's own docstring for
+    # what this execution kind means, how it differs from output_mode,
+    # and why it is never inferred from placeholder names. Present
+    # unconditionally (like output_mode) rather than only on text-only
+    # commands, so every EngineCommand has one uniform shape.
+    assist_redirect: bool = DEFAULT_ASSIST_REDIRECT
 
 
 @dataclass(frozen=True)
@@ -135,6 +144,13 @@ class EngineSpellbook:
     id: str
     name: str
     commands: tuple[EngineCommand, ...]
+    # The book's own declared+detected language codes (book_languages.
+    # languages(raw), computed once at load time) - the SAME set Spellbook
+    # Studio's own language management already reads/writes, never a
+    # second per-frontend list. Used by the MCP Bridge config flow to
+    # offer only languages this book actually has, rather than a free-text
+    # field with no relation to what the book contains.
+    languages: tuple[str, ...] = ()
 
 
 class _MissingField:
@@ -585,6 +601,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
     sources_raw = raw.get("sources")
     steps_raw = raw.get("steps")
     output_mode_raw = raw.get("output_mode")
+    assist_redirect_raw = raw.get("assist_redirect")
 
     if not _valid_localized(trigger):
         _LOGGER.warning("spellbook engine: command %s missing a trigger, skipping", spell_id)
@@ -613,6 +630,10 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
         _LOGGER.warning("spellbook engine: command %s has an invalid output_mode, skipping", spell_id)
         return None
     output_mode_value = output_mode_raw or DEFAULT_OUTPUT_MODE
+    if assist_redirect_raw is not None and not isinstance(assist_redirect_raw, bool):
+        _LOGGER.warning("spellbook engine: command %s has a non-boolean assist_redirect, skipping", spell_id)
+        return None
+    assist_redirect_value = DEFAULT_ASSIST_REDIRECT if assist_redirect_raw is None else assist_redirect_raw
     if output is not None and not _valid_localized(output):
         _LOGGER.warning("spellbook engine: command %s has an invalid output, skipping", spell_id)
         return None
@@ -772,7 +793,8 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
     if not has_operation:
         # Output-only: no target/arguments capture-consistency checks
         # apply (there's no target_spec/arguments_spec to check them
-        # against) - this command is done loading.
+        # against) - this command is done loading. assist_redirect is
+        # only meaningful here (see models.DEFAULT_ASSIST_REDIRECT).
         reference_trigger = resolve_localized(trigger, "en") or trigger_variants[0]
         return EngineCommand(
             spell_id=spell_id,
@@ -785,6 +807,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
             sort_key=literal_word_count(compiled[reference_trigger]),
             output=output,
             output_mode=output_mode_value,
+            assist_redirect=assist_redirect_value,
         )
 
     # Union across every language variant - a capture used by only one
@@ -927,7 +950,7 @@ def load_spellbook_from_dict(book_id: str, raw: dict[str, Any]) -> EngineSpellbo
         return None
 
     commands.sort(key=lambda c: c.sort_key, reverse=True)
-    return EngineSpellbook(id=book_id, name=name, commands=tuple(commands))
+    return EngineSpellbook(id=book_id, name=name, commands=tuple(commands), languages=tuple(book_languages(raw)))
 
 
 def load_spellbook_from_text(book_id: str, raw_yaml: str) -> EngineSpellbook | None:
@@ -946,6 +969,32 @@ def load_spellbook_from_path(path: Path) -> EngineSpellbook | None:
         _LOGGER.warning("spellbook engine: could not read %s: %s", path, err)
         return None
     return load_spellbook_from_text(path.stem, raw_yaml)
+
+
+def build_text_response(command: EngineCommand, captures: dict[str, str], lang: str) -> str | None:
+    """The plain-text rendering for a command with none of operation/
+    sources/steps - only `output` (see _load_base_command's own "needs a
+    typed form, a query form, a Combined Spell form, or a free-text
+    output form" rule). Mirrors find_command()'s own inline text-only
+    branch exactly (same catchphrase-then-output precedence would
+    over-complicate MCP's single-TextContent response model, so this
+    intentionally uses ONLY `output` - the field the loader's own
+    docstring calls "a free-text form for some other caller to use"; a
+    device-only catchphrase has no equivalent in a tools/call response)
+    and the same strict `.format(**captures)` substitution, factored out
+    here so core.mcp_execution can render the identical text for an
+    EXACT spell_id call - never running find_command()/match() (text/
+    fuzzy matching) to get there, since an MCP call has already named the
+    exact Spell."""
+    if command.operation is not None or command.sources or command.steps:
+        return None
+    output = resolve_localized(command.output, lang, command.default_language)
+    if output is None:
+        return None
+    try:
+        return output.format(**captures)
+    except (KeyError, IndexError, ValueError, AttributeError, TypeError):
+        return None
 
 
 def build_draft(command: EngineCommand, captures: dict[str, str], lang: str) -> ActionDraft | None:
@@ -1166,6 +1215,44 @@ def _opposite(a: CommandMatch, b: CommandMatch, lang: str) -> bool:
     return outputs_are_opposite(text_a.format(**a.captures), text_b.format(**b.captures))
 
 
+def duplicate_spell_ids(book: EngineSpellbook) -> frozenset[str]:
+    """Every spell_id that appears more than once among this book's own
+    commands. The loader never enforced id uniqueness (raw_command.get(
+    "id") is taken as-is - see load_spellbook_from_dict) - a real but
+    narrow authoring mistake, not a load failure. Any caller that treats
+    spell_id as a stable, unique identity (find_command_by_id below,
+    core.mcp_projection.project_spellbook) must detect this and refuse to
+    arbitrarily pick one of the conflicting commands, rather than silently
+    executing or exposing whichever happened to come first."""
+    from collections import Counter
+
+    counts = Counter(c.spell_id for c in book.commands)
+    return frozenset(spell_id for spell_id, n in counts.items() if n > 1)
+
+
+def find_command_by_id(book: EngineSpellbook, spell_id: str) -> EngineCommand | None:
+    """Direct, non-matching lookup by a command's own declared id - the
+    integration point for a caller that has ALREADY selected an exact
+    Spell by some other means (an MCP tools/call naming it directly, see
+    core/mcp_execution.py) and must never run this book's own text/fuzzy
+    matcher a second time to find it. Purely additive: reads book.commands
+    the same way find_command()/match() already do, but never tokenizes,
+    scores or ranks anything, and never expands aliases - an alias is a
+    phrasing of a command, never a separate spell_id. Returns a command
+    regardless of its own `enabled` flag; a caller that must not act on a
+    disabled command (core/mcp_execution.py does) checks that separately,
+    the same way project_spellbook() already does before ever calling
+    project_command().
+
+    A spell_id shared by more than one command in this book (see
+    duplicate_spell_ids) is never resolved here either - None, exactly as
+    if it didn't exist, rather than an arbitrary pick of one of the
+    conflicting commands."""
+    if spell_id in duplicate_spell_ids(book):
+        return None
+    return next((c for c in book.commands if c.spell_id == spell_id), None)
+
+
 def find_command(
     book: EngineSpellbook, text: str, lang: str = "en", *, typed_only: bool = False,
 ) -> CommandMatch | CommandAmbiguity | None:
@@ -1244,15 +1331,44 @@ def find_command(
 
 
 def match(book: EngineSpellbook, text: str, lang: str = "en") -> EngineResult:
-    """Satellite execution view: output-only commands are invisible."""
-    result = find_command(book, text, lang, typed_only=True)
+    """Satellite/SPELLBOOK_ONLY execution view. Ranks and matches across
+    EVERY execution kind a Spell can have - action, query, Combined, and
+    text-only (assist_redirect true or false) - through the SAME
+    find_command() ranking/ambiguity logic every other frontend
+    (providers/code27/bridge.py, core/mcp_execution.py) already uses
+    (typed_only=False, the default) - never a separate, narrower view.
+
+    A text-only match carries no action_draft/query_plan/step_plan (all
+    three stay None, the only combination find_command() itself can
+    produce for one) - `command`/`captures` on EngineMatch/AmbiguousOption
+    are what a caller (core.router.SpellbookRouter) needs to dispatch it,
+    via core.text_only_execution.execute_text_only_command reused
+    verbatim - the same neutral, shared function core.mcp_execution also
+    calls directly, never a second, router-specific implementation of
+    what a text-only Spell's `output`/`assist_redirect` fields mean.
+
+    Until this change, this function passed typed_only=True, making
+    EVERY text-only Spell invisible to SATELLITE/SPELLBOOK_ONLY matching
+    regardless of assist_redirect - a real, empirically-confirmed gap
+    (see tests/test_router.py's own VoiceReachesEveryExecutionKindTests
+    for the end-to-end proof, driven through the exact same real request
+    path conversation.py uses) against every other frontend already
+    reaching this execution kind. Fixed here, at the one shared matcher
+    every SATELLITE/SPELLBOOK_ONLY turn goes through - never a
+    second-guessed reclassification per caller."""
+    result = find_command(book, text, lang, typed_only=False)
     if result is None:
         return EngineNoMatch()
     if isinstance(result, CommandAmbiguity):
         def option(candidate):
-            return AmbiguousOption(candidate.action_draft, candidate.command.spell_id,
-                                   candidate.matched_text, candidate.spoken_trigger)
+            return AmbiguousOption(
+                candidate.action_draft, candidate.command.spell_id,
+                candidate.matched_text, candidate.spoken_trigger,
+                query_plan=candidate.query_plan, step_plan=candidate.step_plan,
+                command=candidate.command, captures=candidate.captures,
+                catchphrase=candidate.catchphrase,
+            )
         return EngineAmbiguous(option(result.option_a), option(result.option_b))
     return EngineMatch(result.action_draft, result.command.spell_id,
                        result.matched_text, result.is_exact, query_plan=result.query_plan,
-                       step_plan=result.step_plan)
+                       step_plan=result.step_plan, command=result.command, captures=result.captures)

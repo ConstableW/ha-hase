@@ -916,3 +916,119 @@ test("User Management i18n has both German and English text for every new label"
     assert.equal(translate("en",de_key),english);
   }
 });
+
+test("MCP-check button and not-yet-checked badge render in the spell list", () => {
+  const html = studio().bookView();
+  assert.ok(html.includes('data-do="check-mcp"'));
+  assert.ok(html.includes("MCP: noch nicht geprüft"));
+});
+
+test("check-mcp action calls check_mcp and stores the report", async () => {
+  const ui = studio();
+  let calledWith = null;
+  ui.api = async (op) => {
+    calledWith = op;
+    return {spells: [{id: "lumos", execution_kind: "action", projectable: true, skip_reason: null,
+                       read_only: false, requires_unrestricted_bridge: false, grant_reason: null}],
+            projectable: 1, not_projectable: 0, requires_unrestricted: 0};
+  };
+  await ui.act("check-mcp");
+  assert.equal(calledWith, "check_mcp");
+  assert.equal(ui.mcpReport.projectable, 1);
+});
+
+test("mcpReport is cleared when a different book is opened, never shown stale", async () => {
+  const ui = studio();
+  ui.mcpReport = {spells: [], projectable: 0, not_projectable: 0, requires_unrestricted: 0};
+  ui.api = async () => ui.current;
+  ui.testProfiles = () => [];
+  ui.loadStoredSpellSearch = () => "";
+  ui.ensureAreas = async () => {};
+  await ui.open("potter");
+  assert.equal(ui.mcpReport, null);
+});
+
+test("mcpBadge shows structural capability and actual grant separately for a projectable action", () => {
+  const ui = studio();
+  ui.mcpReport = {spells: [{id: "lumos", execution_kind: "action", projectable: true, skip_reason: null,
+                             read_only: false, requires_unrestricted_bridge: false, grant_reason: null}],
+                   projectable: 1, not_projectable: 0, requires_unrestricted: 0};
+  const html = ui.bookView();
+  assert.ok(html.includes("Aktion"));
+  assert.ok(html.includes("keine zusätzliche Bridge-Voraussetzung"));
+  assert.ok(!html.includes("MCP: nicht bereitstellbar"));
+});
+
+test("mcpBadge surfaces the assist_redirect grant requirement with the shared reason code", () => {
+  const ui = studio();
+  ui.mcpReport = {spells: [{id: "lumos", execution_kind: "assist_redirect", projectable: true, skip_reason: null,
+                             read_only: false, requires_unrestricted_bridge: true,
+                             grant_reason: "assist_redirect_requires_unrestricted_policy"}],
+                   projectable: 1, not_projectable: 0, requires_unrestricted: 1};
+  const html = ui.bookView();
+  assert.ok(html.includes("Assist-Weiterleitung"));
+  assert.ok(html.includes("benötigt uneingeschränkte Bridge"));
+});
+
+test("mcpBadge reports a not-projectable spell with its concrete reason, never a silent gap", () => {
+  const ui = studio();
+  ui.mcpReport = {spells: [{id: "lumos", execution_kind: "action", projectable: false,
+                             skip_reason: "unknown_operation:light.bogus", read_only: null,
+                             requires_unrestricted_bridge: false, grant_reason: null}],
+                   projectable: 0, not_projectable: 1, requires_unrestricted: 0};
+  const html = ui.bookView();
+  assert.ok(html.includes("MCP: nicht bereitstellbar"));
+  assert.ok(html.includes("light.bogus"));
+});
+
+test("MCP capability i18n has both German and English text for every new label", () => {
+  for (const [de_key, english] of [
+    ["MCP prüfen", "Check MCP"],
+    ["MCP-Prüfergebnis", "MCP check result"],
+    ["MCP: noch nicht geprüft", "MCP: not checked yet"],
+    ["MCP: nicht bereitstellbar", "MCP: not exposable"],
+    ["nur lesend", "read-only"],
+    ["Assist-Weiterleitung", "Assist redirect"],
+    ["Ablauf", "Combined"],
+    ["Textantwort", "Text answer"],
+    ["(noch nicht gespeichert)", "(not yet saved)"],
+  ]) {
+    assert.equal(translate("de",de_key),de_key);
+    assert.equal(translate("en",de_key),english);
+  }
+});
+
+test("opening a book populates mcpReport from the read response's saved status", async () => {
+  const ui = studio();
+  const savedReport = {spells: [{id: "lumos", execution_kind: "action", projectable: true, skip_reason: null,
+                                  read_only: false, requires_unrestricted_bridge: false, grant_reason: null,
+                                  stale: false}],
+                        projectable: 1, not_projectable: 0, requires_unrestricted: 0, stale_count: 0};
+  ui.api = async () => ({...ui.current, mcp_report: savedReport});
+  ui.testProfiles = () => [];
+  ui.loadStoredSpellSearch = () => "";
+  ui.ensureAreas = async () => {};
+  await ui.open("potter");
+  assert.deepEqual(ui.mcpReport, savedReport);
+});
+
+test("check-mcp updates the local revision from the persisted response, never leaving it stale", async () => {
+  const ui = studio();
+  ui.current.revision = "old-rev";
+  ui.api = async () => ({spells: [], projectable: 0, not_projectable: 0, requires_unrestricted: 0,
+                          revision: "new-rev-after-save"});
+  await ui.act("check-mcp");
+  assert.equal(ui.current.revision, "new-rev-after-save");
+});
+
+test("mcpBadge flags a stale (not-yet-saved) spell without hiding its real, current values", () => {
+  const ui = studio();
+  ui.mcpReport = {spells: [{id: "lumos", execution_kind: "action", projectable: true, skip_reason: null,
+                             read_only: false, requires_unrestricted_bridge: false, grant_reason: null,
+                             stale: true}],
+                   projectable: 1, not_projectable: 0, requires_unrestricted: 0, stale_count: 1};
+  const html = ui.bookView();
+  assert.ok(html.includes("Aktion"));
+  assert.ok(html.includes("(noch nicht gespeichert)"));
+  assert.ok(html.includes("1 Spells zeigen einen noch nicht gespeicherten Stand"));
+});

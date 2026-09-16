@@ -12,6 +12,7 @@ from ...core.models import (
     ActionDraft,
     AreaPolicy,
     ExecutionResult,
+    QueryPlan,
     ScopedAreaPolicy,
     StepPlan,
 )
@@ -47,5 +48,13 @@ class Code27FrontendAdapter:
         source_area_id: str | None = None,
     ) -> ExecutionResult:
         return await self._executor.execute_steps(
+            plan, _UNRESTRICTED_POLICY, context=context, source_area_id=source_area_id,
+        )
+
+    async def execute_query_plan(
+        self, plan: QueryPlan, *, context: object | None = None,
+        source_area_id: str | None = None,
+    ) -> ExecutionResult:
+        return await self._executor.execute_query_plan(
             plan, _UNRESTRICTED_POLICY, context=context, source_area_id=source_area_id,
         )

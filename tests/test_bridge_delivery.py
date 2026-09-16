@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "hase"
 
 def load_source(name, **adapters):
     provider = ROOT / "providers" / "code27"
+    mcp_provider = ROOT / "providers" / "mcp"
     source_path = ROOT / f"{name}.py"
     if name in {"api", "coordinator", "bridge", "entity_correction", "frontend", "websocket_client", "entity", "media_player"}:
         source_path = provider / f"{name}.py"
@@ -28,7 +29,14 @@ def load_source(name, **adapters):
     elif name == "__init__":
         paths = [provider / "services.py", provider / "__init__.py", source_path]
     elif name == "config_flow":
-        paths = [provider / "config_flow.py", source_path]
+        # Root config_flow.py also composes providers/mcp/config_flow.py's
+        # McpFlowMixin/McpBridgeSubentryFlow/McpServerOptionsFlow/
+        # async_mcp_server_exists (see HaseConfigFlow's own class
+        # statement) - concatenated here the same way providers/code27's
+        # own config_flow.py already is, so those names are defined in the
+        # exec'd module instead of raising NameError once their (relative,
+        # stripped) import line is removed below.
+        paths = [provider / "config_flow.py", mcp_provider / "config_flow.py", source_path]
     nodes = [node for path in paths for node in ast.parse(path.read_text(encoding="utf-8")).body]
     nodes = [n for n in nodes if not (isinstance(n, ast.ImportFrom) and n.module == "__future__")]
     tree = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)] + nodes, type_ignores=[])
@@ -261,7 +269,8 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.entry.options["bridge_spellbook"] = "test"
         book = N(name="test")
         match = N(output="Licht Buero einschalten", catchphrase=None, trigger_text="lumos",
-                  matched_text="lumos", is_exact=True, captures={}, action_draft=None, step_plan=None)
+                  matched_text="lumos", is_exact=True, captures={}, action_draft=None, step_plan=None,
+                  query_plan=None, command=N(assist_redirect=True))
         with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
              patch.object(engine, "find_command", return_value=match), \
              patch.object(bridge, "_forward_to_assist", AsyncMock(return_value=(None, None, "new"))) as forward, \
@@ -294,6 +303,36 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
                 self.hass, self.entry, self.c, "zwergstadt abendmodus", None,
             )
         handle_steps.assert_awaited_once_with(self.hass, self.entry, self.c, plan, None)
+        forward.assert_not_awaited()
+
+    async def test_flat_query_trigger_executes_directly_not_via_assist_relay(self):
+        # A spellbook trigger that resolves to a query_plan (a flat
+        # multi-source query - e.g. "average temperature in {area}", no
+        # operation/steps) had the EXACT SAME gap the Combined Spell fix
+        # above already documents for step_plan, just never given the
+        # same treatment: match.output is never computed for a query-only
+        # match (core.spellbook_engine.find_command's own text-only branch
+        # requires "not command.sources"), so it fell through to
+        # _forward_to_assist(command=None, ...), which
+        # conversation.async_converse(text=None) then chokes on -
+        # silently caught, producing no reply at all. Flat queries must
+        # execute directly, the same way Combined Spells and a single
+        # typed action already do, and never reach _forward_to_assist.
+        self.entry.options["bridge_spellbook"] = "test"
+        book = N(name="test")
+        plan = N(sources=(N(),))
+        match = N(output=None, catchphrase=None, trigger_text="average temperature in {area}",
+                  matched_text="average temperature in buero", is_exact=True, captures={"area": "Buero"},
+                  action_draft=None, step_plan=None, query_plan=plan)
+        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
+             patch.object(engine, "find_command", return_value=match), \
+             patch.object(bridge, "_handle_typed_query", AsyncMock()) as handle_query, \
+             patch.object(bridge, "_forward_to_assist", AsyncMock()) as forward, \
+             patch.object(bridge, "_log_activity"):
+            await bridge._handle_bridge_message(
+                self.hass, self.entry, self.c, "average temperature in buero", None,
+            )
+        handle_query.assert_awaited_once_with(self.hass, self.entry, self.c, plan, None)
         forward.assert_not_awaited()
 
     async def test_missing_configured_spellbook_warns_instead_of_silent_fallback(self):

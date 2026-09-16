@@ -60,7 +60,19 @@ class InventoryTests(unittest.TestCase):
                     found = engine.find_command(book, trigger.format(**captures), lang)
                     self.assertIsNotNone(found)
                     self.assertEqual(found.output, command.output[lang].format(**captures))
-                    self.assertIsInstance(engine.match(book, trigger.format(**captures), lang), models.EngineNoMatch)
+                    # match() now ranks a text-only trigger too (the real
+                    # gap docs/HASE-MCP.md's "Text-only Spells and
+                    # assist_redirect" section documents as fixed) -
+                    # a real EngineMatch, action_draft/query_plan/
+                    # step_plan all None, command/captures carrying what
+                    # core.router.SpellbookRouter needs to dispatch it.
+                    text_only = engine.match(book, trigger.format(**captures), lang)
+                    self.assertIsInstance(text_only, models.EngineMatch)
+                    self.assertIsNone(text_only.action_draft)
+                    self.assertIsNone(text_only.query_plan)
+                    self.assertIsNone(text_only.step_plan)
+                    self.assertEqual(text_only.command.spell_id, command.spell_id)
+                    self.assertEqual(text_only.captures, captures)
                 return
         self.fail('No localized output command')
 
@@ -125,6 +137,38 @@ class RealTargetExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status,models.ExecutionStatus.DENIED)
         self.hass.services.async_call.assert_not_awaited()
 
+    async def test_query_plan_respects_the_same_exposure_and_area_policy_as_actions(self):
+        # CODE27's new query_plan dispatch (providers/code27/bridge.py's
+        # _handle_typed_query, providers/code27/frontend.py's
+        # Code27FrontendAdapter.execute_query_plan) reuses the exact same
+        # ActionExecutor.execute_query_plan/TargetResolver/AreaPolicy
+        # machinery real actions already go through above - proven here
+        # against the SAME real entity/area registries and the SAME
+        # already-established {light.a, light.b, light.c} exposed/
+        # resolvable set (light.private/disabled/hidden/unavailable/group
+        # never counted, exactly as test_real_adapter_all_allowed_on_off_
+        # and_scoped_satellite already proves for actions).
+        plan = models.QueryPlan(
+            sources=(models.QuerySourceSpec(kind='count', target=models.ActionTarget('all_allowed'), domain_filter='light', variable='n'),),
+            response_template='{n}',
+        )
+        adapter = self.frontend.Code27FrontendAdapter(self.hass)
+        result = await adapter.execute_query_plan(plan)
+        self.assertEqual(result.status, models.ExecutionStatus.QUERY_ANSWER)
+        self.assertEqual(result.data['response_text'], '3')
+
+        # Same query, but through a RESTRICTED policy (mirroring what a
+        # real Bridge/Satellite would enforce, even though CODE27 itself
+        # always uses the unrestricted owner policy) - kitchen-only
+        # excludes light.c (office), proving AreaPolicy is genuinely
+        # consulted for this path, not bypassed.
+        restricted = models.AreaPolicy(frozenset({'kitchen'}))
+        restricted_result = await executor.ActionExecutor(
+            self.ha.HaTargetResolver(self.hass), self.ha.HaServiceCaller(self.hass),
+        ).execute_query_plan(plan, models.ScopedAreaPolicy(restricted, restricted))
+        self.assertEqual(restricted_result.status, models.ExecutionStatus.QUERY_ANSWER)
+        self.assertEqual(restricted_result.data['response_text'], '2')
+
 
 class UnifiedBridgeTests(unittest.IsolatedAsyncioTestCase):
     setUp = support.DeliveryTests.setUp
@@ -142,12 +186,22 @@ class UnifiedBridgeTests(unittest.IsolatedAsyncioTestCase):
             await support.bridge._handle_bridge_message(self.hass,self.entry,self.c,text,None)
         return adapter, assist
 
-    async def test_output_only_reaches_assist_but_not_satellite(self):
+    async def test_output_only_reaches_assist_via_code27_bridge_and_satellite_alike(self):
+        # Was: "...but not Satellite" - the real gap this session's live
+        # voice trace found and fixed (docs/HASE-MCP.md's own "Text-only
+        # Spells and assist_redirect" section). CODE27's own chat Bridge
+        # (asserted below, unchanged) and core.router.SpellbookRouter's
+        # native Satellite/SPELLBOOK_ONLY matching now both reach this
+        # execution kind - see test_router.py's own
+        # VoiceReachesEveryExecutionKindTests for the router-side proof.
         book = self.book([{'trigger':'evening','output':'Activate evening mood'}])
         adapter,assist = await self.run_spell(book,'evening',None)
         adapter.execute.assert_not_awaited()
         self.assertEqual(assist.call_args.args[3],'Activate evening mood')
-        self.assertIsInstance(engine.match(book,'evening'),models.EngineNoMatch)
+        satellite_match = engine.match(book,'evening')
+        self.assertIsInstance(satellite_match, models.EngineMatch)
+        self.assertIsNone(satellite_match.action_draft)
+        self.assertEqual(satellite_match.command.output, 'Activate evening mood')
 
     async def test_typed_plus_output_success_failure_and_unsupported_never_forward(self):
         book = self.book([{'trigger':'lumos','operation':'light.set_power','target':{'kind':'all_allowed'},
@@ -253,4 +307,10 @@ class UnifiedBridgeTests(unittest.IsolatedAsyncioTestCase):
         adapter.execute.assert_not_awaited()
         self.assertEqual(assist.call_args.args[3], 'Licht Gondor auf 100 Prozent stellen')
         self.assertEqual(assist.call_args.kwargs['catchphrase'], 'Der neue Tag beginnt.')
-        self.assertIsInstance(engine.match(book,'die sonne geht auf über Gondor','de'),models.EngineNoMatch)
+        # Real bundled middle_earth_07 - core.router.SpellbookRouter now
+        # reaches this same Spell via native Satellite/SPELLBOOK_ONLY
+        # matching too (see test_router.py's own end-to-end proof).
+        satellite_match = engine.match(book,'die sonne geht auf über Gondor','de')
+        self.assertIsInstance(satellite_match, models.EngineMatch)
+        self.assertIsNone(satellite_match.action_draft)
+        self.assertEqual(satellite_match.command.spell_id, 'middle_earth_07')

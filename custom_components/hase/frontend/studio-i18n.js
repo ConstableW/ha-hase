@@ -114,6 +114,18 @@ export const en = {
   "Auswahl exportieren": "Export selection", "Sammlung exportieren": "Export collection",
   "Prüfergebnis": "Validation result", "Expert / Fallback ausführbar": "Expert / fallback executable",
   "Momentaufnahme für den gewählten Client. Dynamische Trigger benötigen eine passende Testphrase.": "Snapshot for the selected client. Dynamic triggers require a matching test phrase.",
+  "MCP prüfen": "Check MCP", "MCP-Prüfergebnis": "MCP check result",
+  "als MCP-Werkzeug bereitstellbar": "exposable as an MCP tool", "nicht bereitstellbar": "not exposable",
+  "benötigen uneingeschränkte Bridge": "require an unrestricted Bridge",
+  "Strukturelle Bereitstellbarkeit (bereichs-/Bridge-unabhängig) und tatsächliche Freigabe (abhängig von der Bridge-Berechtigung) sind getrennt ausgewiesen. Der Stand wird im Buch gespeichert und bei jedem Speichern automatisch aktualisiert; „MCP prüfen“ aktualisiert und speichert ihn sofort.":
+    "Structural exposability (area-/Bridge-independent) and actual grant (depends on the Bridge's own permission) are shown separately. The status is saved in the book and refreshed automatically on every save; \"Check MCP\" updates and saves it immediately.",
+  "{n} Spells zeigen einen noch nicht gespeicherten Stand – wird beim nächsten Speichern oder „MCP prüfen“ aktualisiert.":
+    "{n} Spells show a status not yet saved - will be refreshed on the next save or \"Check MCP\".",
+  "MCP: noch nicht geprüft": "MCP: not checked yet", "MCP: nicht bereitstellbar": "MCP: not exposable",
+  "MCP:": "MCP:", "nur lesend": "read-only", "(noch nicht gespeichert)": "(not yet saved)",
+  "Freigabe: benötigt uneingeschränkte Bridge": "Grant: requires an unrestricted Bridge",
+  "Freigabe: keine zusätzliche Bridge-Voraussetzung": "Grant: no additional Bridge requirement",
+  "Ablauf": "Combined", "Textantwort": "Text answer", "Assist-Weiterleitung": "Assist redirect",
   "Spells suchen": "Search spells", "Spells suchen …": "Search spells …", "Sammlung filtern": "Filter collection",
   "Alle Sammlungen": "All collections", "Aktion filtern": "Filter action", "Alle Aktionen": "All actions",
   "Capability filtern": "Filter capability", "User und Expert": "User and Expert", "Aktivierung filtern": "Filter activation",

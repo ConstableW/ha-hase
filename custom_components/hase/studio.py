@@ -33,10 +33,12 @@ from .core.spellbook_engine import (
 )
 from .core.studio import (
     StudioError,
+    attach_mcp_capability_cache,
     book_capability,
     check_document,
     entity_capability_flags,
     export_book,
+    mcp_capability_report,
     merge_book,
     parse_document,
     preserve_user,
@@ -212,7 +214,23 @@ class SpellbookStudio:
         override (and its adjacent cover, when present); later mutations target
         that override directly.  The built-in remains untouched and becomes
         active again when the override is reset/deleted.
+
+        Also refreshes every spell's own persisted MCP-capability status
+        (attach_mcp_capability_cache) before writing - the single hook
+        point for the "automatically saved status" the docs promise, so
+        every save (a spell edit, an import, a language/metadata change,
+        an explicit "MCP prüfen") keeps it current without each call site
+        having to remember to do so separately. Runs AFTER the first
+        check_document so a malformed document is still rejected with a
+        clean StudioError first, never reaching the capability
+        computation at all; check_document runs again afterward too,
+        since attaching a cache entry to every spell can itself push a
+        near-the-limit book over MAX_BYTES - the same size/shape
+        invariant every other save must satisfy, not a cache-only
+        exemption.
         """
+        check_document(raw)
+        raw = attach_mcp_capability_cache(raw)
         check_document(raw)
         async with self.lock:
             def write_file():
@@ -891,6 +909,7 @@ class SpellbookStudio:
                     "spell_capabilities": {c["id"]: spell_capability(c) for c in raw["commands"]},
                     "spell_variables": {c["id"]: spell_variables(c) for c in raw["commands"]},
                     "capability": book_capability(raw),
+                    "mcp_report": mcp_capability_report(raw, mark_stale=True),
                     "profiles": [{"id": k, "name": n} for k, n, _ in self.profiles(book_id)],
                     "studio_profiles": [{"id": k, "name": n} for k, n, _ in self.studio_profiles()],
                     "languages": languages(raw), "default_language": default_language(raw),
@@ -954,6 +973,26 @@ class SpellbookStudio:
             if operation == "execute" and data.get("revision") != revision:
                 raise StudioError("Das Buch wurde geändert. Bitte erneut testen.")
             return await self.test(candidate, payload, execute=operation == "execute")
+        if operation == "check_mcp":
+            # "MCP prüfen" - always computed fresh (core.mcp_capability is
+            # pure and re-derives the exact same core.mcp_projection.
+            # project_command real tools/list uses, never a second
+            # authorization model), mirroring "validate"'s own "always
+            # recompute, never trust a stale cached verdict" contract for
+            # the NUMBERS it reports. It also immediately PERSISTS that
+            # fresh result onto every spell's own metadata.mcp via the
+            # same write() every other save already goes through - the
+            # "automatically saved status" the docs promise, so the book
+            # on disk (and every other client reading it) reflects this
+            # the instant the button is clicked, not only on the next
+            # unrelated edit. The real execution path never reads this
+            # cache regardless - see attach_mcp_capability_cache's own
+            # docstring.
+            new_revision = await self.write(deepcopy(raw), revision)
+            raw, revision = await self.read(book_id)
+            report = mcp_capability_report(raw, mark_stale=True)
+            report["revision"] = new_revision
+            return report
         if operation == "export":
             exported = export_book(raw, data.get("ids"), data.get("collection"))
             warnings = []

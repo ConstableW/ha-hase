@@ -11,6 +11,9 @@ Standalone agents do not require a CODE27 device. CODE27 is the first provider t
 **Rebrand requires a fresh setup:** The Home Assistant domain is now `hase`. Existing `code27` entries are not migrated. Before switching, create a backup, remove the old entries while the previous integration is still installed, and then set up HASE from scratch. There are no legacy aliases for services, events, or paths.
 
 See [Cutover and Live Validation](docs/HASE-CUTOVER.md) and [Architecture](docs/HASE-ARCHITECTURE.md).
+A fourth frontend, MCP (Model Context Protocol — external agents/LLM tools call Spells
+directly), is documented in [MCP interface](docs/HASE-MCP.md); for building your own Bridge/
+frontend adapter see [Adding new Bridges](docs/HASE-NEW-BRIDGES.md).
 
 ## Contents
 

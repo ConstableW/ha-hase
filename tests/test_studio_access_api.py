@@ -34,7 +34,7 @@ N = types.SimpleNamespace
 ORDINARY_OPERATIONS = [
     "delete_book", "reset_book", "manage_language", "ui_settings", "list", "areas", "entities", "cover",
     "read", "create_book", "save_metadata", "expert_permission", "validate_all", "import_book_preview",
-    "import_book_apply", "validate", "dry_run", "execute", "export", "import_preview", "import_apply",
+    "import_book_apply", "validate", "dry_run", "execute", "check_mcp", "export", "import_preview", "import_apply",
     "save_spell", "delete_spell", "duplicate_spell", "toggle_spell",
 ]
 

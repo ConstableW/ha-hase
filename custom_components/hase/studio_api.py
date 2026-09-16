@@ -21,7 +21,7 @@ _ACCESS_MANAGEMENT_OPERATIONS = frozenset({"access_get", "access_set"})
 @websocket_api.websocket_command({
     vol.Required("type"): "hase/studio",
     vol.Required("operation"): vol.In({"delete_book", "reset_book", "manage_language", "ui_settings", "list", "areas", "entities", "cover", "read", "create_book", "save_metadata", "expert_permission", "validate_all", "import_book_preview", "import_book_apply",
-                                      "validate", "dry_run", "execute", "export", "import_preview",
+                                      "validate", "dry_run", "execute", "check_mcp", "export", "import_preview",
                                       "import_apply", "save_spell", "delete_spell", "duplicate_spell", "toggle_spell",
                                       "access_get", "access_set"}),
     vol.Optional("data", default=dict): dict,

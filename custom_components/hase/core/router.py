@@ -27,12 +27,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .executor import ActionExecutor
+from .executor import response_text_for_success as _response_text_for_success
 from .interaction_state import (
     DialogCapacityError,
     InteractionStateStore,
     PendingClarification,
     SessionLockRegistry,
 )
+from .text_only_execution import AssistForwarder, execute_text_only_command
 from .models import (
     AmbiguousOption,
     BackendResult,
@@ -47,8 +49,15 @@ from .models import (
     FrontendMode,
     ScopedAreaPolicy,
 )
-from .session import ConversationScope, InteractionSession, backend_scope, compute_interaction_session, local_scope
-from .spellbook_engine import EngineSpellbook, match as engine_match
+from .session import (
+    ConversationScope,
+    InteractionSession,
+    backend_scope,
+    compute_interaction_session,
+    local_scope,
+)
+from .spellbook_engine import EngineSpellbook
+from .spellbook_engine import match as engine_match
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,8 +162,11 @@ def _words(text: str) -> set[str]:
 
 def _option_vocabulary(option: AmbiguousOption) -> set[str]:
     words = _words(option.spoken_trigger)
-    if option.action_draft.catchphrase:
-        words |= _words(option.action_draft.catchphrase)
+    # option.catchphrase (not option.action_draft.catchphrase - a
+    # text-only option's action_draft is None) - already resolved to the
+    # same plain string either way, see AmbiguousOption's own docstring.
+    if option.catchphrase:
+        words |= _words(option.catchphrase)
     return words
 
 
@@ -182,11 +194,25 @@ class SpellbookRouter:
         store: InteractionStateStore | None = None,
         *,
         clock=time.monotonic,
+        assist_forwarder: AssistForwarder | None = None,
     ) -> None:
         self._executor = executor
         self._store = store or InteractionStateStore()
         self._session_locks = SessionLockRegistry()
         self._clock = clock
+        # core.text_only_execution.AssistForwarder - the SAME neutral
+        # Protocol core.mcp_execution.execute_mcp_tool_call also takes as
+        # its own assist_forwarder parameter, both depending on that
+        # shared module rather than one depending on the other. Reaches
+        # Home Assistant's configured conversation agent for a text-only
+        # Spell's assist_redirect=True execution kind. None means a
+        # caller (a test, or an adapter that genuinely has no Assist
+        # agent to forward to) simply never supplied one -
+        # _execute_text_only_and_respond then reports the same
+        # "assist_redirect_unavailable" outcome core.text_only_execution.
+        # _execute_assist_redirect already reports for this, never a
+        # silent fallback to returning the raw command text.
+        self._assist_forwarder = assist_forwarder
         # Each entry is either a finished (seen_at, ConversationResult)
         # or an in-flight asyncio.Future for a request_id currently
         # being handled. A plain check-then-act (look up, and only
@@ -347,11 +373,21 @@ class SpellbookRouter:
             )
 
         assert isinstance(result, EngineMatch)
-        if result.step_plan is not None:
-            return await self._execute_steps_and_respond(request, result.step_plan, config.policy)
-        if result.query_plan is not None:
-            return await self._execute_query_plan_and_respond(request, result.query_plan, config.policy)
-        return await self._execute_and_respond(request, result.action_draft, config.policy)
+        return await self._dispatch_match(request, result, config.policy)
+
+    async def _dispatch_match(self, request, match, policy) -> ConversationResult:
+        """Shared by a fresh EngineMatch AND a resolved ambiguity
+        (AmbiguousOption, from _consume_reply) - every execution kind
+        dispatches identically either way, so answering a clarification
+        never behaves differently from a direct, unambiguous match of the
+        same Spell."""
+        if match.step_plan is not None:
+            return await self._execute_steps_and_respond(request, match.step_plan, policy)
+        if match.query_plan is not None:
+            return await self._execute_query_plan_and_respond(request, match.query_plan, policy)
+        if match.action_draft is not None:
+            return await self._execute_and_respond(request, match.action_draft, policy)
+        return await self._execute_text_only_and_respond(request, match.command, match.captures, policy)
 
     async def _execute_and_respond(self, request, action_draft, policy) -> ConversationResult:
         execution = await self._executor.execute(
@@ -377,6 +413,44 @@ class SpellbookRouter:
         return ConversationResult(
             request_id=request.request_id, response_text=text, status=status,
             execution_results=(execution,), output_mode=action_draft.output_mode,
+        )
+
+    async def _execute_text_only_and_respond(self, request, command, captures, policy) -> ConversationResult:
+        """A text-only Spell (no operation/sources/steps) - reuses
+        core.text_only_execution.execute_text_only_command VERBATIM, the
+        neutral, shared, permission-gated function MCP (core.
+        mcp_execution) also calls directly for this SAME execution kind
+        (assist_redirect's own fully-unrestricted-policy gate, forwarding
+        via the injected AssistForwarder, and the confirmed-completion-
+        only catchphrase substitution rule) - never a second
+        implementation of what assist_redirect means, and never routed
+        through core.mcp_execution itself: a spoken/typed HASE-Agent turn
+        never touches MCP or the network, only this shared core function.
+        A fixed (assist_redirect=False) answer is rendered the same way,
+        from the SAME already-resolved `captures` find_command() itself
+        produced - never re-matched, never a second text-rendering rule."""
+        result = await execute_text_only_command(
+            command, captures, language=request.language, policy=policy,
+            assist_forwarder=self._assist_forwarder, context=request.context,
+        )
+        execution = result.execution_result
+        if result.status is None:
+            # unresolvable_text_response - captures failed to render real
+            # text (a missing/invalid placeholder) - the same generic
+            # error every other unresolvable plan in this router gets.
+            return ConversationResult(
+                request_id=request.request_id, response_text=_ERROR_TEXT, status=ConversationStatus.ERROR,
+            )
+        if result.status is ExecutionStatus.DENIED:
+            status, text = ConversationStatus.REJECTED, _REJECTED_TEXT
+        elif result.status in (ExecutionStatus.SUCCESS, ExecutionStatus.QUERY_ANSWER):
+            status, text = ConversationStatus.COMPLETED, (result.response_text or _ERROR_TEXT)
+        else:
+            status, text = ConversationStatus.ERROR, _ERROR_TEXT
+        return ConversationResult(
+            request_id=request.request_id, response_text=text, status=status,
+            execution_results=(execution,) if execution is not None else (),
+            output_mode=command.output_mode,
         )
 
     async def _execute_query_plan_and_respond(self, request, query_plan, policy) -> ConversationResult:
@@ -545,8 +619,11 @@ class SpellbookRouter:
         # Policy/target are re-checked from scratch here (not cached
         # from when the ambiguity was first raised) - a config change
         # or a race with a direct action in between must not let a
-        # stale decision through.
-        return await self._execute_and_respond(request, chosen.action_draft, config.policy)
+        # stale decision through. _dispatch_match (not the old, action-
+        # draft-only _execute_and_respond call) - a resolved ambiguity
+        # can now be a query/Combined/text-only Spell too, exactly like a
+        # fresh EngineMatch already could.
+        return await self._dispatch_match(request, chosen, config.policy)
 
     def _ask_text(self, pending: PendingClarification) -> str:
         return self._ask_text_for(pending.option_a, pending.option_b)
@@ -554,15 +631,3 @@ class SpellbookRouter:
     @staticmethod
     def _ask_text_for(option_a: AmbiguousOption, option_b: AmbiguousOption) -> str:
         return f'Meinst du "{option_a.spoken_trigger}" oder "{option_b.spoken_trigger}"?'
-
-
-def _response_text_for_success(execution: ExecutionResult) -> str:
-    if execution.status is ExecutionStatus.QUERY_ANSWER:
-        if isinstance(execution.data.get("response_text"), str):
-            return execution.data["response_text"]
-        state = execution.data.get("state")
-        unit = execution.data.get("unit")
-        if state is None:
-            return "Kein Zustand verfügbar."
-        return f"{state}{unit}" if unit else str(state)
-    return "Erledigt."

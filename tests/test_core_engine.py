@@ -70,6 +70,9 @@ BackendResult = _models_mod.BackendResult
 _legacy_migration_mod = importlib.import_module("hase_spellbook_core.legacy_migration")
 migrate_legacy_spellbook = _legacy_migration_mod.migrate_legacy_spellbook
 
+_text_only_execution_mod = importlib.import_module("hase_spellbook_core.text_only_execution")
+AssistForwardOutcome = _text_only_execution_mod.AssistForwardOutcome
+
 ActionDraft = _models_mod.ActionDraft
 ActionTarget = _models_mod.ActionTarget
 AmbiguousOption = _models_mod.AmbiguousOption
@@ -339,11 +342,16 @@ class SpellbookEngineTests(unittest.TestCase):
         )
         self.assertIsNotNone(book)
         result = spellbook_engine.match(book, "lumos maxima Küche", "de")
-        if isinstance(result, EngineMatch):
+        if isinstance(result, EngineMatch) and result.action_draft is not None:
             # Falling through to a looser tier (e.g. "lumos {area}"
-            # capturing "maxima Küche" as a garbage area name) is
-            # acceptable - it fails safely at target resolution. What
-            # must never happen is the whole-house action winning.
+            # capturing "maxima Küche" as a garbage area name, or - since
+            # match() now also ranks text-only commands, see this
+            # module's own OutputOnlyCommandTests - a text-only Spell
+            # like potter_verse.yaml's "lumos maxima {area}" winning
+            # instead) is acceptable - either fails safely (an unresolvable
+            # target, or a garbage-area phrase forwarded to Assist)
+            # without ever touching a device. What must never happen is
+            # the whole-house action winning.
             self.assertNotEqual(result.action_draft.target, ActionTarget("all_allowed", None))
 
 
@@ -351,7 +359,9 @@ class OutputOnlyCommandTests(unittest.TestCase):
     """Etappe 7: a command with `output` instead of/alongside `operation`
     - the unified-schema field that lets a single spellbook file also
     serve CODE27's bridge (free text forwarded to Assist), which this
-    engine itself never acts on. See EngineCommand's own docstring."""
+    engine's own build_draft/build_query_plan/build_step_plan never wrap
+    into an ActionDraft/QueryPlan/StepPlan. See EngineCommand's own
+    docstring."""
 
     def test_output_only_command_loads_successfully(self):
         book = spellbook_engine.load_spellbook_from_text(
@@ -364,17 +374,32 @@ class OutputOnlyCommandTests(unittest.TestCase):
         self.assertIsNone(book.commands[0].operation)
         self.assertEqual(book.commands[0].output, "Licht aus")
 
-    def test_output_only_command_never_produces_a_match(self):
-        # This engine has no concept of executing free text (Etappe 1's
-        # backdoor rule) - an output-only command must be invisible to
-        # match(), not silently wrapped into an ActionDraft.
+    def test_output_only_command_produces_a_text_only_match_never_an_action_draft(self):
+        # Was: "an output-only command must be invisible to match()".
+        # That was the real gap this session's live voice trace
+        # (docs/HASE-MCP.md's own "Text-only Spells and assist_redirect"
+        # section) empirically proved and fixed: match() now ranks
+        # EVERY execution kind, exactly like find_command() already does
+        # for every other frontend - a text-only trigger reaches
+        # core.router.SpellbookRouter as a real EngineMatch, dispatched
+        # via command/captures (core.text_only_execution.
+        # execute_text_only_command, the same neutral function MCP also
+        # calls directly), never NO_MATCH and never silently wrapped
+        # into a fake ActionDraft/QueryPlan/StepPlan either.
         book = spellbook_engine.load_spellbook_from_text(
             "b",
             "name: B\ncommands:\n  - id: x\n    trigger: \"mach das licht aus\"\n    "
             "output: \"Licht aus\"\n",
         )
         result = spellbook_engine.match(book, "mach das licht aus", "de")
-        self.assertIsInstance(result, EngineNoMatch)
+        self.assertIsInstance(result, EngineMatch)
+        self.assertIsNone(result.action_draft)
+        self.assertIsNone(result.query_plan)
+        self.assertIsNone(result.step_plan)
+        self.assertEqual(result.spell_id, "x")
+        self.assertIsNotNone(result.command)
+        self.assertEqual(result.command.spell_id, "x")
+        self.assertEqual(result.captures, {})
 
     def test_command_with_neither_operation_nor_output_is_skipped(self):
         book = spellbook_engine.load_spellbook_from_text(
@@ -1775,6 +1800,26 @@ class RaisingBackend:
         raise RuntimeError("device unreachable")
 
 
+class _FakeAssistForwarder:
+    """core.text_only_execution.AssistForwarder Protocol - stands in for
+    spellbooker_ha.HaAssistForwarder (real conversation.async_converse
+    is never touched by this pure-core test file)."""
+
+    def __init__(self, *, is_error=False, is_query_answer=False, speech=None, continue_conversation=False):
+        self.calls: list[str] = []
+        self._is_error = is_error
+        self._is_query_answer = is_query_answer
+        self._speech = speech
+        self._continue_conversation = continue_conversation
+
+    async def forward(self, command_text, *, language, context):
+        self.calls.append(command_text)
+        return AssistForwardOutcome(
+            speech=self._speech, is_error=self._is_error,
+            is_query_answer=self._is_query_answer, continue_conversation=self._continue_conversation,
+        )
+
+
 class SatelliteModeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.book = spellbook_engine.load_spellbook_from_text("t", DEMO_YAML)
@@ -1998,6 +2043,178 @@ class SatelliteModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(backend.calls), 1)
         scope_used = backend.calls[0][2]
         self.assertEqual(scope_used, backend_scope("code27-1", "lilya"))
+
+
+MIXED_AMBIGUOUS_YAML = """
+name: Mixed Ambiguity Test
+commands:
+  - id: activate
+    trigger: "aktiviere licht {area}"
+    operation: light.set_power
+    target: {kind: area_name, capture: area}
+    arguments: {"on": true}
+    catchphrase: "Aktiviert."
+    output: "Licht {area} an"
+  - id: deactivate_text_only
+    trigger: "deaktiviere licht {area}"
+    output: "Licht {area} aus"
+    catchphrase: "Textantwort deaktiviert."
+"""
+
+
+class VoiceReachesEveryExecutionKindTests(unittest.IsolatedAsyncioTestCase):
+    """End-to-end regression for a real, empirically-found gap: native
+    HASE-Agent matching (core.router.SpellbookRouter, exactly the code
+    conversation.py's SpellbookerConversationEntity._async_handle_message
+    calls for a real Voice Assist turn) used to call spellbook_engine.
+    match() with typed_only=True, making EVERY text-only Spell invisible
+    to it regardless of assist_redirect - confirmed live by tracing real,
+    bundled custom_components/hase/spellbooks/middle_earth.yaml Spells
+    through this exact router.handle() path for all three shapes
+    (action/query/text-only) before and after the fix. See docs/HASE-MCP.
+    md's own "Text-only Spells and assist_redirect" section.
+
+    Also covers the follow-up correction: the fix first reused core.
+    mcp_execution's own text-only dispatch directly, which had the
+    dependency direction backwards (a HASE-Agent turn never touches MCP
+    or the network at all). SpellbookRouter now calls core.
+    text_only_execution.execute_text_only_command - a neutral module
+    core.mcp_execution ALSO depends on, symmetrically - which these tests
+    exercise via the real SpellbookRouter/AgentConfig wiring, never core.
+    mcp_execution itself.
+
+    Drives the SAME router.handle(request, config) conversation.py calls
+    - never a lower-level shortcut - so this is a true end-to-end proof,
+    not just a unit test of match()'s own return shape."""
+
+    def setUp(self):
+        self.book = spellbook_engine.load_spellbook_from_path(
+            HASE_ROOT / "spellbooks" / "middle_earth.yaml"
+        )
+        self.assertIsNotNone(self.book)
+        # middle_earth.yaml has no query Spell today - append the same
+        # well-established query fixture the rest of this project's test
+        # suite already uses (tests/_bridge_contract.py's CONTRACT_QUERY),
+        # so all three execution kinds are covered from one real book.
+        query_command = spellbook_engine._load_command("contract_query", {
+            "id": "contract_query", "trigger": "wie viele lichter sind an in {area}",
+            "sources": [{"kind": "count", "target": {"kind": "area_name", "capture": "area"},
+                         "domain_filter": "light", "state_filter": "on", "variable": "n"}],
+            "output": "{n} Lichter sind an.",
+        })
+        self.assertIsNotNone(query_command)
+        from dataclasses import replace as _replace
+        self.book = _replace(self.book, commands=(*self.book.commands, query_command))
+
+        self.resolver = FakeResolver(
+            {"Gondor": ResolvedTargets((ResolvedEntity("light.gondor_lamp", "gondor"),))}
+        )
+        self.caller = FakeCaller()
+        self.executor = ActionExecutor(self.resolver, self.caller)
+        self.assist_forwarder = _FakeAssistForwarder()
+        self.backend = FakeBackend(BackendResult(status="reply", response_text="[backend echo]"))
+        self.policy = _scoped(AreaPolicy(allowed_areas=frozenset(), unrestricted=True))
+
+    def _router(self):
+        return SpellbookRouter(self.executor, assist_forwarder=self.assist_forwarder)
+
+    def _request(self, text, token="conv-1"):
+        return ConversationRequest(
+            request_id=_next_request_id(), agent_entry_id="e1", text=text, language="de",
+            source_namespace="ha_conversation", conversation_token=token,
+        )
+
+    async def test_action_spell_executes_via_the_real_voice_request_path(self):
+        router = self._router()
+        config = AgentConfig(mode=FrontendMode.SPELLBOOK_ONLY, spellbook=self.book, policy=self.policy)
+        result = await router.handle(self._request("entzündet die leuchtfeuer von Gondor"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "Rohan wird antworten.")
+        self.assertEqual(self.caller.calls, [(("light.gondor_lamp",), True)])
+
+    async def test_query_spell_executes_via_the_real_voice_request_path(self):
+        self.caller = FakeCaller(state={"state": "on", "unit": None})
+        self.executor = ActionExecutor(self.resolver, self.caller)
+        router = self._router()
+        config = AgentConfig(mode=FrontendMode.SPELLBOOK_ONLY, spellbook=self.book, policy=self.policy)
+        result = await router.handle(self._request("wie viele lichter sind an in Gondor"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "1 Lichter sind an.")
+
+    async def test_assist_redirect_text_only_spell_executes_via_the_real_voice_request_path(self):
+        # middle_earth_07 - "die sonne geht auf {area}" - the real Spell
+        # this session's own live trace used to prove the gap. Must
+        # actually forward the RENDERED command phrase to Assist (never
+        # skip execution) and speak the Spell's OWN catchphrase on
+        # confirmed completion, never Assist's raw reply or the command
+        # text itself.
+        router = self._router()
+        config = AgentConfig(mode=FrontendMode.SPELLBOOK_ONLY, spellbook=self.book, policy=self.policy)
+        result = await router.handle(self._request("die sonne geht auf über Gondor"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "Der neue Tag beginnt.")
+        self.assertEqual(result.execution_results[0].status, ExecutionStatus.SUCCESS)
+        self.assertEqual(self.assist_forwarder.calls, ["Licht Gondor auf 100 Prozent stellen"])
+
+    async def test_assist_redirect_text_only_spell_reaches_satellite_without_falling_back_to_code27(self):
+        # SATELLITE mode, with a real backend present (so a fall-through
+        # would silently succeed with the WRONG mechanism instead of
+        # erroring loud) - the text-only Spell must still be matched and
+        # dispatched through assist_redirect BEFORE _consult_backend is
+        # ever reached, never falling through to CODE27's own chat
+        # persona (which has no access to this Spell's own configured
+        # output/catchphrase at all).
+        router = self._router()
+        config = AgentConfig(
+            mode=FrontendMode.SATELLITE, spellbook=self.book, policy=self.policy,
+            backend=self.backend, backend_instance_id="code27-1", profile_id="1",
+        )
+        result = await router.handle(self._request("die sonne geht auf über Gondor"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "Der neue Tag beginnt.")
+        self.assertEqual(self.assist_forwarder.calls, ["Licht Gondor auf 100 Prozent stellen"])
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_fixed_text_only_spell_assist_redirect_false_never_touches_assist(self):
+        # A genuine fixed answer (assist_redirect explicitly False) is
+        # rendered directly - it must never be forwarded to Assist at
+        # all, unlike middle_earth_07 above.
+        book = spellbook_engine.load_spellbook_from_text(
+            "fixed",
+            "name: Fixed\ncommands:\n  - id: fact\n    trigger: \"erzähl mir etwas\"\n"
+            "    output: \"Bruchtal ist ein schöner Ort.\"\n    assist_redirect: false\n",
+        )
+        router = self._router()
+        config = AgentConfig(mode=FrontendMode.SPELLBOOK_ONLY, spellbook=book, policy=self.policy)
+        result = await router.handle(self._request("erzähl mir etwas"), config)
+        self.assertEqual(result.status, ConversationStatus.COMPLETED)
+        self.assertEqual(result.response_text, "Bruchtal ist ein schöner Ort.")
+        self.assertEqual(self.assist_forwarder.calls, [])
+
+    async def test_ambiguous_typed_vs_text_only_pair_resolves_and_dispatches_the_text_only_option(self):
+        # The ranking-interaction consequence of no longer filtering
+        # text-only commands out before ambiguity detection: a typed
+        # candidate and a text-only candidate can now be the two
+        # near-tied, opposite-output options in one EngineAmbiguous, and
+        # answering the resulting clarification must dispatch WHICHEVER
+        # one was picked - including the text-only one - without
+        # crashing on a None action_draft (see AmbiguousOption/
+        # core.router._option_vocabulary's own fix for this).
+        book = spellbook_engine.load_spellbook_from_text("mixed", MIXED_AMBIGUOUS_YAML)
+        router = self._router()
+        config = AgentConfig(mode=FrontendMode.SPELLBOOK_ONLY, spellbook=book, policy=self.policy)
+
+        ambiguous = spellbook_engine.match(book, "daktiviere licht Gondor", "de")
+        self.assertIsInstance(ambiguous, EngineAmbiguous)
+
+        r1 = await router.handle(self._request("daktiviere licht Gondor", "conv-mix"), config)
+        self.assertEqual(r1.status, ConversationStatus.CONFIRMATION_REQUIRED)
+
+        r2 = await router.handle(self._request("deaktiviere", "conv-mix"), config)
+        self.assertEqual(r2.status, ConversationStatus.COMPLETED)
+        self.assertEqual(r2.response_text, "Textantwort deaktiviert.")
+        self.assertEqual(self.assist_forwarder.calls, ["Licht Gondor aus"])
+        self.caller.calls and self.fail("the typed (activate) option must not have been executed")
 
 
 if __name__ == "__main__":

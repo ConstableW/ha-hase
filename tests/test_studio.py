@@ -414,7 +414,12 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
         changed, _ = await self.studio.read("potter")
         self.assertEqual(changed["commands"][0]["trigger"], {"de":"Lumos", "fr":"Lumos"})
         self.assertEqual(changed["commands"][0]["target"], raw["commands"][0]["target"])
-        self.assertEqual(studio_core.parse_document(yaml.safe_dump(studio_core.export_book(changed))), changed)
+        # export_book strips Studio's own derived metadata.mcp cache (see
+        # test_export_never_contains_local_permission) - compare against
+        # the export itself, not the pre-export saved book, so this stays
+        # a pure "export round-trips losslessly through YAML" check.
+        exported = studio_core.export_book(changed)
+        self.assertEqual(studio_core.parse_document(yaml.safe_dump(exported)), exported)
         self.assertEqual(yaml.safe_load(source.read_text(encoding="utf-8")), raw)
 
     async def test_language_drafts_preserve_all_languages_without_duplicating_action(self):
@@ -605,6 +610,120 @@ class StorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["id"],"potter")
         self.assertEqual(len(result["commands"]),2)
         self.assertEqual(self.hass.data["hase_studio_permissions"],{"potter":True,"hdr":False})
+
+    async def test_check_mcp_reports_structural_capability_and_actual_grant_separately(self):
+        # The user's own explicit requirement: Studio's "MCP prüfen" must
+        # show structural capability (projectable) and actual grant
+        # (requires_unrestricted_bridge) as two SEPARATE facts, never one
+        # combined verdict.
+        assist_redirect_spell = {
+            "id": "sunrise", "trigger": "sunrise over {area}",
+            "output": "Set light {area} to 100%.",
+        }
+        await self.studio.write(book(commands=[spell(), assist_redirect_spell]), None)
+        result = await self.studio.dispatch("check_mcp", {"book_id": "potter"}, None)
+        self.assertEqual(result["projectable"], 2)
+        self.assertEqual(result["not_projectable"], 0)
+        self.assertEqual(result["requires_unrestricted"], 1)
+        by_id = {s["id"]: s for s in result["spells"]}
+        self.assertEqual(by_id["lumos"]["execution_kind"], "action")
+        self.assertTrue(by_id["lumos"]["projectable"])
+        self.assertFalse(by_id["lumos"]["requires_unrestricted_bridge"])
+        self.assertEqual(by_id["sunrise"]["execution_kind"], "assist_redirect")
+        self.assertTrue(by_id["sunrise"]["projectable"])
+        self.assertTrue(by_id["sunrise"]["requires_unrestricted_bridge"])
+        self.assertEqual(by_id["sunrise"]["grant_reason"], "assist_redirect_requires_unrestricted_policy")
+
+    async def test_check_mcp_persists_status_onto_each_spell_via_metadata(self):
+        # The "automatically saved status" the docs promise: "MCP prüfen"
+        # must not just return a report, it must write it back onto the
+        # book on disk, in the Spellbook itself (never a separate store),
+        # under the already-generic, already-engine-ignored `metadata`
+        # field every spell already permits.
+        await self.studio.write(book(commands=[spell()]), None)
+        result = await self.studio.dispatch("check_mcp", {"book_id": "potter"}, None)
+        self.assertIn("revision", result)
+        raw_after, revision_after = await self.studio.read("potter")
+        self.assertEqual(revision_after, result["revision"])
+        [raw_spell] = raw_after["commands"]
+        cache = raw_spell["metadata"]["mcp"]
+        self.assertEqual(cache["execution_kind"], "action")
+        self.assertTrue(cache["projectable"])
+        self.assertIn("spell_hash", cache)
+        self.assertIn("schema_version", cache)
+
+    async def test_saving_any_spell_edit_refreshes_the_persisted_mcp_status(self):
+        # "Status automatisch beim Buch-Speichern pro Spell neu berechnen" -
+        # not just on an explicit "MCP prüfen" click, but on every ordinary
+        # save too (write() is the single hook, see attach_mcp_capability_
+        # cache). A newly added text-only Spell gets a cache entry the very
+        # first time the book is saved, with no "MCP prüfen" click at all.
+        revision = await self.studio.write(book(commands=[spell()]), None)
+        raw, revision = await self.studio.read("potter")
+        raw["commands"].append({"id": "new_text", "trigger": "tell me something", "output": "Hi."})
+        await self.studio.write(raw, revision)
+        raw_after, _ = await self.studio.read("potter")
+        by_id = {c["id"]: c for c in raw_after["commands"]}
+        self.assertEqual(by_id["new_text"]["metadata"]["mcp"]["execution_kind"], "assist_redirect")
+        self.assertEqual(by_id["lumos"]["metadata"]["mcp"]["execution_kind"], "action")
+
+    async def test_read_reports_mcp_status_without_needing_a_check_mcp_click(self):
+        # "Badges zeigen auch ohne Klick den aktuellen Stand" - the plain
+        # "read" operation (opening a book in the editor) must already
+        # carry a usable mcp_report, sourced from the persisted cache.
+        await self.studio.write(book(commands=[spell()]), None)
+        result = await self.studio.dispatch("read", {"book_id": "potter"}, None)
+        self.assertIn("mcp_report", result)
+        [entry] = result["mcp_report"]["spells"]
+        self.assertEqual(entry["id"], "lumos")
+        self.assertTrue(entry["projectable"])
+        self.assertFalse(entry["stale"])
+        self.assertEqual(result["mcp_report"]["stale_count"], 0)
+
+    async def test_read_flags_a_never_checked_spell_as_stale(self):
+        # A book placed on disk by something other than Studio's own
+        # write() (here: standing in for a bundled/legacy book, or a
+        # directly-edited YAML file) has no metadata.mcp at all. It must
+        # still show its real, freshly-computed numbers - just flagged
+        # `stale`, never silently presented as an already-saved status.
+        import os
+
+        directory = Path(self.hass.config.path(adapter.USER_BOOK_SUBDIR))
+        directory.mkdir(parents=True, exist_ok=True)
+        raw = book(commands=[spell()])
+        (directory / "potter.yaml").write_text(
+            yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
+        result = await self.studio.dispatch("read", {"book_id": "potter"}, None)
+        [entry] = result["mcp_report"]["spells"]
+        self.assertTrue(entry["stale"])
+        self.assertTrue(entry["projectable"])  # numbers are still real/fresh, just not yet saved
+        self.assertEqual(result["mcp_report"]["stale_count"], 1)
+
+    async def test_check_mcp_reconciles_a_stale_cache_back_to_current(self):
+        await self.studio.write(book(commands=[spell()]), None)
+        raw, revision = await self.studio.read("potter")
+        raw["commands"][0]["metadata"] = {"mcp": {"execution_kind": "query", "schema_version": 999}}
+        await self.studio.write(raw, revision)
+        # write() itself refreshes the cache - it should already be
+        # current again after this save, without a separate "MCP prüfen".
+        read_result = await self.studio.dispatch("read", {"book_id": "potter"}, None)
+        [entry] = read_result["mcp_report"]["spells"]
+        self.assertFalse(entry["stale"])
+        self.assertEqual(entry["execution_kind"], "action")
+
+    async def test_check_mcp_reports_unknown_operation_as_not_projectable(self):
+        broken_spell = {
+            "id": "broken", "trigger": "do a thing in {area}", "operation": "not.a.real.operation",
+            "target": {"kind": "area_id", "capture": "area"}, "arguments": {},
+        }
+        await self.studio.write(book(commands=[broken_spell]), None)
+        result = await self.studio.dispatch("check_mcp", {"book_id": "potter"}, None)
+        self.assertEqual(result["projectable"], 0)
+        self.assertEqual(result["not_projectable"], 1)
+        [row] = result["spells"]
+        self.assertFalse(row["projectable"])
+        self.assertEqual(row["skip_reason"], "unknown_operation:not.a.real.operation")
 
 
 class TemplateResolverTests(unittest.IsolatedAsyncioTestCase):

@@ -12,6 +12,10 @@ ENTRY_KIND_SPELLBOOKER_SATELLITE = "spellbooker_satellite"
 
 SUBENTRY_TYPE_SATELLITE = "satellite"
 
+ENTRY_KIND_MCP_SERVER = "mcp_server"
+
+SUBENTRY_TYPE_MCP_BRIDGE = "mcp_bridge"
+
 CONF_SPELLBOOKER_MODE = "spellbooker_mode"
 
 SPELLBOOKER_MODE_SPELLBOOK_ONLY = "spellbook_only"

@@ -16,6 +16,9 @@
   "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/ConstableW/ha-hase/issues",
-  "requirements": [],
+  "requirements": [
+    "mcp>=2.2.0",
+    "uvicorn>=0.53.0"
+  ],
   "version": "0.3.0"
 }

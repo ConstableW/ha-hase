@@ -10,10 +10,12 @@ from homeassistant.exceptions import ConfigEntryError
 from .const import (
     CONF_ENTRY_KIND,
     ENTRY_KIND_CODE27_DEVICE,
+    ENTRY_KIND_MCP_SERVER,
     ENTRY_KIND_SPELLBOOKER,
     ENTRY_KIND_SPELLBOOKER_SATELLITE,
 )
 from .providers.code27 import async_setup_code27_entry, async_unload_code27_entry
+from .providers.mcp import async_setup_mcp_server_entry, async_unload_mcp_server_entry
 
 SPELLBOOKER_PLATFORMS = [Platform.CONVERSATION]
 
@@ -39,6 +41,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await _async_studio_entry_loaded(hass, entry)
         return True
+    if kind == ENTRY_KIND_MCP_SERVER:
+        # Infrastructure only - no Spellbook/area/scope of its own, no
+        # platforms to forward. Its Bridge subentries are what Studio-
+        # adjacent tooling would care about, exactly like a CODE27
+        # device's own Satellite subentries.
+        loaded = await async_setup_mcp_server_entry(hass, entry)
+        if loaded:
+            await _async_studio_entry_loaded(hass, entry)
+        return loaded
     loaded = await async_setup_code27_entry(hass, entry)
     if loaded:
         await _async_studio_entry_loaded(hass, entry)
@@ -58,13 +69,13 @@ async def _async_spellbooker_update_listener(
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    if entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE) in (
-        ENTRY_KIND_SPELLBOOKER,
-        ENTRY_KIND_SPELLBOOKER_SATELLITE,
-    ):
+    kind = entry.data.get(CONF_ENTRY_KIND, ENTRY_KIND_CODE27_DEVICE)
+    if kind in (ENTRY_KIND_SPELLBOOKER, ENTRY_KIND_SPELLBOOKER_SATELLITE):
         unloaded = await hass.config_entries.async_unload_platforms(
             entry, SPELLBOOKER_PLATFORMS
         )
+    elif kind == ENTRY_KIND_MCP_SERVER:
+        unloaded = await async_unload_mcp_server_entry(hass, entry)
     else:
         unloaded = await async_unload_code27_entry(hass, entry)
     if unloaded and getattr(hass, "data", {}).get("hase_studio") is not None:

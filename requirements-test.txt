@@ -3,3 +3,5 @@ PyYAML>=6,<7
 voluptuous>=0.15,<0.17
 aiohttp>=3.11,<4
 ruff>=0.15,<0.17
+mcp>=2.2.0
+uvicorn>=0.53.0

@@ -12,6 +12,9 @@ Chat-Bridge und Satellite-Subentries.
 migriert. Vor dem Wechsel sichern, alte Entries mit installiertem Altcode entfernen und HASE
 frisch einrichten. Es gibt keine alten Service-, Event- oder Pfad-Aliasse.
 Siehe [Cutover und Live-Abnahme](docs/HASE-CUTOVER.md) und [Architektur](docs/HASE-ARCHITECTURE.md).
+Ein viertes Frontend, MCP (Model Context Protocol – externe Agenten/LLM-Tools rufen Spells
+direkt auf), ist in [MCP-Schnittstelle](docs/HASE-MCP.md) dokumentiert; eigene Bridge-/
+Frontend-Adapter siehe [Neue Bridges anbinden](docs/HASE-NEW-BRIDGES.md).
 
 ## Inhalt
 

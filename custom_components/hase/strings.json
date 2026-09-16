@@ -1,4 +1,10 @@
 {
+  "issues": {
+    "mcp_bridge_invalid_area": {
+      "title": "MCP Bridge \"{bridge_name}\" has an invalid area",
+      "description": "This Bridge's configured area (id: {area_id}) no longer exists in Home Assistant - it was probably deleted or renamed. Spells that rely on this Bridge's own speaking-device area cannot run until you fix this.\n\nOpen this Bridge's settings and either pick a valid area, or clear the area field to make it a deliberately area-less (\"master\") Bridge that always requires an explicit target."
+    }
+  },
   "config": {
     "step": {
       "verify": {
@@ -10,7 +16,18 @@
         "description": "What do you want to set up?",
         "menu_options": {
           "code27_device": "Connect a CODE27 device",
-          "spellbooker": "Create a HASE voice assistant"
+          "spellbooker": "Create a HASE voice assistant",
+          "mcp_server": "Set up the MCP Server"
+        }
+      },
+      "mcp_server": {
+        "title": "Set up the HASE MCP Server",
+        "description": "Infrastructure only - it owns no Spellbook, area or scope itself, and it is a singleton (this form only ever appears once). Add MCP Bridges afterwards, one per external MCP client/device.",
+        "data": {
+          "mcp_server_port": "Listener port"
+        },
+        "data_description": {
+          "mcp_server_port": "The internal TCP port the MCP Streamable HTTP endpoint listens on. This binds on every network interface of this machine, so any device on your local network can reach it, not just this machine itself - the only thing stopping an unauthorized device on your LAN is each Bridge's own bearer token, so keep those secret and treat your local network as the security boundary. HASE does not expose this port to the internet itself - route an external hostname/path to it through your own reverse proxy, with its own authentication/TLS, if you want that. You can change this later from the MCP Server's own options, which restarts the listener on the new port immediately."
         }
       },
       "code27_device": {
@@ -65,7 +82,8 @@
       "wrong_device": "This address belongs to a different device. The existing entry was not changed.",
       "invalid_identity": "The device did not provide a valid identity.",
       "already_configured": "This CODE27 device is already configured.",
-      "reauth_successful": "Re-authentication was successful."
+      "reauth_successful": "Re-authentication was successful.",
+      "mcp_server_already_configured": "An MCP Server is already configured. Add an MCP Bridge instead."
     }
   },
   "options": {
@@ -123,6 +141,16 @@
           "bridge_ai_task_entity_id": "Optional. If selected, this AI Task cleans up each spoken phrase before the HASE-Agent matches it against the spellbook.",
           "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
           "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
+        }
+      },
+      "mcp_server": {
+        "title": "MCP Server options",
+        "description": "Infrastructure only - Spellbook, area and permissions are set per MCP Bridge instead.",
+        "data": {
+          "mcp_server_port": "Listener port"
+        },
+        "data_description": {
+          "mcp_server_port": "The internal TCP port the MCP Streamable HTTP endpoint listens on. This binds on every network interface of this machine, so any device on your local network can reach it, not just this machine itself - the only thing stopping an unauthorized device on your LAN is each Bridge's own bearer token, so keep those secret and treat your local network as the security boundary. HASE does not expose this port to the internet itself - route an external hostname/path to it through your own reverse proxy, with its own authentication/TLS, if you want that. Changing this restarts the listener on the new port immediately."
         }
       }
     }
@@ -610,6 +638,71 @@
         "areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted actions\".",
         "queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\".",
         "invalid_profile_id": "Enter the character slot as a plain number, e.g. \"1\"."
+      }
+    },
+    "mcp_bridge": {
+      "initiate_flow": {
+        "user": "Add MCP Bridge",
+        "reconfigure": "Reconfigure MCP Bridge"
+      },
+      "entry_type": "MCP Bridge",
+      "step": {
+        "user": {
+          "title": "Add an MCP Bridge",
+          "description": "One logical external MCP client/device (e.g. one Stackchan, one virtual assistant). Reuses the same Spellbook/area-scope model as a Satellite.",
+          "data": {
+            "name": "Name",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Allowed areas (actions)",
+            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
+            "mcp_bridge_area_id": "Area (optional)",
+            "mcp_bridge_language": "Language override"
+          },
+          "data_description": {
+            "spellbooker_book": "Which Spellbook this Bridge exposes as MCP tools. Changing it later changes the exposed tools immediately.",
+            "spellbooker_allowed_areas": "Which areas this Bridge may act in. Ignored if \"Unrestricted actions\" is on.",
+            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this Bridge is deliberately meant to have no restriction.",
+            "spellbooker_queries_allowed_areas": "Which areas this Bridge may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this Bridge may act in.",
+            "mcp_bridge_area_id": "This Bridge's own speaking-device area - the area a Spell without an explicitly named target acts on. Leave empty for a \"master\" Bridge with no area of its own; it will then require an explicit target for any Spell that needs one.",
+            "mcp_bridge_language": "Optional. Selects which trigger/alias phrasing is used for MCP tool descriptions. Offers the assigned Spellbook's own languages; pick \"Use Home Assistant language\" (or leave empty) to use Home Assistant's own configured language instead. A value the current book no longer has (e.g. after switching books) still works - it falls back the same way Spellbook Studio's own language resolution already does."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure this MCP Bridge",
+          "description": "Current credential ends in …{credential_suffix}. Check \"Regenerate token\" below to issue a new one - the old one stops working immediately.",
+          "data": {
+            "name": "Name",
+            "spellbooker_book": "Spellbook",
+            "spellbooker_allowed_areas": "Allowed areas (actions)",
+            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
+            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
+            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
+            "mcp_bridge_area_id": "Area (optional)",
+            "mcp_bridge_language": "Language override",
+            "regenerate_credential": "Regenerate token"
+          },
+          "data_description": {
+            "spellbooker_book": "Which Spellbook this Bridge exposes as MCP tools. Changing it changes the exposed tools immediately.",
+            "spellbooker_allowed_areas": "Which areas this Bridge may act in. Ignored if \"Unrestricted actions\" is on.",
+            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this Bridge is deliberately meant to have no restriction.",
+            "spellbooker_queries_allowed_areas": "Which areas this Bridge may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
+            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this Bridge may act in.",
+            "mcp_bridge_area_id": "This Bridge's own speaking-device area. Leave empty for a \"master\" Bridge with no area of its own.",
+            "mcp_bridge_language": "Optional. Offers the assigned Spellbook's own languages; pick \"Use Home Assistant language\" (or leave empty) to use Home Assistant's own configured language instead. A value the current book no longer has still works via the same fallback Spellbook Studio itself uses.",
+            "regenerate_credential": "Issues a brand-new bearer token and immediately invalidates the current one. The new token is shown once on the next screen - copy it now, it cannot be shown again."
+          }
+        },
+        "reveal_credential": {
+          "title": "Bridge credential",
+          "description": "Bearer token for this MCP Bridge:\n\n`{token}`\n\n**This token is shown only once.** Copy it now and store it wherever your MCP client (e.g. Stackchan) needs it. Once you leave this page, Home Assistant cannot display it again - only a masked suffix remains visible in this Bridge's settings. If you lose it, reconfigure this Bridge and check \"Regenerate token\" to issue a new one - the old token stops working the moment you do."
+        }
+      },
+      "error": {
+        "areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted actions\".",
+        "queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\"."
       }
     }
   }

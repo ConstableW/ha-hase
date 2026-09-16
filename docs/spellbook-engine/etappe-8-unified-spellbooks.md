@@ -42,9 +42,18 @@ commands:
 `find_command()` liefert `CommandMatch` oder `CommandAmbiguity`. Beide enthalten
 Befehle und Captures aus derselben Erkennung. Spezifität, vollständiger Verbrauch
 der Äußerung, wortweise Fuzzy-Prüfung und Gegenaktions-Ambiguität bleiben erhalten.
-`match()` verwendet diese Funktion mit `typed_only=True`: reine Output-Einträge
-werden bereits vor der Rangfolge ausgeschlossen. Sie können keine ActionDraft
-produzieren und keine typisierten Kandidaten verdrängen.
+`match()` verwendete diese Funktion ursprünglich mit `typed_only=True`: reine
+Output-Einträge wurden bereits vor der Rangfolge ausgeschlossen und waren für
+Satellite/SPELLBOOK_ONLY (`core/router.py::SpellbookRouter`) unsichtbar. Das war
+eine echte, funktionale Lücke gegenüber CODE27s eigener Chat-Bridge und MCP, die
+`find_command()` schon immer mit `typed_only=False` nutzten – inzwischen behoben:
+`match()` nutzt jetzt ebenfalls `typed_only=False` und rankt jede Ausführungsart
+in einem Durchgang. Ein reiner Output-Eintrag kann weiterhin keine eigene
+ActionDraft produzieren, kann aber jetzt als eigenständiger `EngineMatch`
+(`command`/`captures`) gewinnen und wird von `SpellbookRouter.
+_execute_text_only_and_respond` über denselben gemeinsamen Pfad ausgeführt,
+den `core/mcp_execution.py` bereits nutzt – siehe [HASE-MCP.md](../HASE-MCP.md)s
+eigenen Abschnitt "Text-only Spells and `assist_redirect`".
 
 CODE27 verwendet den neutralen Match. Eine vorhandene Operation gewinnt immer.
 Auch UNSUPPORTED, INVALID, DENIED oder FAILED führen niemals zur Assist-Weitergabe

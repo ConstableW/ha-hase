@@ -194,6 +194,25 @@ def _render_query_response(template: str, variables: dict) -> str:
         return template
 
 
+def response_text_for_success(execution: ExecutionResult) -> str:
+    """The rendered text for a SUCCESS/QUERY_ANSWER ExecutionResult -
+    shared by core.router (a spoken/text turn) and core.mcp_execution (an
+    MCP tools/call), so neither ever invents its own success wording. A
+    QUERY_ANSWER's own response_template (execute_query_plan/execute_steps)
+    or entity.get_state's response_template already rendered into
+    data["response_text"] when the draft/plan declared one; otherwise this
+    falls back to the raw state+unit, same as always."""
+    if execution.status is ExecutionStatus.QUERY_ANSWER:
+        if isinstance(execution.data.get("response_text"), str):
+            return execution.data["response_text"]
+        state = execution.data.get("state")
+        unit = execution.data.get("unit")
+        if state is None:
+            return "Kein Zustand verfügbar."
+        return f"{state}{unit}" if unit else str(state)
+    return "Erledigt."
+
+
 class _AliasNamespace:
     """A per-alias response-variable namespace for a Combined Spell step
     ({alias.field} response variables) - `str.format`'s dotted-field

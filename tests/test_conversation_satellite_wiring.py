@@ -41,6 +41,7 @@ _models_mod = importlib.import_module("hase_spellbook_core.models")
 _router_mod = importlib.import_module("hase_spellbook_core.router")
 _executor_mod = importlib.import_module("hase_spellbook_core.executor")
 _engine_mod = importlib.import_module("hase_spellbook_core.spellbook_engine")
+_mcp_execution_mod = importlib.import_module("hase_spellbook_core.mcp_execution")
 
 ConversationRequest = _models_mod.ConversationRequest
 ConversationResult = _models_mod.ConversationResult
@@ -120,6 +121,22 @@ class FakeBackend:
         return BackendResult(status="reply", response_text=f"backend saw: {text}")
 
 
+class FakeAssistForwarder:
+    """Stands in for spellbooker_ha.HaAssistForwarder - real Home
+    Assistant conversation.async_converse is never touched by this test
+    module, only the core.mcp_execution.AssistForwarder Protocol shape."""
+
+    def __init__(self, hass):
+        self.hass = hass
+        self.calls = []
+
+    async def forward(self, command_text, *, language, context):
+        self.calls.append(command_text)
+        return _mcp_execution_mod.AssistForwardOutcome(
+            speech=None, is_error=False, is_query_answer=False, continue_conversation=False,
+        )
+
+
 def _load_conversation_module(**extra_adapters):
     async def passthrough_cleanup(_hass, command, _task_entity_id):
         return command, None, None
@@ -151,6 +168,7 @@ def _load_conversation_module(**extra_adapters):
         SpellbookRouter=SpellbookRouter,
         HaServiceCaller=lambda hass: FakeServiceCaller(),
         HaTargetResolver=lambda hass: FakeTargetResolver(),
+        HaAssistForwarder=FakeAssistForwarder,
         async_get_spellbook=None,  # overridden per-test below
         resolve_source_area_id=lambda hass, device_id: None,
         Code27ConversationBackend=FakeBackend,

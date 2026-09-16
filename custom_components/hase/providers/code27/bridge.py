@@ -712,56 +712,109 @@ async def _handle_bridge_message(
                         hass, entry, coordinator, match.step_plan, entity_id,
                     )
                     return
-                if is_exact:
+                if match.query_plan is not None:
+                    # A flat multi-source query (sources, no operation/
+                    # steps) - the exact same "used to fall through to the
+                    # None-forwarding _forward_to_assist path and choke"
+                    # gap _handle_typed_steps' own docstring already
+                    # documents fixing for step_plan, just never given the
+                    # same treatment here. Confirmed live: match.output is
+                    # never computed for a query-only match (find_command's
+                    # own text-only branch requires "not command.sources"),
+                    # so `command` above is always None for this case -
+                    # _ask_assist's conversation.async_converse(text=None)
+                    # then raises, silently caught, producing no reply at
+                    # all. Combined Spells and flat queries deserve the
+                    # identical direct-execution treatment.
                     _log_activity(
+                        hass, entry,
+                        _msg(hass, "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
+                             book=book.name, trigger=trigger_text, matched=matched_text,
+                             command=f"{len(match.query_plan.sources)} sources"), entity_id,
+                    )
+                    await _handle_typed_query(
+                        hass, entry, coordinator, match.query_plan, entity_id,
+                    )
+                    return
+                if match.command.assist_redirect:
+                    # Explicit, author-declared execution kind: `output`
+                    # is a command phrase for Home Assistant's own
+                    # configured conversation agent to interpret/execute
+                    # for real - never inferred from a {area}/{target}
+                    # placeholder or from output's own wording (genuine
+                    # local-answer text can contain those too - see
+                    # models.DEFAULT_ASSIST_REDIRECT's own docstring, and
+                    # note this is a SEPARATE axis from output_mode, which
+                    # still governs how the eventual response is
+                    # delivered regardless). Unchanged from CODE27's
+                    # original mechanism, including the entity-name
+                    # correction retry below.
+                    if is_exact:
+                        _log_activity(
+                            hass,
+                            entry,
+                            _msg(
+                                hass,
+                                "spellbook_detected",
+                                book=book.name,
+                                trigger=trigger_text,
+                                command=command,
+                            ),
+                            entity_id,
+                        )
+                    else:
+                        _log_activity(
+                            hass,
+                            entry,
+                            _msg(
+                                hass,
+                                "spellbook_fuzzy_detected",
+                                book=book.name,
+                                matched=matched_text,
+                                trigger=trigger_text,
+                                command=command,
+                            ),
+                            entity_id,
+                        )
+                    correction_enabled = entry.options.get(
+                        CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, False
+                    )
+                    speech, response, sent_command = await _forward_to_assist(
                         hass,
                         entry,
-                        _msg(
-                            hass,
-                            "spellbook_detected",
-                            book=book.name,
-                            trigger=trigger_text,
-                            command=command,
-                        ),
+                        coordinator,
+                        command,
                         entity_id,
+                        catchphrase=catchphrase,
+                        skip_ai_cleanup=True,
+                        suppress_error_speech=correction_enabled,
                     )
-                else:
-                    _log_activity(
-                        hass,
-                        entry,
-                        _msg(
-                            hass,
-                            "spellbook_fuzzy_detected",
-                            book=book.name,
-                            matched=matched_text,
-                            trigger=trigger_text,
-                            command=command,
-                        ),
-                        entity_id,
-                    )
-                correction_enabled = entry.options.get(
-                    CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, False
-                )
-                speech, response, sent_command = await _forward_to_assist(
-                    hass,
-                    entry,
-                    coordinator,
-                    command,
+                    if (
+                        correction_enabled
+                        and response is not None
+                        and response.response_type == intent.IntentResponseType.ERROR
+                    ):
+                        started = await _start_correction_from_spellbook(
+                            hass, entry, coordinator, sent_command, captures, catchphrase, entity_id
+                        )
+                        if not started and speech:
+                            await _output_speech(hass, entry, coordinator, speech, entity_id)
+                    return
+                # assist_redirect=False - the CONFIGURED text is the final
+                # answer, rendered and spoken verbatim, never handed to
+                # Assist for reinterpretation. Same direct-render/-speak
+                # contract as _handle_typed_action/_handle_typed_steps/
+                # _handle_typed_query above, just for a Spell with no
+                # operation/sources/steps at all.
+                _log_activity(
+                    hass, entry,
+                    _msg(hass, "spellbook_detected" if is_exact else "spellbook_fuzzy_detected",
+                         book=book.name, trigger=trigger_text, matched=matched_text, command=command),
                     entity_id,
-                    catchphrase=catchphrase,
-                    skip_ai_cleanup=True,
-                    suppress_error_speech=correction_enabled,
                 )
-                if (
-                    correction_enabled
-                    and response is not None
-                    and response.response_type == intent.IntentResponseType.ERROR
-                ):
-                    started = await _start_correction_from_spellbook(
-                        hass, entry, coordinator, sent_command, captures, catchphrase, entity_id
-                    )
-                    if not started and speech:
-                        await _output_speech(hass, entry, coordinator, speech, entity_id)
+                await _handle_typed_text(
+                    hass, entry, coordinator, command, catchphrase, entity_id,
+                )
                 return
         if (
             entry.options.get(CONF_BRIDGE_SPELLBOOK_MODE, DEFAULT_SPELLBOOK_MODE)
@@ -1672,6 +1725,53 @@ async def _handle_typed_steps(
         speech = response_text if isinstance(response_text, str) else "Erledigt."
     else:
         speech = _msg(hass, "typed_action_error", error=execution.reason_code)
+    _log_activity(hass, entry, speech, entity_id)
+    await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
+
+
+async def _handle_typed_query(
+    hass, entry, coordinator, plan, entity_id,
+) -> None:
+    """The flat-multi-source-query sibling of _handle_typed_steps - a
+    spellbook trigger that resolved to a query_plan (e.g. "average
+    temperature in {area}") executes directly here, the exact same way a
+    Combined Spell already does, rather than falling through to the
+    generic _forward_to_assist text-relay (which only ever has a plain
+    catchphrase/output string to forward - never a query_plan, and
+    match.output is never computed for a query-only match at all - see
+    this function's own call site)."""
+    _COMMAND_RECOGNIZED.set(True)
+    request = _current_request(hass, entry, coordinator)
+    execution = await Code27FrontendAdapter(
+        hass, entry.options.get(CONF_BRIDGE_SPELLBOOK),
+        vacuum_allowed=entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False) is True,
+    ).execute_query_plan(plan)
+    if execution.status is ExecutionStatus.QUERY_ANSWER:
+        response_text = execution.data.get("response_text")
+        speech = response_text if isinstance(response_text, str) else "Erledigt."
+    else:
+        speech = _msg(hass, "typed_action_error", error=execution.reason_code)
+    _log_activity(hass, entry, speech, entity_id)
+    await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
+
+
+async def _handle_typed_text(
+    hass, entry, coordinator, text, catchphrase, entity_id,
+) -> None:
+    """A spellbook trigger that resolved to a plain text-only Spell with
+    assist_redirect=False (see models.DEFAULT_ASSIST_REDIRECT) - `text`
+    is already the fully-rendered configured answer
+    (core.spellbook_engine.find_command's own inline text-only branch
+    already substituted every capture into it; core.mcp_projection's
+    build_text_response and MCP's own tools/call render the identical
+    string for the same Spell). Speaks it directly, exactly as
+    configured - NEVER forwarded to Home Assistant's Assist for
+    reinterpretation. That remains a real, separate, still-supported
+    mechanism for assist_redirect=True Spells (see
+    _handle_bridge_message's own branch above)."""
+    _COMMAND_RECOGNIZED.set(True)
+    request = _current_request(hass, entry, coordinator)
+    speech = catchphrase or text
     _log_activity(hass, entry, speech, entity_id)
     await _output_speech(hass, entry, coordinator, speech, entity_id, request=request)
 

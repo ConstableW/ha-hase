@@ -21,6 +21,7 @@ from .core.executor import (
     TargetNotFound,
     VacuumCleanOutcome,
 )
+from .core.text_only_execution import AssistForwardOutcome
 from .core.models import ActionTarget
 
 if TYPE_CHECKING:
@@ -770,3 +771,90 @@ async def _switch_vacuum_map(
         blocking=True,
         context=context,
     )
+
+
+# ---------------------------------------------------------------------------
+# AssistForwarder
+# ---------------------------------------------------------------------------
+
+
+class HaAssistForwarder:
+    """Real core.text_only_execution.AssistForwarder implementation - the
+    exact same conversation.async_converse call providers.code27.bridge.
+    _ask_assist already makes for CODE27's own assist_redirect handling,
+    factored out here so every OTHER caller of the shared
+    core.text_only_execution.execute_text_only_command reaches Home
+    Assistant's configured conversation agent through the identical
+    mechanism, never a second one. Two real callers wire this up today,
+    symmetrically, neither depending on the other's own module:
+    providers/mcp/transport.py (an MCP tools/call, via core.
+    mcp_execution) and conversation.py (a spoken/typed HASE-Agent turn -
+    native HA-Voice or a Satellite subentry - via core.router.
+    SpellbookRouter directly; this never touches MCP or the network).
+
+    Deliberately narrower than _ask_assist: no AI cleanup, no activity
+    logging, no entity-correction retry loop - all CODE27-specific UX
+    neither of those two callers has an equivalent surface for. Each
+    caller's own response envelope (core.mcp_execution.McpExecutionResult
+    for MCP, core.models.ConversationResult for a HASE-Agent turn) is
+    what carries the outcome back from there instead.
+
+    Compared against _ask_assist on the two things that actually cross the
+    Home-Assistant-API boundary:
+    - agent_id: _ask_assist reads a per-CODE27-Bridge CONF_BRIDGE_AGENT_ID
+      option, falling back to Home Assistant's own built-in agent
+      (agent_id=None) when unset. Neither an MCP Bridge nor a HASE-Agent
+      entity has an equivalent option today - agent_id is always None
+      here, i.e. every caller of this class behaves exactly like a
+      CODE27 Bridge that left its own agent option unset. A deliberate,
+      documented simplification, not a bug: adding a per-Bridge/per-Agent
+      choice is a real, separate feature (new config field + Studio UI),
+      not something this execution-path fix should silently grow into.
+    - language: _ask_assist passes the live request's own language
+      (ConversationRequest.language, resolved per CODE27 turn). An MCP
+      call has no live per-call "turn" of its own - core.mcp_execution
+      passes its Bridge's own configured language instead, the same
+      per-Bridge-configuration-or-hass.config.language fallback chain
+      providers.mcp.bridge_context.build_bridge_context_for_subentry
+      already resolves for every OTHER per-Bridge decision (see its own
+      docstring). A HASE-Agent turn, on the other hand, DOES have a live
+      per-call language (ConversationRequest.language, resolved the same
+      way CODE27's own turn is) and core.router.SpellbookRouter passes
+      that directly - the natural equivalent of "the current caller's
+      effective language" for each of the two shapes, never a second
+      scheme invented per caller."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def forward(
+        self, command_text: str, *, language: str, context: object | None
+    ) -> AssistForwardOutcome:
+        from homeassistant.components import conversation
+        from homeassistant.core import Context
+        from homeassistant.helpers import intent
+
+        try:
+            result = await conversation.async_converse(
+                self._hass,
+                text=command_text,
+                conversation_id=None,
+                context=context if context is not None else Context(),
+                agent_id=None,
+                language=language,
+            )
+        except Exception as err:  # noqa: BLE001 - reported as a FAILED execution, never a crash
+            _LOGGER.warning("spellbooker: assist-redirect could not process %r: %s", command_text, err)
+            return AssistForwardOutcome(speech=None, is_error=True, is_query_answer=False, continue_conversation=False)
+
+        response = getattr(result, "response", None)
+        speech = None
+        if response is not None and getattr(response, "speech", None):
+            speech = response.speech.get("plain", {}).get("speech")
+        is_error = response is not None and response.response_type == intent.IntentResponseType.ERROR
+        is_query_answer = response is not None and response.response_type == intent.IntentResponseType.QUERY_ANSWER
+        continue_conversation = bool(getattr(result, "continue_conversation", False))
+        return AssistForwardOutcome(
+            speech=speech, is_error=is_error, is_query_answer=is_query_answer,
+            continue_conversation=continue_conversation,
+        )

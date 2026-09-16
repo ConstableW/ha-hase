@@ -1,6 +1,8 @@
 """Book-scoped Studio data operations. No HA calls or runtime permissions here."""
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from copy import deepcopy
 from difflib import SequenceMatcher
@@ -9,6 +11,7 @@ import yaml
 
 from .book_languages import LIST_FIELDS, TEXT_FIELDS, language_objects
 from .executor import OPERATION_CATALOG, ActionExecutor
+from .mcp_capability import check_book_mcp_capability
 from .models import QUERY_RESPONSE_FIELDS_BY_DOMAIN, ActionDraft, ActionStep
 from .spellbook_engine import (
     _AGGREGATE_SOURCE_KINDS,
@@ -21,6 +24,7 @@ from .spellbook_engine import (
     build_draft,
     build_query_plan,
     build_step_plan,
+    load_spellbook_from_dict,
 )
 from .step_variables import action_step_fields
 
@@ -376,6 +380,21 @@ def export_book(raw: dict, ids: list[str] | None = None, collection: str | None 
     result["commands"] = [c for c in result["commands"] if
                           (ids is None or c["id"] in ids) and
                           (collection is None or collection in c.get("tags", []))]
+    # metadata.mcp (attach_mcp_capability_cache) is Studio's own derived,
+    # recomputed-on-every-save cache - authored content only belongs in an
+    # export, the same reason instance-local permissions never appear here
+    # either (those simply live outside the book document; this one has to
+    # be stripped explicitly since it lives inside it). Re-attached fresh
+    # the moment an imported copy is next saved, never lost information.
+    for command in result["commands"]:
+        metadata = command.get("metadata")
+        if isinstance(metadata, dict) and "mcp" in metadata:
+            metadata = dict(metadata)
+            del metadata["mcp"]
+            if metadata:
+                command["metadata"] = metadata
+            else:
+                del command["metadata"]
     return result
 
 
@@ -452,3 +471,144 @@ def static_report(raw: dict) -> dict:
     return {"capability": book_capability(raw), "spells": rows,
             "errors": sum(len(r["errors"]) for r in rows),
             "warnings": sum(len(r["warnings"]) for r in rows)}
+
+
+# Bumped whenever core.mcp_capability's own classification logic changes in
+# a way that could change a previously-computed, persisted result - lets a
+# book saved under an older HASE version be recognized as stale even though
+# its own spell content never changed (see _mcp_spell_hash's own docstring
+# for the complementary content-based half of staleness detection).
+MCP_CAPABILITY_SCHEMA_VERSION = 1
+
+
+def _mcp_spell_hash(spell: dict) -> str:
+    """A content hash over everything about this spell EXCEPT its own
+    `metadata` field - which is where the persisted MCP-capability cache
+    itself lives (see attach_mcp_capability_cache), so including it would
+    make the hash depend on its own previous output. Deliberately broader
+    than the fields core.mcp_capability.execution_kind actually reads
+    (covers e.g. `name`/`description` too, which never affect
+    projectability) - a spurious cache invalidation is free and safe, a
+    missed one silently shows a stale saved status as current, which is
+    not."""
+    payload = {k: v for k, v in spell.items() if k != "metadata"}
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def mcp_capability_report(raw: dict, *, mark_stale: bool = False) -> dict:
+    """The "MCP prüfen" button's own report - whether each enabled Spell
+    can be exposed as an MCP tool at all (STRUCTURAL capability) and
+    whether it additionally needs a Bridge's own policy to be fully
+    unrestricted to actually be callable (ACTUAL grant) - see
+    core.mcp_capability's own module docstring for why these are always
+    reported as two separate questions, never one combined verdict.
+
+    Loads `raw` through the exact same load_spellbook_from_dict every real
+    tools/list call already goes through (never a second, hand-rolled
+    per-spell loader) - a Spell that fails to load at all here would also
+    fail to load for a real Bridge, so this never needs its own separate
+    "book failed to load" bookkeeping beyond what check_document/write()
+    already guarantee before this is ever called.
+
+    The returned `execution_kind`/`projectable`/etc values are ALWAYS
+    freshly computed from `raw` as given - this function never reads or
+    trusts a spell's own persisted `metadata.mcp` cache for the numbers it
+    reports, only (when `mark_stale=True`) to decide whether that cache
+    still MATCHES what was just computed, exposed per spell as `stale`.
+    `stale=True` means the book's own saved copy (if any) does not yet
+    reflect this result - either because it was never saved with a cache
+    at all (a book from before this feature, a fresh import, an
+    externally-edited YAML file), or the cache is for a different
+    MCP_CAPABILITY_SCHEMA_VERSION - not because the numbers themselves are
+    in doubt. Used by the "read" operation so Spellbook Studio can show a
+    book's MCP badges immediately on open, before anyone clicks "MCP
+    prüfen" - the runtime execution path (core/mcp_execution.py) never
+    calls this function and never reads `metadata.mcp` either way."""
+    book = load_spellbook_from_dict(raw.get("id", ""), raw)
+    if book is None:
+        empty = {"spells": [], "projectable": 0, "not_projectable": 0, "requires_unrestricted": 0}
+        if mark_stale:
+            empty["stale_count"] = 0
+        return empty
+    results = check_book_mcp_capability(book)
+    spells_by_id = {
+        spell["id"]: spell for spell in raw.get("commands", [])
+        if isinstance(spell, dict) and isinstance(spell.get("id"), str)
+    }
+    stale_count = 0
+    entries = []
+    for r in results:
+        entry = {
+            "id": r.spell_id,
+            "execution_kind": r.execution_kind,
+            "projectable": r.projectable,
+            "skip_reason": r.skip_reason,
+            "read_only": r.read_only,
+            "requires_unrestricted_bridge": r.requires_unrestricted_bridge,
+            "grant_reason": r.grant_reason,
+        }
+        if mark_stale:
+            spell = spells_by_id.get(r.spell_id)
+            cache = spell.get("metadata", {}).get("mcp") if isinstance(spell, dict) else None
+            is_stale = not (
+                isinstance(cache, dict)
+                and cache.get("schema_version") == MCP_CAPABILITY_SCHEMA_VERSION
+                and spell is not None and cache.get("spell_hash") == _mcp_spell_hash(spell)
+            )
+            entry["stale"] = is_stale
+            if is_stale:
+                stale_count += 1
+        entries.append(entry)
+    report = {
+        "spells": entries,
+        "projectable": sum(1 for r in results if r.projectable),
+        "not_projectable": sum(1 for r in results if not r.projectable),
+        "requires_unrestricted": sum(1 for r in results if r.requires_unrestricted_bridge),
+    }
+    if mark_stale:
+        report["stale_count"] = stale_count
+    return report
+
+
+def attach_mcp_capability_cache(raw: dict) -> dict:
+    """The "automatically saved MCP status" - mutates `raw` in place (and
+    returns it) so every spell's own `metadata.mcp` carries this book's
+    CURRENT, freshly-computed MCP capability once this is called, keyed by
+    _mcp_spell_hash/MCP_CAPABILITY_SCHEMA_VERSION so a later
+    mcp_capability_report(..., mark_stale=True) call can tell whether a
+    saved copy still matches. Called from studio.py's own write() - so
+    EVERY Studio save (a spell edit, an import, a metadata change, a
+    language edit, or an explicit "MCP prüfen") refreshes it, never a
+    second place that must remember to call this. This is Studio's own
+    informational cache for the editor UI only - core/mcp_execution.py's
+    real tools/call path never reads `metadata.mcp` and always recomputes
+    capability/permissions from scratch; a stale or even missing cache
+    here can never change what a real MCP call is allowed to do."""
+    report = mcp_capability_report(raw)
+    by_id = {entry["id"]: entry for entry in report["spells"]}
+    for spell in raw.get("commands", []):
+        if not isinstance(spell, dict):
+            continue
+        result = by_id.get(spell.get("id"))
+        if result is None:
+            # Only a disabled spell has no capability result at all (see
+            # check_book_mcp_capability) - a duplicate-id spell still
+            # gets one (skip_reason="duplicate_spell_id"). Drop any
+            # leftover cache rather than leave a misleading one in place.
+            if isinstance(spell.get("metadata"), dict):
+                spell["metadata"].pop("mcp", None)
+            continue
+        cache = {
+            "execution_kind": result["execution_kind"],
+            "projectable": result["projectable"],
+            "skip_reason": result["skip_reason"],
+            "read_only": result["read_only"],
+            "requires_unrestricted_bridge": result["requires_unrestricted_bridge"],
+            "grant_reason": result["grant_reason"],
+            "spell_hash": _mcp_spell_hash(spell),
+            "schema_version": MCP_CAPABILITY_SCHEMA_VERSION,
+        }
+        spell.setdefault("metadata", {})["mcp"] = cache
+    return raw

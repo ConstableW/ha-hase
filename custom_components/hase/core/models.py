@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 # Values that a read-only entity.get_state response may expose to a response
 # template. Studio, schema validation and the HA adapter share this catalogue,
@@ -120,6 +120,39 @@ class ActionTarget:
 # independently of how it's delivered - see ConversationResult.output_mode.
 OUTPUT_MODES = frozenset({"AUTO", "TEXT", "SPEECH", "TEXT_AND_SPEECH", "NONE"})
 DEFAULT_OUTPUT_MODE = "AUTO"
+
+# What a Spell EXECUTES is operation (action) / sources (query) / steps
+# (combined) / neither (nothing to execute, only something to say) - see
+# core.spellbook_engine's own has_operation/has_sources/has_steps
+# mutual-exclusivity check. assist_redirect is a FIFTH, explicit,
+# author-declared execution kind, ONLY meaningful when none of
+# operation/sources/steps is set: instead of HASE rendering `output`
+# itself, it hands that text to Home Assistant's own configured
+# conversation agent for REAL interpretation/execution
+# (providers/code27/bridge.py's own _start_correction_from_spellbook
+# already assumes exactly this for a captured {area}/{target} placeholder
+# - CODE27-only, no other channel has an "ask a live agent" concept at
+# all). This is entirely SEPARATE from output_mode (whether/how a
+# response is delivered - TEXT/SPEECH/NONE/... - unchanged, untouched by
+# this flag): assist_redirect is about WHAT EXECUTES, output_mode is
+# about HOW the result is communicated afterward, exactly the same two
+# separate questions operation/sources/steps vs. output_mode already are
+# for a typed command. Never inferred from placeholder names or the
+# wording of `output` ({area}/{target} appear in genuine local-answer
+# text just as plausibly as in a command phrase, and "Musik {area}
+# lauter" reads as a real answer just as plausibly as a command rewrite)
+# - always an explicit, author-set flag.
+#
+# TEMPORARY migration default: True. Every currently-bundled text-only
+# Spell (middle_earth.yaml/potter_verse.yaml), today, unconditionally
+# reaches CODE27's Assist-forwarding path - defaulting to True here
+# (rather than this flag's own eventual, intended long-term default of
+# False for newly-authored content) is what keeps that pre-existing
+# behavior exact while every currently-bundled Spell gets reviewed
+# individually (see the pending review list) rather than reclassified by
+# guessing. Flip this back to False once that review is complete and
+# every Spell that needs it has its own explicit assist_redirect: true.
+DEFAULT_ASSIST_REDIRECT = True
 
 
 @dataclass(frozen=True)
@@ -231,13 +264,14 @@ class StepPlan:
 
 @dataclass(frozen=True)
 class EngineMatch:
-    # Exactly one of action_draft/query_plan is set for a real match (both
-    # None only for the free-text output-only path, which never reaches
-    # EngineMatch at all in match()'s SATELLITE/typed view - see
-    # spellbook_engine.match()). action_draft's type stays nullable rather
-    # than moving query_plan before it, so every existing 4-positional-arg
-    # EngineMatch(draft, spell_id, text, is_exact) construction keeps
-    # working unchanged.
+    # Exactly one of action_draft/query_plan/step_plan is set for a typed
+    # match; all three None means a text-only match (action/query/steps
+    # are mutually exclusive with a text-only command by construction -
+    # see spellbook_engine.EngineCommand's own docstring) - dispatched via
+    # `command`/`captures` below, not a fourth plan type of its own.
+    # action_draft's type stays nullable rather than moving query_plan
+    # before it, so every existing 4-positional-arg EngineMatch(draft,
+    # spell_id, text, is_exact) construction keeps working unchanged.
     action_draft: ActionDraft | None
     spell_id: str
     matched_text: str
@@ -245,6 +279,19 @@ class EngineMatch:
     query_plan: QueryPlan | None = None
     # Kept last, same positional-compat convention query_plan already uses.
     step_plan: StepPlan | None = None
+    # Populated for EVERY match (typed or text-only) by spellbook_engine.
+    # match() - a text-only match (action_draft/query_plan/step_plan all
+    # None) needs these to dispatch through core.text_only_execution's
+    # shared, neutral execute_text_only_command (core.router.
+    # SpellbookRouter and core.mcp_execution both call it directly, never
+    # one depending on the other) rather than a second, router-specific
+    # implementation of what a text-only Spell's `output`/
+    # `assist_redirect` fields mean. Typed matches never read these two
+    # fields. `command`/`captures` are typed loosely (Any/dict) to avoid
+    # an import cycle with spellbook_engine.py, which already imports
+    # FROM this module.
+    command: Any | None = None
+    captures: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -254,7 +301,16 @@ class EngineNoMatch:
 
 @dataclass(frozen=True)
 class AmbiguousOption:
-    action_draft: ActionDraft
+    # Nullable, not just historically typed as required - an ambiguity
+    # candidate can now be a text-only Spell too (find_command()'s own
+    # _opposite() already compares a typed/text-only or text-only/
+    # text-only pair's rendered `output`, see its own "Retain
+    # opposite-output ambiguity for mixed typed/output pairs" comment -
+    # this was always a reachable combination for every OTHER caller of
+    # find_command(), just never for SATELLITE/SPELLBOOK_ONLY matching
+    # until spellbook_engine.match() stopped filtering text-only commands
+    # out before ranking).
+    action_draft: ActionDraft | None
     spell_id: str
     matched_text: str
     # The configured trigger template with captures filled in (e.g.
@@ -263,14 +319,30 @@ class AmbiguousOption:
     # candidates matched against and is therefore IDENTICAL for both.
     # Read out loud / shown in the clarifying question instead.
     spoken_trigger: str
+    query_plan: QueryPlan | None = None
+    step_plan: StepPlan | None = None
+    # Same purpose/typing rationale as EngineMatch's own command/captures.
+    command: Any | None = None
+    captures: dict[str, str] | None = None
+    # Already-resolved (language-formatted, captures-substituted) plain
+    # string, identical to action_draft.catchphrase for a typed option -
+    # the ONE place router._option_vocabulary reads a catchphrase from,
+    # so it works uniformly whether this option is typed or text-only
+    # (whose action_draft is None, so it has no .catchphrase of its own
+    # to fall back on).
+    catchphrase: str | None = None
 
 
 @dataclass(frozen=True)
 class EngineAmbiguous:
     """Two same-tier candidates both cleared the fuzzy threshold with a
-    near-tied score AND propose opposite outcomes (same operation and
-    target, a boolean argument flipped) - picking either one silently
-    risks doing the exact opposite of what was meant. Etappe 3."""
+    near-tied score AND propose opposite outcomes - either two typed
+    actions (same operation and target, a boolean argument flipped), or a
+    typed/text-only or text-only/text-only pair whose rendered `output`
+    texts are themselves opposites (spellbook_engine._opposite's own
+    "Retain opposite-output ambiguity for mixed typed/output pairs"
+    branch) - picking either one silently risks doing the exact opposite
+    of what was meant. Etappe 3."""
 
     option_a: AmbiguousOption
     option_b: AmbiguousOption

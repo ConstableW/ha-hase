@@ -93,6 +93,7 @@ for node in imports:
             "area_registry",
             "device_registry",
             "entity_registry",
+            "issue_registry",
             "websocket_api",
             "panel_custom",
         }:
@@ -120,6 +121,38 @@ for path in COMPONENT.rglob("*.py"):
         ):
             setattr(selector, node.attr, type(node.attr, (Surface,), {}))
 
+# Working (not just inert) issue_registry fake - providers.mcp.repairs
+# calls ir.async_get(hass).issues, ir.async_create_issue/async_delete_issue
+# via plain attribute access (never `from homeassistant.helpers.
+# issue_registry import X`), so the generic ImportFrom-scanning stub
+# generator above never sees these names to stub individually.
+_issue_store: dict[tuple[str, str], object] = {}
+
+
+class _FakeIssueEntry:
+    def __init__(self, domain, issue_id):
+        self.domain = domain
+        self.issue_id = issue_id
+
+
+class _FakeIssueRegistry:
+    issues = _issue_store
+
+
+def _fake_async_create_issue(hass, domain, issue_id, **kwargs):
+    _issue_store[(domain, issue_id)] = _FakeIssueEntry(domain, issue_id)
+
+
+def _fake_async_delete_issue(hass, domain, issue_id):
+    _issue_store.pop((domain, issue_id), None)
+
+
+issue_registry = module("homeassistant.helpers.issue_registry")
+issue_registry.async_get = lambda hass: _FakeIssueRegistry()
+issue_registry.async_create_issue = _fake_async_create_issue
+issue_registry.async_delete_issue = _fake_async_delete_issue
+issue_registry.IssueSeverity = types.SimpleNamespace(WARNING="warning", ERROR="error", CRITICAL="critical")
+
 loaded = {}
 for path in sorted(COMPONENT.rglob("*.py")):
     parts = list(path.relative_to(ROOT).with_suffix("").parts)
@@ -131,6 +164,8 @@ for path in sorted(COMPONENT.rglob("*.py")):
 integration = loaded["custom_components.hase"]
 provider = loaded["custom_components.hase.providers.code27"]
 services = loaded["custom_components.hase.providers.code27.services"]
+mcp_provider = loaded["custom_components.hase.providers.mcp"]
+mcp_credentials = loaded["custom_components.hase.providers.mcp.credentials"]
 flow = loaded["custom_components.hase.config_flow"]
 assert flow.HaseConfigFlow.flow_domain == "hase"
 assert flow.HaseConfigFlow()._port == 8081
@@ -178,6 +213,7 @@ async def verify():
         config_entries=N(
             async_forward_entry_setups=AsyncMock(),
             async_unload_platforms=AsyncMock(return_value=True),
+            async_entries=lambda domain: [],
         ),
     )
     entry = N(
@@ -261,8 +297,133 @@ async def verify():
     ):
         assert await integration.async_setup_entry(hass, standalone)
     assert hass.services.handlers == {}
-    menu = await flow.HaseConfigFlow().async_step_user()
-    assert menu["menu_options"] == ["code27_device", "spellbooker"]
+    config_flow = flow.HaseConfigFlow()
+    config_flow.hass = hass
+    menu = await config_flow.async_step_user()
+    # No MCP Server entry exists yet in this fresh hass - the menu offers
+    # creating one; async_mcp_server_exists() itself is covered directly
+    # in tests/test_mcp_config_flow.py.
+    assert menu["menu_options"] == ["code27_device", "spellbooker", "mcp_server"]
+
+    # Real providers.mcp.async_setup_mcp_server_entry/async_rebuild_
+    # credential_index/async_unload_mcp_server_entry, exercised end to end
+    # (Store itself auto-stubbed like everything else homeassistant.* -
+    # only its actual persistence is swapped for a fixed in-memory secret,
+    # same "patch just the one real I/O boundary" pattern used for
+    # Code27Client/Code27Coordinator above).
+    #
+    # async_start_transport's own first-import of uvicorn/mcp runs via
+    # hass.async_add_executor_job (real UAT against testzwerg caught HA's
+    # blocking-call detector firing on that cold import otherwise - see
+    # providers/mcp/__init__.py's _build_uvicorn_server) - a real,
+    # synchronously-executing fake here is what proves that path actually
+    # still works, not just that the attribute exists.
+    async def mcp_executor(fn, *args):
+        return fn(*args)
+
+    hass.async_add_executor_job = mcp_executor
+
+    class FixedSecretStore:
+        SECRET = b"smoke-test-per-installation-secret-000!"
+
+        def __init__(self, hass):
+            pass
+
+        async def async_get_secret(self):
+            return self.SECRET
+
+    with patch.object(mcp_provider, "McpSecretStore", FixedSecretStore):
+        secret = FixedSecretStore.SECRET
+        issued_jan = mcp_credentials.issue_credential(secret)
+        issued_master = mcp_credentials.issue_credential(secret)
+        mcp_entry = N(
+            entry_id="mcp-server-1",
+            # port 0 - let the OS assign a free ephemeral port, so this
+            # real start/stop cycle (proving the actual uvicorn/mcp
+            # packages import and wire up cleanly end to end) never
+            # collides with anything else running on the host.
+            options={"mcp_server_port": 0},
+            subentries={
+                "bridge-jan": N(
+                    subentry_type="mcp_bridge", subentry_id="bridge-jan", title="Bridge JAN",
+                    data={"mcp_bridge_credential_verifier": issued_jan.verifier},
+                ),
+                "bridge-master": N(
+                    subentry_type="mcp_bridge", subentry_id="bridge-master", title="Bridge MASTER",
+                    data={"mcp_bridge_credential_verifier": issued_master.verifier},
+                ),
+            },
+            async_on_unload=lambda f: None,
+            add_update_listener=lambda f: lambda: None,
+        )
+        assert await mcp_provider.async_setup_mcp_server_entry(hass, mcp_entry)
+
+        # Resource/lifecycle: a real running task and a real bound socket
+        # exist right after setup, both are gone from hass.data right after
+        # unload, and the exact port is immediately rebindable - not a
+        # blanket asyncio.all_tasks() equality (fragile: other tasks the
+        # test process itself schedules would make that flaky), but
+        # targeted checks against the one task/server this integration
+        # itself owns.
+        mcp_bucket = hass.data["hase"]["mcp"]
+        uv_server = mcp_bucket["mcp_uvicorn_server"]
+        uv_task = mcp_bucket["mcp_uvicorn_task"]
+        for _ in range(200):
+            if getattr(uv_server, "started", False):
+                break
+            await asyncio.sleep(0.02)
+        else:
+            raise AssertionError("uvicorn did not report started")
+        assert not uv_task.done(), "transport task exited before unload"
+        bound_port = uv_server.servers[0].sockets[0].getsockname()[1]
+
+        index = hass.data["hase"]["mcp"]["mcp_credential_index"]
+        jan_identity = index.resolve(secret, issued_jan.token)
+        assert jan_identity is not None and jan_identity.subentry_id == "bridge-jan"
+        assert index.resolve(secret, issued_master.token).subentry_id == "bridge-master"
+        # No client-supplied bridge_id path exists at all - resolve() takes
+        # only the token.
+        assert "bridge_id" not in mcp_credentials.CredentialIndex.resolve.__code__.co_varnames
+
+        # Simulate Bridge "jan" being deleted: a fresh rebuild (exactly
+        # what the entry's own update listener triggers via reload) with
+        # only "master" left synchronously drops jan's verifier.
+        mcp_entry.subentries = {"bridge-master": mcp_entry.subentries["bridge-master"]}
+        await mcp_provider.async_rebuild_credential_index(hass, mcp_entry)
+        index = hass.data["hase"]["mcp"]["mcp_credential_index"]
+        assert index.resolve(secret, issued_jan.token) is None
+        assert index.resolve(secret, issued_master.token) is not None
+
+        assert await mcp_provider.async_unload_mcp_server_entry(hass, mcp_entry)
+        assert "mcp_credential_index" not in hass.data["hase"]["mcp"]
+        assert "mcp_uvicorn_server" not in hass.data["hase"]["mcp"], (
+            "no live server reference may remain in hass.data after unload"
+        )
+        assert "mcp_uvicorn_task" not in hass.data["hase"]["mcp"], (
+            "no live task reference may remain in hass.data after unload"
+        )
+        assert uv_task.done(), "transport task must have actually finished by the time unload returns"
+
+        # The exact port is immediately rebindable - proves the OS socket
+        # was really released, not merely dereferenced.
+        rebind_entry = N(
+            entry_id="mcp-server-1",
+            options={"mcp_server_port": bound_port},
+            subentries={},
+            async_on_unload=lambda f: None,
+            add_update_listener=lambda f: lambda: None,
+        )
+        assert await mcp_provider.async_setup_mcp_server_entry(hass, rebind_entry)
+        rebind_bucket = hass.data["hase"]["mcp"]
+        rebind_server = rebind_bucket["mcp_uvicorn_server"]
+        for _ in range(200):
+            if getattr(rebind_server, "started", False):
+                break
+            await asyncio.sleep(0.02)
+        else:
+            raise AssertionError("port was not immediately rebindable after unload")
+        assert rebind_server.servers[0].sockets[0].getsockname()[1] == bound_port
+        assert await mcp_provider.async_unload_mcp_server_entry(hass, rebind_entry)
 
     # Follow the backend's real function-local coordinator import and new event.
     listeners = {}
