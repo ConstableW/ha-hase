@@ -1,302 +1,958 @@
-# HASE spellbook: frontend-independent semantic commands.
 id: potter_verse
 name: Potterverse
+default_language: de
+language: de
 commands:
 - id: lumos
-  trigger: lumos {area}
+  trigger:
+    de: lumos {area}
+    en: lumos {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': true
-  catchphrase: Lumos.
+  catchphrase:
+    de: Lumos.
+    en: Lumos.
   output:
     de: Licht {area} einschalten
     en: Turn on the light in {area}
+  name:
+    de: Lumos {area}
+    en: Lumos {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich ein
+    en: Turns on the light in the given area
+  examples:
+    de:
+    - lumos gondor
+    en:
+    - lumos gondor
+  output_mode: AUTO
 - id: nox
-  trigger: nox {area}
+  trigger:
+    de: nox {area}
+    en: nox {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': false
-  catchphrase: Nox.
+  catchphrase:
+    de: Nox.
+    en: Nox.
   output:
     de: Licht {area} ausschalten
     en: Turn off the light in {area}
+  name:
+    de: Nox {area}
+    en: Nox {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich aus
+    en: Turns off the light in the given area
+  examples:
+    de:
+    - nox gondor
+    en:
+    - nox gondor
+  output_mode: AUTO
 - id: lumos_maxima_all
-  trigger: lumos maxima
+  trigger:
+    de: lumos maxima
+    en: lumos maxima
   operation: light.set_power
   target:
     kind: all_allowed
   arguments:
     'on': true
-  catchphrase: Lumos Maxima.
+  catchphrase:
+    de: Lumos Maxima.
+    en: Lumos Maxima.
+  output:
+    de: Alle Lichter einschalten
+    en: Turn on all lights
+  name:
+    de: Lumos Maxima
+    en: Lumos Maxima
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig ein
+    en: Turns on all permitted lights at once
+  examples:
+    de:
+    - lumos maxima
+    en:
+    - lumos maxima
+  output_mode: AUTO
 - id: nox_maxima_all
-  trigger: nox maxima
+  trigger:
+    de: nox maxima
+    en: nox maxima
   operation: light.set_power
   target:
     kind: all_allowed
   arguments:
     'on': false
-  catchphrase: Nox Maxima.
+  catchphrase:
+    de: Nox Maxima.
+    en: Nox Maxima.
+  output:
+    de: Alle Lichter ausschalten
+    en: Turn off all lights
+  name:
+    de: Nox Maxima
+    en: Nox Maxima
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig aus
+    en: Turns off all permitted lights at once
+  examples:
+    de:
+    - nox maxima
+    en:
+    - nox maxima
+  output_mode: AUTO
 - id: diffindo
-  trigger: diffindo {area}
+  trigger:
+    de: diffindo {area}
+    en: diffindo {area}
   operation: media_player.skip_track
   target:
     kind: area_name
     capture: area
   arguments:
     forward: true
-  catchphrase: Diffindo.
+  catchphrase:
+    de: Diffindo.
+    en: Diffindo.
   output:
     de: nächster Titel im {area}
     en: Next track in {area}
+  name:
+    de: Diffindo {area}
+    en: Diffindo {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum nächsten Titel in einem Bereich
+    en: Skips to the next track in an area
+  examples:
+    de:
+    - diffindo wohnzimmer
+    en:
+    - diffindo living room
+  output_mode: AUTO
 - id: reparifarge
-  trigger: reparifarge {area}
+  trigger:
+    de: reparifarge {area}
+    en: reparifarge {area}
   operation: media_player.skip_track
   target:
     kind: area_name
     capture: area
   arguments:
     forward: false
-  catchphrase: Reparifarge.
+  catchphrase:
+    de: Reparifarge.
+    en: Reparifarge.
   output:
     de: vorheriger Titel im {area}
     en: Previous track in {area}
-- trigger: lumos maxima {area}
+  name:
+    de: Reparifarge {area}
+    en: Reparifarge {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum vorherigen Titel in einem Bereich
+    en: Skips to the previous track in an area
+  examples:
+    de:
+    - reparifarge wohnzimmer
+    en:
+    - reparifarge living room
+  output_mode: AUTO
+- id: potter_verse_03
+  trigger:
+    de: lumos maxima {area}
+    en: lumos maxima {area}
   output:
     de: Licht {area} auf 100 Prozent stellen
     en: Set the light in {area} to 100 percent
-  catchphrase: Lumos Maxima.
-  id: potter_verse_03
-- trigger: lumos minima {area}
+  catchphrase:
+    de: Lumos Maxima.
+    en: Lumos Maxima.
+  name:
+    de: Lumos Maxima {area}
+    en: Lumos Maxima {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Stellt das Licht in einem Bereich auf 100 Prozent
+    en: Sets the light in an area to 100 percent
+  examples:
+    de:
+    - lumos maxima wohnzimmer
+    en:
+    - lumos maxima living room
+  output_mode: AUTO
+- id: potter_verse_04
+  trigger:
+    de: lumos minima {area}
+    en: lumos minima {area}
   output:
     de: Licht {area} auf 20 Prozent stellen
     en: Set the light in {area} to 20 percent
-  catchphrase: Lumos Minima.
-  id: potter_verse_04
-- trigger:
+  catchphrase:
+    de: Lumos Minima.
+    en: Lumos Minima.
+  name:
+    de: Lumos Minima {area}
+    en: Lumos Minima {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Stellt das Licht in einem Bereich auf 20 Prozent
+    en: Sets the light in an area to 20 percent
+  examples:
+    de:
+    - lumos minima wohnzimmer
+    en:
+    - lumos minima living room
+  output_mode: AUTO
+- id: potter_verse_07
+  trigger:
     de: lumos {area} auf {value} prozent
     en: lumos {area} to {value} percent
   output:
     de: Licht {area} auf {value} Prozent stellen
     en: Set the light in {area} to {value} percent
-  catchphrase: Lumos.
-  id: potter_verse_07
-- trigger: lumos solem {area}
+  catchphrase:
+    de: Lumos.
+    en: Lumos.
+  name:
+    de: Lumos {area} auf {value} Prozent
+    en: Lumos {area} to {value} percent
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Stellt das Licht in einem Bereich auf einen bestimmten Prozentwert
+    en: Sets the light in an area to a specific percentage
+  examples:
+    de:
+    - lumos wohnzimmer auf 50 prozent
+    en:
+    - lumos living room to 50 percent
+  output_mode: AUTO
+- id: potter_verse_08
+  trigger:
+    de: lumos solem {area}
+    en: lumos solem {area}
   output:
     de: Licht {area} auf warmweiß stellen
     en: Set the light in {area} to warm white
-  catchphrase: Lumos Solem.
-  id: potter_verse_08
-- trigger:
+  catchphrase:
+    de: Lumos Solem.
+    en: Lumos Solem.
+  name:
+    de: Lumos Solem {area}
+    en: Lumos Solem {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Stellt das Licht in einem Bereich auf warmweiß
+    en: Sets the light in an area to warm white
+  examples:
+    de:
+    - lumos solem wohnzimmer
+    en:
+    - lumos solem living room
+  output_mode: AUTO
+- id: potter_verse_09
+  trigger:
     de: colovaria {area} auf {color}
     en: colovaria {area} to {color}
   output:
     de: Licht {area} auf {color} stellen
     en: Set the light in {area} to {color}
-  catchphrase: Colovaria.
-  id: potter_verse_09
-- trigger: accio {target}
+  catchphrase:
+    de: Colovaria.
+    en: Colovaria.
+  name:
+    de: Colovaria {area} auf {color}
+    en: Colovaria {area} to {color}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Stellt das Licht in einem Bereich auf eine bestimmte Farbe
+    en: Sets the light in an area to a specific color
+  examples:
+    de:
+    - colovaria wohnzimmer auf blau
+    en:
+    - colovaria living room to blue
+  output_mode: AUTO
+- id: potter_verse_10
+  trigger:
+    de: accio {target}
+    en: accio {target}
   output:
     de: '{target} einschalten'
     en: Turn on {target}
-  catchphrase: Accio.
-  id: potter_verse_10
-- trigger: expelliarmus {target}
+  catchphrase:
+    de: Accio.
+    en: Accio.
+  name:
+    de: Accio {target}
+    en: Accio {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Schaltet ein Ziel ein
+    en: Turns on a target
+  examples:
+    de:
+    - accio wohnzimmerlampe
+    en:
+    - accio living room lamp
+  output_mode: AUTO
+- id: potter_verse_11
+  trigger:
+    de: expelliarmus {target}
+    en: expelliarmus {target}
   output:
     de: '{target} ausschalten'
     en: Turn off {target}
-  catchphrase: Expelliarmus.
-  id: potter_verse_11
-- trigger: reparo {target}
+  catchphrase:
+    de: Expelliarmus.
+    en: Expelliarmus.
+  name:
+    de: Expelliarmus {target}
+    en: Expelliarmus {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Schaltet ein Ziel aus
+    en: Turns off a target
+  examples:
+    de:
+    - expelliarmus wohnzimmerlampe
+    en:
+    - expelliarmus living room lamp
+  output_mode: AUTO
+- id: potter_verse_12
+  trigger:
+    de: reparo {target}
+    en: reparo {target}
   output:
     de: '{target} neu starten'
     en: Restart {target}
-  catchphrase: Reparo.
-  id: potter_verse_12
-- trigger: engorgio {target}
+  catchphrase:
+    de: Reparo.
+    en: Reparo.
+  name:
+    de: Reparo {target}
+    en: Reparo {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Startet ein Ziel neu
+    en: Restarts a target
+  examples:
+    de:
+    - reparo router
+    en:
+    - reparo router
+  output_mode: AUTO
+- id: potter_verse_13
+  trigger:
+    de: engorgio {target}
+    en: engorgio {target}
   output:
     de: '{target} auf volle Leistung stellen'
     en: Set {target} to full power
-  catchphrase: Engorgio.
-  id: potter_verse_13
-- trigger: reducio {target}
+  catchphrase:
+    de: Engorgio.
+    en: Engorgio.
+  name:
+    de: Engorgio {target}
+    en: Engorgio {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Stellt ein Ziel auf volle Leistung
+    en: Sets a target to full power
+  examples:
+    de:
+    - engorgio ventilator
+    en:
+    - engorgio fan
+  output_mode: AUTO
+- id: potter_verse_14
+  trigger:
+    de: reducio {target}
+    en: reducio {target}
   output:
     de: '{target} auf minimale Leistung stellen'
     en: Set {target} to minimum power
-  catchphrase: Reducio.
-  id: potter_verse_14
-- trigger: aguamenti {target}
+  catchphrase:
+    de: Reducio.
+    en: Reducio.
+  name:
+    de: Reducio {target}
+    en: Reducio {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Stellt ein Ziel auf minimale Leistung
+    en: Sets a target to minimum power
+  examples:
+    de:
+    - reducio ventilator
+    en:
+    - reducio fan
+  output_mode: AUTO
+- id: potter_verse_15
+  trigger:
+    de: aguamenti {target}
+    en: aguamenti {target}
   output:
     de: '{target} einschalten'
     en: Turn on {target}
-  catchphrase: Aguamenti.
-  id: potter_verse_15
-- trigger: alohomora {target}
+  catchphrase:
+    de: Aguamenti.
+    en: Aguamenti.
+  name:
+    de: Aguamenti {target}
+    en: Aguamenti {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Schaltet ein Ziel ein (z. B. Bewässerung)
+    en: Turns on a target (e.g. irrigation)
+  examples:
+    de:
+    - aguamenti gartenbewässerung
+    en:
+    - aguamenti garden irrigation
+  output_mode: AUTO
+- id: potter_verse_16
+  trigger:
+    de: alohomora {target}
+    en: alohomora {target}
   output:
     de: '{target} öffnen'
     en: Open {target}
-  catchphrase: Alohomora.
-  id: potter_verse_16
-- trigger: colloportus {target}
+  catchphrase:
+    de: Alohomora.
+    en: Alohomora.
+  name:
+    de: Alohomora {target}
+    en: Alohomora {target}
+  tags:
+  - Tür
+  enabled: true
+  description:
+    de: Öffnet ein Ziel
+    en: Opens a target
+  examples:
+    de:
+    - alohomora haustür
+    en:
+    - alohomora front door
+  output_mode: AUTO
+- id: potter_verse_17
+  trigger:
+    de: colloportus {target}
+    en: colloportus {target}
   output:
     de: '{target} schließen'
     en: Close {target}
-  catchphrase: Colloportus.
-  id: potter_verse_17
-- trigger: immobulus {target}
+  catchphrase:
+    de: Colloportus.
+    en: Colloportus.
+  name:
+    de: Colloportus {target}
+    en: Colloportus {target}
+  tags:
+  - Tür
+  enabled: true
+  description:
+    de: Schließt ein Ziel
+    en: Closes a target
+  examples:
+    de:
+    - colloportus haustür
+    en:
+    - colloportus front door
+  output_mode: AUTO
+- id: potter_verse_18
+  trigger:
+    de: immobulus {target}
+    en: immobulus {target}
   output:
     de: '{target} stoppen'
     en: Stop {target}
-  catchphrase: Immobulus.
-  id: potter_verse_18
-- trigger: wingardium leviosa {target}
+  catchphrase:
+    de: Immobulus.
+    en: Immobulus.
+  name:
+    de: Immobulus {target}
+    en: Immobulus {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Stoppt ein Ziel
+    en: Stops a target
+  examples:
+    de:
+    - immobulus staubsauger
+    en:
+    - immobulus vacuum
+  output_mode: AUTO
+- id: potter_verse_19
+  trigger:
+    de: wingardium leviosa {target}
+    en: wingardium leviosa {target}
   output:
     de: '{target} hochfahren'
     en: Raise {target}
-  catchphrase: Wingardium Leviosa.
-  id: potter_verse_19
-- trigger: descendo {target}
+  catchphrase:
+    de: Wingardium Leviosa.
+    en: Wingardium Leviosa.
+  name:
+    de: Wingardium Leviosa {target}
+    en: Wingardium Leviosa {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Fährt ein Ziel hoch
+    en: Raises a target
+  examples:
+    de:
+    - wingardium leviosa rollladen
+    en:
+    - wingardium leviosa roller blind
+  output_mode: AUTO
+- id: potter_verse_20
+  trigger:
+    de: descendo {target}
+    en: descendo {target}
   output:
     de: '{target} herunterfahren'
     en: Lower {target}
-  catchphrase: Descendo.
-  id: potter_verse_20
-- trigger: sonorus {area}
+  catchphrase:
+    de: Descendo.
+    en: Descendo.
+  name:
+    de: Descendo {target}
+    en: Descendo {target}
+  tags:
+  - Gerät
+  enabled: true
+  description:
+    de: Fährt ein Ziel herunter
+    en: Lowers a target
+  examples:
+    de:
+    - descendo rollladen
+    en:
+    - descendo roller blind
+  output_mode: AUTO
+- id: potter_verse_21
+  trigger:
+    de: sonorus {area}
+    en: sonorus {area}
   output:
     de: Musik {area} lauter
     en: Increase the volume for {area}
-  catchphrase: Sonorus.
-  id: potter_verse_21
-- trigger: quietus {area}
+  catchphrase:
+    de: Sonorus.
+    en: Sonorus.
+  name:
+    de: Sonorus {area}
+    en: Sonorus {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Erhöht die Lautstärke der Musik in einem Bereich
+    en: Increases the music volume in an area
+  examples:
+    de:
+    - sonorus wohnzimmer
+    en:
+    - sonorus living room
+  output_mode: AUTO
+- id: potter_verse_22
+  trigger:
+    de: quietus {area}
+    en: quietus {area}
   output:
     de: Musik {area} leiser
     en: Decrease the volume for {area}
-  catchphrase: Quietus.
-  id: potter_verse_22
-- trigger: muffliato {area}
+  catchphrase:
+    de: Quietus.
+    en: Quietus.
+  name:
+    de: Quietus {area}
+    en: Quietus {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Verringert die Lautstärke der Musik in einem Bereich
+    en: Decreases the music volume in an area
+  examples:
+    de:
+    - quietus wohnzimmer
+    en:
+    - quietus living room
+  output_mode: AUTO
+- id: potter_verse_23
+  trigger:
+    de: muffliato {area}
+    en: muffliato {area}
   output:
     de: Musik {area} pausieren
     en: Pause the music in {area}
-  catchphrase: Muffliato.
-  id: potter_verse_23
-- trigger: renervate {area}
+  catchphrase:
+    de: Muffliato.
+    en: Muffliato.
+  name:
+    de: Muffliato {area}
+    en: Muffliato {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Pausiert die Musik in einem Bereich
+    en: Pauses the music in an area
+  examples:
+    de:
+    - muffliato wohnzimmer
+    en:
+    - muffliato living room
+  output_mode: AUTO
+- id: potter_verse_24
+  trigger:
+    de: renervate {area}
+    en: renervate {area}
   output:
     de: Musik {area} fortsetzen
     en: Resume the music in {area}
-  catchphrase: Renervate.
-  id: potter_verse_24
+  catchphrase:
+    de: Renervate.
+    en: Renervate.
+  name:
+    de: Renervate {area}
+    en: Renervate {area}
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Setzt die Musik in einem Bereich fort
+    en: Resumes the music in an area
+  examples:
+    de:
+    - renervate wohnzimmer
+    en:
+    - renervate living room
+  output_mode: AUTO
 - id: potter_verse_27
-  trigger: scourgify {target}
-  output:
-    de: '{target} starten'
-    en: Start {target}
+  trigger:
+    de: scourgify {target}
+    en: scourgify {target}
   operation: vacuum.clean_area
   target:
     kind: area_name
     capture: target
-  catchphrase: Scourgify.
-- trigger: tergeo {target}
+  catchphrase:
+    de: Scourgify.
+    en: Scourgify.
+  output:
+    de: '{target} reinigen'
+    en: Clean {target}
+  name:
+    de: Scourgify {target}
+    en: Scourgify {target}
+  tags:
+  - Reinigung
+  enabled: true
+  description:
+    de: Startet den Staubsauger in einem Bereich
+    en: Starts the vacuum in an area
+  examples:
+    de:
+    - scourgify wohnzimmer
+    en:
+    - scourgify living room
+  output_mode: AUTO
+- id: potter_verse_28
+  trigger:
+    de: tergeo {target}
+    en: tergeo {target}
   output:
     de: '{target} anhalten'
     en: Stop {target}
-  catchphrase: Tergeo.
-  id: potter_verse_28
-- trigger: incendio {area}
+  catchphrase:
+    de: Tergeo.
+    en: Tergeo.
+  name:
+    de: Tergeo {target}
+    en: Tergeo {target}
+  tags:
+  - Reinigung
+  enabled: true
+  description:
+    de: Hält ein Reinigungsgerät an
+    en: Stops a cleaning device
+  examples:
+    de:
+    - tergeo staubsauger
+    en:
+    - tergeo vacuum
+  output_mode: AUTO
+- id: potter_verse_29
+  trigger:
+    de: incendio {area}
+    en: incendio {area}
   output:
     de: Temperatur in {area} erhöhen
     en: Increase the temperature in {area}
-  catchphrase: Incendio.
-  id: potter_verse_29
-- trigger: glacius {area}
+  catchphrase:
+    de: Incendio.
+    en: Incendio.
+  name:
+    de: Incendio {area}
+    en: Incendio {area}
+  tags:
+  - Klima
+  enabled: true
+  description:
+    de: Erhöht die Temperatur in einem Bereich
+    en: Increases the temperature in an area
+  examples:
+    de:
+    - incendio wohnzimmer
+    en:
+    - incendio living room
+  output_mode: AUTO
+- id: potter_verse_30
+  trigger:
+    de: glacius {area}
+    en: glacius {area}
   output:
     de: Temperatur in {area} verringern
     en: Decrease the temperature in {area}
-  catchphrase: Glacius.
-  id: potter_verse_30
-- trigger: anapneo {area}
+  catchphrase:
+    de: Glacius.
+    en: Glacius.
+  name:
+    de: Glacius {area}
+    en: Glacius {area}
+  tags:
+  - Klima
+  enabled: true
+  description:
+    de: Verringert die Temperatur in einem Bereich
+    en: Decreases the temperature in an area
+  examples:
+    de:
+    - glacius wohnzimmer
+    en:
+    - glacius living room
+  output_mode: AUTO
+- id: potter_verse_31
+  trigger:
+    de: anapneo {area}
+    en: anapneo {area}
   output:
     de: Lüftung in {area} einschalten
     en: Turn on the ventilation in {area}
-  catchphrase: Anapneo.
-  id: potter_verse_31
-- trigger: aparecium {area}
+  catchphrase:
+    de: Anapneo.
+    en: Anapneo.
+  name:
+    de: Anapneo {area}
+    en: Anapneo {area}
+  tags:
+  - Klima
+  enabled: true
+  description:
+    de: Schaltet die Lüftung in einem Bereich ein
+    en: Turns on the ventilation in an area
+  examples:
+    de:
+    - anapneo wohnzimmer
+    en:
+    - anapneo living room
+  output_mode: AUTO
+- id: potter_verse_32
+  trigger:
+    de: aparecium {area}
+    en: aparecium {area}
   output:
     de: Wie warm ist es in {area}
     en: What's the temperature in {area}
-  id: potter_verse_32
-- trigger: finite incantatem {area}
+  name:
+    de: Aparecium {area}
+    en: Aparecium {area}
+  tags:
+  - Status
+  enabled: true
+  description:
+    de: Fragt die Temperatur in einem Bereich ab
+    en: Queries the temperature in an area
+  examples:
+    de:
+    - aparecium wohnzimmer
+    en:
+    - aparecium living room
+  output_mode: AUTO
+- id: potter_verse_33
+  trigger:
+    de: finite incantatem {area}
+    en: finite incantatem {area}
   output:
     de: Alle Geräte im Bereich {area} ausschalten
     en: Turn off all devices in {area}
-  catchphrase: Finite Incantatem.
-  id: potter_verse_33
-- trigger: priori incantatem {area}
+  catchphrase:
+    de: Finite Incantatem.
+    en: Finite Incantatem.
+  name:
+    de: Finite Incantatem {area}
+    en: Finite Incantatem {area}
+  tags:
+  - Sicherheit
+  enabled: true
+  description:
+    de: Schaltet alle Geräte in einem Bereich aus
+    en: Turns off all devices in an area
+  examples:
+    de:
+    - finite incantatem wohnzimmer
+    en:
+    - finite incantatem living room
+  output_mode: AUTO
+- id: potter_verse_34
+  trigger:
+    de: priori incantatem {area}
+    en: priori incantatem {area}
   output:
     de: Vorherige Szene in {area} aktivieren
     en: Activate the previous scene in {area}
-  catchphrase: Priori Incantatem.
-  id: potter_verse_34
-- trigger: expecto patronum {area}
+  catchphrase:
+    de: Priori Incantatem.
+    en: Priori Incantatem.
+  name:
+    de: Priori Incantatem {area}
+    en: Priori Incantatem {area}
+  tags:
+  - Szene
+  enabled: true
+  description:
+    de: Aktiviert die vorherige Szene in einem Bereich
+    en: Activates the previous scene in an area
+  examples:
+    de:
+    - priori incantatem wohnzimmer
+    en:
+    - priori incantatem living room
+  output_mode: AUTO
+- id: potter_verse_35
+  trigger:
+    de: expecto patronum {area}
+    en: expecto patronum {area}
   output:
     de: Gemütliche Szene in {area} aktivieren
     en: Activate the cozy scene in {area}
-  catchphrase: Expecto Patronum.
-  id: potter_verse_35
-- trigger: protego {area}
+  catchphrase:
+    de: Expecto Patronum.
+    en: Expecto Patronum.
+  name:
+    de: Expecto Patronum {area}
+    en: Expecto Patronum {area}
+  tags:
+  - Szene
+  enabled: true
+  description:
+    de: Aktiviert eine gemütliche Szene in einem Bereich
+    en: Activates a cozy scene in an area
+  examples:
+    de:
+    - expecto patronum wohnzimmer
+    en:
+    - expecto patronum living room
+  output_mode: AUTO
+- id: potter_verse_36
+  trigger:
+    de: protego {area}
+    en: protego {area}
   output:
     de: Alarm in {area} scharfschalten
     en: Arm the alarm in {area}
-  catchphrase: Protego.
-  id: potter_verse_36
-- trigger: protego totalum {area}
+  catchphrase:
+    de: Protego.
+    en: Protego.
+  name:
+    de: Protego {area}
+    en: Protego {area}
+  tags:
+  - Sicherheit
+  enabled: true
+  description:
+    de: Schaltet den Alarm in einem Bereich scharf
+    en: Arms the alarm in an area
+  examples:
+    de:
+    - protego wohnzimmer
+    en:
+    - protego living room
+  output_mode: AUTO
+- id: potter_verse_37
+  trigger:
+    de: protego totalum {area}
+    en: protego totalum {area}
   output:
     de: Alle Schlösser in {area} verriegeln
     en: Lock all locks in {area}
-  catchphrase: Protego Totalum.
-  id: potter_verse_37
-- trigger: finite {target}
-  output:
-    de: Alarm bei {target} deaktivieren
-    en: Deactivate the alarm at {target}
-  catchphrase: Finite.
-  id: potter_verse_38
-- trigger: homenum revelio {area}
-  output:
-    de: Ist jemand im Bereich {area}
-    en: Is anyone in {area}
-  id: potter_verse_39
-- trigger: point me {target}
-  output:
-    de: Wo befindet sich {target}
-    en: Where is {target}
-  id: potter_verse_40
-- trigger: specialis revelio {target}
-  output:
-    de: Wie ist der Status von {target}
-    en: What is the status of {target}
-  id: potter_verse_41
-- trigger: revelio {area}
-  output:
-    de: Was ist in {area} aktiv
-    en: What is active in {area}
-  id: potter_verse_42
-- trigger: legilimens {target}
-  output:
-    de: Was macht {target} gerade
-    en: What is {target} currently doing
-  id: potter_verse_43
-- trigger: meteolojinx recanto {area}
-  output:
-    de: Wie ist das Wetter in {area}
-    en: What's the weather like in {area}
-  id: potter_verse_44
-- trigger: tempus
-  output:
-    de: Wie spät ist es
-    en: What time is it
-  id: potter_verse_45
+  catchphrase:
+    de: Protego Totalum.
+    en: Protego Totalum.
+  name:
+    de: Protego Totalum {area}
+    en: Protego Totalum {area}
+  tags:
+  - Sicherheit
+  enabled: true
+  description:
+    de: Verriegelt alle Schlösser in einem Bereich

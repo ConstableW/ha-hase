@@ -137,6 +137,7 @@ class EngineCommand:
     # unconditionally (like output_mode) rather than only on text-only
     # commands, so every EngineCommand has one uniform shape.
     assist_redirect: bool = DEFAULT_ASSIST_REDIRECT
+    description: str | dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -597,6 +598,10 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
     target_spec = raw.get("target")
     arguments_spec = raw.get("arguments", {})
     catchphrase = raw.get("catchphrase")
+    # Optional display metadata must never change command admission/execution.
+    description = raw.get("description")
+    if not _valid_localized(description):
+        description = None
     output = raw.get("output")
     sources_raw = raw.get("sources")
     steps_raw = raw.get("steps")
@@ -765,6 +770,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
             sort_key=literal_word_count(compiled[reference_trigger]),
             output=output,
             sources=parsed_sources,
+            description=description,
             output_mode=output_mode_value,
         )
 
@@ -787,6 +793,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
             sort_key=literal_word_count(compiled[reference_trigger]),
             output=output,
             steps=parsed_steps,
+            description=description,
             output_mode=output_mode_value,
         )
 
@@ -808,6 +815,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
             output=output,
             output_mode=output_mode_value,
             assist_redirect=assist_redirect_value,
+            description=description,
         )
 
     # Union across every language variant - a capture used by only one
@@ -855,6 +863,7 @@ def _load_base_command(spell_id: str, raw: dict[str, Any]) -> EngineCommand | No
         spell_id=spell_id,
         trigger=trigger,
         operation=operation,
+        description=description,
         target_spec=target_spec,
         arguments_spec=arguments_spec,
         catchphrase=catchphrase,

@@ -1,85 +1,311 @@
 # HASE spellbook: frontend-independent semantic commands.
 id: demo
 name: Spellbooker Demo
+default_language: de
+language: de
 commands:
 - id: light_on
-  trigger: licht {area} an
+  trigger:
+    de: licht {area} an
+    en: turn on the light in {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': true
-  catchphrase: Mach ich.
+  catchphrase:
+    de: Mach ich.
+    en: On it.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+  name:
+    de: Licht {area} an
+    en: Turn on light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich ein
+    en: Turns on the light in the given area
+  examples:
+    de:
+    - licht wohnzimmer an
+    en:
+    - turn on the light in the living room
+  output_mode: AUTO
+
 - id: light_off
-  trigger: licht {area} aus
+  trigger:
+    de: licht {area} aus
+    en: turn off the light in {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': false
-  catchphrase: Erledigt.
+  catchphrase:
+    de: Erledigt.
+    en: Done.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+  name:
+    de: Licht {area} aus
+    en: Turn off light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich aus
+    en: Turns off the light in the given area
+  examples:
+    de:
+    - licht küche aus
+    en:
+    - turn off the light in the kitchen
+  output_mode: AUTO
+
 - id: get_state
-  trigger: wie ist der zustand von {entity}
+  trigger:
+    de: wie ist der zustand von {entity}
+    en: what is the state of {entity}
   operation: entity.get_state
   target:
     kind: entity_name
     capture: entity
+  name:
+    de: Zustand von {entity}
+    en: State of {entity}
+  tags:
+  - Status
+  enabled: true
+  description:
+    de: Fragt den aktuellen Zustand einer Entität ab
+    en: Queries the current state of an entity
+  examples:
+    de:
+    - wie ist der zustand von wohnzimmerlampe
+    en:
+    - what is the state of living room lamp
+  output_mode: AUTO
+
 - id: activate
-  trigger: aktiviere licht {area}
+  trigger:
+    de: aktiviere licht {area}
+    en: activate light {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': true
-  catchphrase: Aktiviert.
+  catchphrase:
+    de: Aktiviert.
+    en: Activated.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+  name:
+    de: Licht {area} aktivieren
+    en: Activate light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Aktiviert das Licht in einem gesprochenen Bereich
+    en: Activates the light in the given area
+  examples:
+    de:
+    - aktiviere licht bad
+    en:
+    - activate light bathroom
+  output_mode: AUTO
+
 - id: deactivate
-  trigger: deaktiviere licht {area}
+  trigger:
+    de: deaktiviere licht {area}
+    en: deactivate light {area}
   operation: light.set_power
   target:
     kind: area_name
     capture: area
   arguments:
     'on': false
-  catchphrase: Deaktiviert.
+  catchphrase:
+    de: Deaktiviert.
+    en: Deactivated.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+  name:
+    de: Licht {area} deaktivieren
+    en: Deactivate light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Deaktiviert das Licht in einem gesprochenen Bereich
+    en: Deactivates the light in the given area
+  examples:
+    de:
+    - deaktiviere licht schlafzimmer
+    en:
+    - deactivate light bedroom
+  output_mode: AUTO
+
 - id: lights_all_on
-  trigger: alle lichter an
+  trigger:
+    de: alle lichter an
+    en: all lights on
   operation: light.set_power
   target:
     kind: all_allowed
   arguments:
     'on': true
-  catchphrase: Ganz Zwergstadt erstrahlt.
+  catchphrase:
+    de: Ganz Zwergstadt erstrahlt.
+    en: All of Zwergstadt lights up.
+  output:
+    de: Alle Lichter einschalten
+    en: Turn on all lights
+  name:
+    de: Alle Lichter an
+    en: All lights on
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig ein
+    en: Turns on all permitted lights at once
+  examples:
+    de:
+    - alle lichter an
+    en:
+    - all lights on
+  output_mode: AUTO
+
 - id: lights_all_off
-  trigger: alle lichter aus
+  trigger:
+    de: alle lichter aus
+    en: all lights off
   operation: light.set_power
   target:
     kind: all_allowed
   arguments:
     'on': false
-  catchphrase: Alles dunkel.
+  catchphrase:
+    de: Alles dunkel.
+    en: Everything is dark.
+  output:
+    de: Alle Lichter ausschalten
+    en: Turn off all lights
+  name:
+    de: Alle Lichter aus
+    en: All lights off
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig aus
+    en: Turns off all permitted lights at once
+  examples:
+    de:
+    - alle lichter aus
+    en:
+    - all lights off
+  output_mode: AUTO
+
 - id: clean_room
-  trigger: reinige {area}
+  trigger:
+    de: reinige {area}
+    en: clean {area}
   operation: vacuum.clean_area
   target:
     kind: area_name
     capture: area
-  catchphrase: Wird gereinigt.
+  catchphrase:
+    de: Wird gereinigt.
+    en: Cleaning now.
+  output:
+    de: {area} reinigen
+    en: Clean {area}
+  name:
+    de: {area} reinigen
+    en: Clean {area}
+  tags:
+  - Reinigung
+  enabled: true
+  description:
+    de: Startet den Staubsauger in einem gesprochenen Bereich
+    en: Starts the vacuum in the given area
+  examples:
+    de:
+    - reinige wohnzimmer
+    en:
+    - clean living room
+  output_mode: AUTO
+
 - id: next_track
-  trigger: naechster titel
+  trigger:
+    de: naechster titel
+    en: next track
   operation: media_player.skip_track
   target:
     kind: all_allowed
   arguments:
     forward: true
-  catchphrase: Naechster Titel.
+  catchphrase:
+    de: Naechster Titel.
+    en: Next track.
+  output:
+    de: Nächster Titel
+    en: Next track
+  name:
+    de: Nächster Titel
+    en: Next track
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum nächsten Titel in der Wiedergabe
+    en: Skips to the next track in playback
+  examples:
+    de:
+    - naechster titel
+    en:
+    - next track
+  output_mode: AUTO
+
 - id: previous_track
-  trigger: voriger titel
+  trigger:
+    de: voriger titel
+    en: previous track
   operation: media_player.skip_track
   target:
     kind: all_allowed
   arguments:
     forward: false
-  catchphrase: Voriger Titel.
+  catchphrase:
+    de: Voriger Titel.
+    en: Previous track.
+  output:
+    de: Voriger Titel
+    en: Previous track
+  name:
+    de: Voriger Titel
+    en: Previous track
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum vorherigen Titel in der Wiedergabe
+    en: Skips to the previous track in playback
+  examples:
+    de:
+    - voriger titel
+    en:
+    - previous track
+  output_mode: AUTO

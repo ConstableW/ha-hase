@@ -272,10 +272,6 @@ _ARG_TEXT = {
 # name from) get a hand-written sentence here - the same fixed small set,
 # never a duplicated general-purpose catalog.
 _BESPOKE_EFFECT_TEXT = {
-    "light.set_power": {
-        "de": "Schaltet Licht ein oder aus, oder stellt die Helligkeit ein.",
-        "en": "Turns lights on or off, or sets their brightness.",
-    },
     "media_player.skip_track": {
         "de": "Springt zum nächsten oder vorherigen Titel.",
         "en": "Skips to the next or previous track.",
@@ -332,6 +328,31 @@ def _effect_text(command: EngineCommand, language: str) -> str:
         return _QUERY_EFFECT_TEXT[key]
     if command.operation is None:
         return _ASSIST_REDIRECT_EFFECT_TEXT[key] if command.assist_redirect else _TEXT_ONLY_EFFECT_TEXT[key]
+    if command.operation == "light.set_power":
+        arguments = command.arguments_spec
+        # Mirror executor dispatch: percentage takes precedence over on.
+        if "percentage" in arguments:
+            percentage = arguments["percentage"]
+            if type(percentage) is int:
+                if percentage == 0:
+                    return {"de": "Schaltet Licht aus.", "en": "Turns lights off."}[key]
+                return (
+                    f"Schaltet Licht ein und stellt die Helligkeit auf {percentage} Prozent."
+                    if key == "de" else
+                    f"Turns lights on and sets their brightness to {percentage} percent."
+                )
+            return {
+                "de": "Stellt die Lichthelligkeit auf den angegebenen Prozentwert; bei 0 wird ausgeschaltet.",
+                "en": "Sets light brightness to the supplied percentage; 0 turns lights off.",
+            }[key]
+        if arguments.get("on") is True:
+            return {"de": "Schaltet Licht ein.", "en": "Turns lights on."}[key]
+        if arguments.get("on") is False:
+            return {"de": "Schaltet Licht aus.", "en": "Turns lights off."}[key]
+        return {
+            "de": "Schaltet Licht entsprechend dem angegebenen Ein-/Aus-Wert ein oder aus.",
+            "en": "Turns lights on or off according to the supplied power value.",
+        }[key]
     bespoke = _BESPOKE_EFFECT_TEXT.get(command.operation)
     if bespoke is not None:
         return bespoke[key]
@@ -607,7 +628,11 @@ def _build_description(command: EngineCommand, language: str, omitted: set[str],
     # A factual effect sentence first, the matching voice phrase only as a
     # labeled example second - never framed as an instruction to call this
     # (see this module's own note above _ROUTING_TEXT).
-    description = _effect_text(command, language) + texts["example"].format(
+    description = _effect_text(command, language)
+    authored = resolve_localized(command.description, language, command.default_language)
+    if isinstance(authored, str) and authored.strip():
+        description += " " + authored.strip()
+    description += texts["example"].format(
         phrasings=_join_quoted(tuple(phrasings), texts["join_or"])
     )
     if optional:

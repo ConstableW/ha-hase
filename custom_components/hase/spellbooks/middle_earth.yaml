@@ -1,6 +1,6 @@
-# HASE spellbook: frontend-independent semantic commands.
 id: middle_earth
-name: Middle-earth
+name:
+  en: Middle-earth
 commands:
 - id: light_of_earendil
   trigger:
@@ -12,7 +12,8 @@ commands:
     capture: area
   arguments:
     'on': true
-  catchphrase: Ein Licht an dunklen Orten.
+  catchphrase:
+    en: Ein Licht an dunklen Orten.
   output:
     de: Licht {area} einschalten
     en: Turn on the light in {area}
@@ -26,7 +27,8 @@ commands:
     capture: area
   arguments:
     'on': true
-  catchphrase: Rohan wird antworten.
+  catchphrase:
+    en: Rohan wird antworten.
   output:
     de: Licht {area} auf 100 Prozent stellen
     en: Set the light in {area} to 100 percent
@@ -39,7 +41,8 @@ commands:
     kind: source_area
   arguments:
     'on': true
-  catchphrase: Ein Licht in der Nähe.
+  catchphrase:
+    en: Ein Licht in der Nähe.
 - id: extinguish_fires
   trigger:
     de: löscht die feuer von {area}
@@ -50,7 +53,8 @@ commands:
     capture: area
   arguments:
     'on': false
-  catchphrase: Die Feuer sind erloschen.
+  catchphrase:
+    en: Die Feuer sind erloschen.
   output:
     de: Licht {area} ausschalten
     en: Turn off the light in {area}
@@ -64,7 +68,8 @@ commands:
     capture: area
   arguments:
     'on': false
-  catchphrase: Die Feuer sind erloschen.
+  catchphrase:
+    en: Die Feuer sind erloschen.
   output:
     de: Licht {area} ausschalten
     en: Turn off the light in {area}
@@ -77,7 +82,8 @@ commands:
     kind: all_allowed
   arguments:
     'on': true
-  catchphrase: Ganz Mittelerde erstrahlt.
+  catchphrase:
+    en: Ganz Mittelerde erstrahlt.
 - id: dark_all_middle_earth
   trigger:
     de: löscht die feuer von mittelerde
@@ -87,7 +93,8 @@ commands:
     kind: all_allowed
   arguments:
     'on': false
-  catchphrase: Ganz Mittelerde liegt im Dunkeln.
+  catchphrase:
+    en: Ganz Mittelerde liegt im Dunkeln.
 - id: clean_the_halls
   trigger:
     de: reinigt die hallen von {area}
@@ -96,7 +103,8 @@ commands:
   target:
     kind: area_name
     capture: area
-  catchphrase: Die Hallen werden gereinigt.
+  catchphrase:
+    en: Die Hallen werden gereinigt.
 - id: next_song
   trigger:
     de: das nächste lied in {area}
@@ -107,7 +115,8 @@ commands:
     capture: area
   arguments:
     forward: true
-  catchphrase: Ein neues Lied beginnt.
+  catchphrase:
+    en: Ein neues Lied beginnt.
   output:
     de: nächster Titel im {area}
     en: Next track in {area}
@@ -121,7 +130,8 @@ commands:
     capture: area
   arguments:
     forward: false
-  catchphrase: Noch einmal das vorige Lied.
+  catchphrase:
+    en: Noch einmal das vorige Lied.
   output:
     de: vorheriger Titel im {area}
     en: Previous track in {area}
@@ -131,7 +141,8 @@ commands:
   output:
     de: Licht {area} auf 100 Prozent stellen
     en: Set the light in {area} to 100 percent
-  catchphrase: Der neue Tag beginnt.
+  catchphrase:
+    en: Der neue Tag beginnt.
   id: middle_earth_07
 - trigger:
     de: dämmerung über {area}
@@ -139,7 +150,8 @@ commands:
   output:
     de: Licht {area} auf 20 Prozent stellen
     en: Set the light in {area} to 20 percent
-  catchphrase: Die Dämmerung fällt.
+  catchphrase:
+    en: Die Dämmerung fällt.
   id: middle_earth_08
 - trigger:
     de: licht von {area} auf {value} prozent
@@ -147,7 +159,8 @@ commands:
   output:
     de: Licht {area} auf {value} Prozent stellen
     en: Set the light in {area} to {value} percent
-  catchphrase: So soll es sein.
+  catchphrase:
+    en: So soll es sein.
   id: middle_earth_09
 - trigger:
     de: farben von valinor in {area} auf {color}
@@ -155,13 +168,16 @@ commands:
   output:
     de: Licht {area} auf {color} stellen
     en: Set the light in {area} to {color}
-  catchphrase: Das Licht Valinors kehrt zurück.
+  catchphrase:
+    en: Das Licht Valinors kehrt zurück.
   id: middle_earth_10
-- trigger: mellon {target}
+- trigger:
+    en: mellon {target}
   output:
     de: '{target} öffnen'
     en: Open {target}
-  catchphrase: Sprich Freund und tritt ein.
+  catchphrase:
+    en: Sprich Freund und tritt ein.
   id: middle_earth_11
 - trigger:
     de: öffnet die tore von {target}
@@ -169,7 +185,8 @@ commands:
   output:
     de: '{target} öffnen'
     en: Open {target}
-  catchphrase: Die Tore sind offen.
+  catchphrase:
+    en: Die Tore sind offen.
   id: middle_earth_12
 - trigger:
     de: schließt die tore von {target}
@@ -177,7 +194,8 @@ commands:
   output:
     de: '{target} schließen'
     en: Close {target}
-  catchphrase: Die Tore sind geschlossen.
+  catchphrase:
+    en: Die Tore sind geschlossen.
   id: middle_earth_13
 - trigger:
     de: haltet die tore von {target}
@@ -185,7 +203,8 @@ commands:
   output:
     de: '{target} stoppen'
     en: Stop {target}
-  catchphrase: Haltet die Tore.
+  catchphrase:
+    en: Haltet die Tore.
   id: middle_earth_14
 - trigger:
     de: öffnet die hohen tore von {target}
@@ -193,7 +212,8 @@ commands:
   output:
     de: '{target} hochfahren'
     en: Raise {target}
-  catchphrase: Die Tore erheben sich.
+  catchphrase:
+    en: Die Tore erheben sich.
   id: middle_earth_15
 - trigger:
     de: senkt die tore von {target}
@@ -201,7 +221,8 @@ commands:
   output:
     de: '{target} herunterfahren'
     en: Lower {target}
-  catchphrase: Die Tore werden gesenkt.
+  catchphrase:
+    en: Die Tore werden gesenkt.
   id: middle_earth_16
 - trigger:
     de: du kommst hier nicht vorbei {area}
@@ -209,7 +230,8 @@ commands:
   output:
     de: Alle Schlösser in {area} verriegeln
     en: Lock all locks in {area}
-  catchphrase: Du kommst hier nicht vorbei!
+  catchphrase:
+    en: Du kommst hier nicht vorbei!
   id: middle_earth_17
 - trigger:
     de: bewacht die grenzen von {area}
@@ -217,7 +239,8 @@ commands:
   output:
     de: Alarm in {area} scharfschalten
     en: Arm the alarm in {area}
-  catchphrase: Die Grenzen werden bewacht.
+  catchphrase:
+    en: Die Grenzen werden bewacht.
   id: middle_earth_18
 - trigger:
     de: die gefahr ist vorüber bei {target}
@@ -225,7 +248,8 @@ commands:
   output:
     de: Alarm bei {target} deaktivieren
     en: Deactivate the alarm at {target}
-  catchphrase: Die Gefahr ist vorüber.
+  catchphrase:
+    en: Die Gefahr ist vorüber.
   id: middle_earth_19
 - trigger:
     de: lieder der halle {area}
@@ -233,7 +257,8 @@ commands:
   output:
     de: Musik {area} fortsetzen
     en: Resume the music in {area}
-  catchphrase: Lasst die Lieder erklingen.
+  catchphrase:
+    en: Lasst die Lieder erklingen.
   id: middle_earth_20
 - trigger:
     de: schweigt in der halle {area}
@@ -241,7 +266,8 @@ commands:
   output:
     de: Musik {area} pausieren
     en: Pause the music in {area}
-  catchphrase: Die Halle schweigt.
+  catchphrase:
+    en: Die Halle schweigt.
   id: middle_earth_21
 - trigger:
     de: lauter sollen die lieder klingen in {area}
@@ -249,7 +275,8 @@ commands:
   output:
     de: Musik {area} lauter
     en: Increase the volume for {area}
-  catchphrase: Die Lieder tragen weit.
+  catchphrase:
+    en: Die Lieder tragen weit.
   id: middle_earth_22
 - trigger:
     de: leiser in der halle {area}
@@ -257,7 +284,8 @@ commands:
   output:
     de: Musik {area} leiser
     en: Decrease the volume for {area}
-  catchphrase: Die Stimmen werden leiser.
+  catchphrase:
+    en: Die Stimmen werden leiser.
   id: middle_earth_23
 - trigger:
     de: feuer von anor {area}
@@ -265,7 +293,8 @@ commands:
   output:
     de: Temperatur in {area} erhöhen
     en: Increase the temperature in {area}
-  catchphrase: Die Flamme von Anor brennt.
+  catchphrase:
+    en: Die Flamme von Anor brennt.
   id: middle_earth_26
 - trigger:
     de: atem des nordens {area}
@@ -273,7 +302,8 @@ commands:
   output:
     de: Temperatur in {area} verringern
     en: Decrease the temperature in {area}
-  catchphrase: Der Nordwind zieht auf.
+  catchphrase:
+    en: Der Nordwind zieht auf.
   id: middle_earth_27
 - trigger:
     de: wind über {area}
@@ -281,7 +311,8 @@ commands:
   output:
     de: Lüftung in {area} einschalten
     en: Turn on the ventilation in {area}
-  catchphrase: Der Wind erhebt sich.
+  catchphrase:
+    en: Der Wind erhebt sich.
   id: middle_earth_28
 - trigger:
     de: wie warm sind die hallen von {area}
@@ -345,7 +376,8 @@ commands:
   output:
     de: Alle Geräte im Bereich {area} ausschalten
     en: Turn off all devices in {area}
-  catchphrase: Die Reise ist zu Ende.
+  catchphrase:
+    en: Die Reise ist zu Ende.
   id: middle_earth_38
 - trigger:
     de: ein fest im auenland {area}
@@ -353,7 +385,8 @@ commands:
   output:
     de: Gemütliche Szene in {area} aktivieren
     en: Activate the cozy scene in {area}
-  catchphrase: Das Fest kann beginnen.
+  catchphrase:
+    en: Das Fest kann beginnen.
   id: middle_earth_39
 - trigger:
     de: die hallen von moria {area}
@@ -361,7 +394,8 @@ commands:
   output:
     de: Licht {area} auf 20 Prozent stellen
     en: Set the light in {area} to 20 percent
-  catchphrase: Die tiefen Hallen erwachen.
+  catchphrase:
+    en: Die tiefen Hallen erwachen.
   id: middle_earth_40
 - trigger:
     de: der weiße baum von {area}
@@ -369,5 +403,8 @@ commands:
   output:
     de: Licht {area} auf warmweiß stellen
     en: Set the light in {area} to warm white
-  catchphrase: Der Weiße Baum erstrahlt.
+  catchphrase:
+    en: Der Weiße Baum erstrahlt.
   id: middle_earth_41
+default_language: de
+language: de

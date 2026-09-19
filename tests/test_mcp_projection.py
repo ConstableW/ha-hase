@@ -90,6 +90,74 @@ LUMOS = {
 }
 
 
+class ConcreteEffectDescriptionTests(unittest.TestCase):
+    def project(self, arguments, description=None, language="de", spell_id="arbitrary"):
+        raw = {**LUMOS, "id": spell_id, "arguments": arguments}
+        if description is not None:
+            raw["description"] = description
+        return mcp.project_command(one(book(raw)), bridge_b(language))
+
+    def test_fixed_power_is_distinct_for_arbitrary_names(self):
+        for language, on_text, off_text in (
+            ("de", "Schaltet Licht ein.", "Schaltet Licht aus."),
+            ("en", "Turns lights on.", "Turns lights off."),
+        ):
+            on = self.project({"on": True}, language=language, spell_id="unrelated_a")
+            off = self.project({"on": False}, language=language, spell_id="unrelated_b")
+            self.assertTrue(on.description.startswith(on_text))
+            self.assertTrue(off.description.startswith(off_text))
+            self.assertEqual(on.input_schema, off.input_schema)
+            self.assertFalse(on.read_only)
+            self.assertFalse(off.read_only)
+
+    def test_localized_author_description_and_regional_language(self):
+        description = {"de": "Beleuchtet die Halle.", "en": "Illuminates the hall."}
+        command = one(book({**LUMOS, "description": description}))
+        self.assertEqual(command.description, description)
+        self.assertIn("Beleuchtet die Halle.", self.project({"on": True}, description, "de-DE").description)
+        self.assertIn("Illuminates the hall.", self.project({"on": True}, description, "en").description)
+
+    def test_missing_translation_uses_shared_english_fallback(self):
+        result = self.project({"on": False}, {"en": "Darkens the hall."})
+        self.assertTrue(result.description.startswith("Schaltet Licht aus."))
+        self.assertIn("Darkens the hall.", result.description)
+
+    def test_shared_description_and_no_description_fallback(self):
+        self.assertIn("My description.", self.project({"on": True}, "My description.").description)
+        self.assertTrue(self.project({"on": False}).description.startswith("Schaltet Licht aus."))
+        self.assertTrue(self.project({"on": True}, 123).description.startswith("Schaltet Licht ein."))
+
+    def test_fixed_brightness_matches_executor_zero_and_nonzero(self):
+        for language in ("de", "en"):
+            zero = self.project({"percentage": 0}, language=language)
+            positive = self.project({"percentage": 35}, language=language)
+            self.assertTrue(zero.description.startswith(
+                "Schaltet Licht aus." if language == "de" else "Turns lights off."))
+            self.assertIn("35", positive.description)
+            self.assertIn("Helligkeit" if language == "de" else "brightness", positive.description)
+
+    def test_captured_brightness_describes_zero_behavior(self):
+        raw = {**LUMOS, "trigger": "dim {area} to {value}",
+               "arguments": {"percentage": {"capture": "value", "type": "int", "min": 0, "max": 100}}}
+        for language in ("de", "en"):
+            result = mcp.project_command(one(book(raw)), bridge_b(language))
+            self.assertIn("0", result.description)
+            self.assertIn("ausgeschaltet" if language == "de" else "turns lights off", result.description)
+
+    def test_description_preserved_for_query_steps_and_text(self):
+        forms = (
+            {"output": "Hello", "assist_redirect": False},
+            {"sources": [{"variable": "n", "kind": "count", "domain_filter": "light",
+                          "target": {"kind": "all_allowed"}}], "output": "{n}"},
+            {"steps": [{"alias": "a", "operation": "light.set_power",
+                        "target": {"kind": "all_allowed"}, "arguments": {"on": True}}]},
+        )
+        for form in forms:
+            command = one(book({"id": "generic", "trigger": "hello", "description": "Details.", **form}))
+            self.assertEqual(command.description, "Details.")
+            self.assertIn("Details.", mcp.project_command(command, bridge_b()).description)
+
+
 class CaseABCTests(unittest.TestCase):
     """Room-bound / master / own-area+wider-scope projection of the SAME
     Spell, for the SAME tool name - the architecture assessment's central
@@ -108,7 +176,7 @@ class CaseABCTests(unittest.TestCase):
         self.assertEqual(result.arguments, ())
         self.assertEqual(
             result.description,
-            "Schaltet Licht ein oder aus, oder stellt die Helligkeit ein. Beispiel-Sprachbefehl: 'lumos'.",
+            "Schaltet Licht ein. Beispiel-Sprachbefehl: 'lumos'.",
         )
 
     def test_case_b_master_requires_target(self):
@@ -122,7 +190,7 @@ class CaseABCTests(unittest.TestCase):
         )
         self.assertEqual(
             result.description,
-            "Schaltet Licht ein oder aus, oder stellt die Helligkeit ein. Beispiel-Sprachbefehl: 'lumos <area>'.",
+            "Schaltet Licht ein. Beispiel-Sprachbefehl: 'lumos <area>'.",
         )
         self.assertNotIn("Ohne genannten", result.description)
 
@@ -145,7 +213,7 @@ class CaseABCTests(unittest.TestCase):
 
     def test_english_language_bridge(self):
         result = mcp.project_command(self.command, bridge_c(language="en"))
-        self.assertIn("Turns lights on or off", result.description)
+        self.assertIn("Turns lights on.", result.description)
         self.assertIn("Example voice command", result.description)
         self.assertIn("If no value is named", result.description)
 
@@ -742,8 +810,8 @@ class DescriptionWordingTests(unittest.TestCase):
     def test_bespoke_dispatch_operation_uses_its_own_hand_written_sentence(self):
         b = book(LUMOS)
         result = mcp.project_command(one(b), bridge_a(language="en"))
-        self.assertEqual(mcp._effect_text(one(b), "en"), mcp._BESPOKE_EFFECT_TEXT["light.set_power"]["en"])
-        self.assertTrue(result.description.startswith(mcp._BESPOKE_EFFECT_TEXT["light.set_power"]["en"]))
+        self.assertEqual(mcp._effect_text(one(b), "en"), "Turns lights on.")
+        self.assertTrue(result.description.startswith("Turns lights on."))
 
 
 class TextOnlySpellProjectionTests(unittest.TestCase):
