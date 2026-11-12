@@ -1,0 +1,62 @@
+blueprint:
+  name: CODE27 – RFID/NFC-Tag spielt Audiodatei
+  description: >
+    Beim Scannen eines bestimmten Home-Assistant-Tags wird eine feste
+    Audiodatei auf ein CODE27-Gerät hochgeladen und sofort abgespielt
+    (Toniebox-artig: ein Tag = eine feste Audiodatei).
+
+
+    Nutzt bewusst Home Assistants eigenes Tag-System
+    (Einstellungen -> Tags) statt eine bestimmte RFID/NFC-Lesegeräte-Marke
+    vorauszusetzen - jeder Leser, der bereits `tag.scan` in Home Assistant
+    auslöst (ESPHome, die Companion-App, u.v.m.), funktioniert damit.
+
+
+    Erstelle für jeden physischen Tag eine eigene Automation aus diesem
+    Blueprint. Der Musikmodus muss auf dem CODE27-Gerät selbst geöffnet
+    sein, sonst schlägt das Abspielen mit einer klaren Fehlermeldung fehl
+    (siehe die Aktivität/den Log des Geräts).
+
+
+    Der Dateipfad muss unter einem erlaubten Verzeichnis liegen
+    (`homeassistant: allowlist_external_dirs:` in der configuration.yaml) -
+    Home Assistant liest keine beliebigen Pfade aus einer Automation heraus.
+  domain: automation
+  source_url: https://github.com/ConstableW/ha-hase/blob/main/blueprints/automation/hase/rfid_play_music.yaml
+  input:
+    code27_device:
+      name: CODE27-Gerät
+      description: Welches CODE27-Gerät die Datei abspielen soll.
+      selector:
+        config_entry:
+          integration: hase
+    tag:
+      name: RFID/NFC-Tag
+      description: >
+        Der in Home Assistant registrierte Tag (Einstellungen -> Tags -> Tag
+        hinzufügen, einmal mit dem Lesegerät scannen um die ID zu erhalten).
+      selector:
+        tag: {}
+    audio_file:
+      name: Audiodatei
+      description: >
+        Vollständiger Pfad zur Audiodatei auf diesem Home-Assistant-Host,
+        z.B. /config/www/hase/tag_dino.mp3. Wird bei jedem Scan neu
+        hochgeladen - für ein "eine Datei bleibt dauerhaft liegen"-Verhalten
+        stattdessen einmalig hochladen und delete_music_file nie darauf
+        aufrufen.
+      selector:
+        text: {}
+
+trigger:
+  - trigger: tag
+    tag_id: !input tag
+
+action:
+  - action: hase.upload_music
+    data:
+      config_entry_id: !input code27_device
+      filename: !input audio_file
+      play: true
+
+mode: single

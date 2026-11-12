@@ -1,0 +1,43 @@
+# Dreame Vacuum (Tasshack HACS) - best-known provider definition.
+# NOT live-verified against a physical Dreame device.
+#
+# Native Home Assistant vacuum.clean_area is always preferred by the bridge
+# when supported/mapped. This provider is only a fallback for installations
+# where the Dreame integration does not expose HA's native area-cleaning feature.
+#
+# Upstream documentation confirms:
+#   - dreame_vacuum.vacuum_clean_segment
+#   - data field: segments (single integer or list)
+#   - segment ids are available from map/vacuum entity attributes when the
+#     integration is configured with map support.
+#
+# Discovery is intentionally attribute-based rather than inventing a get_maps
+# service that Dreame does not provide. The bridge/provider loader must support
+# source: entity_attributes for this provider.
+#
+# Expected concept:
+#   rooms:
+#     <segment_id>:
+#       name: <room name>
+# or another equivalent room dictionary exposed by the installed Dreame version.
+#
+# Because the exact attribute shape can vary between Dreame integration
+# versions, treat this provider as experimental until verified on a real device.
+
+id: dreame_vacuum
+name: "Dreame Vacuum (Tasshack)"
+platform: dreame_vacuum
+
+discover:
+  source: entity_attributes
+  entity_domain: vacuum
+  rooms_key: rooms
+  room_id_key: id
+  room_name_key: name
+
+clean:
+  domain: dreame_vacuum
+  service: vacuum_clean_segment
+  data:
+    segments:
+      - "{segment_id}"

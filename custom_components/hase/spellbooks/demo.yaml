@@ -1,0 +1,583 @@
+# HASE spellbook: frontend-independent semantic commands.
+id: demo
+disabled: true
+name: Spellbooker Demo
+default_language: de
+language: de
+commands:
+- id: light_on
+  trigger:
+    de: licht {area} an
+    en: turn on the light in {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase:
+    de: Mach ich.
+    en: On it.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+  name:
+    de: Licht {area} an
+    en: Turn on light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich ein
+    en: Turns on the light in the given area
+  examples:
+    de:
+    - licht wohnzimmer an
+    en:
+    - turn on the light in the living room
+  output_mode: AUTO
+
+- id: light_off
+  trigger:
+    de: licht {area} aus
+    en: turn off the light in {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase:
+    de: Erledigt.
+    en: Done.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+  name:
+    de: Licht {area} aus
+    en: Turn off light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem gesprochenen Bereich aus
+    en: Turns off the light in the given area
+  examples:
+    de:
+    - licht küche aus
+    en:
+    - turn off the light in the kitchen
+  output_mode: AUTO
+
+- id: get_state
+  trigger:
+    de: wie ist der zustand von {entity}
+    en: what is the state of {entity}
+  operation: entity.get_state
+  target:
+    kind: entity_name
+    capture: entity
+  name:
+    de: Zustand von {entity}
+    en: State of {entity}
+  tags:
+  - Status
+  enabled: true
+  description:
+    de: Fragt den aktuellen Zustand einer Entität ab
+    en: Queries the current state of an entity
+  examples:
+    de:
+    - wie ist der zustand von wohnzimmerlampe
+    en:
+    - what is the state of living room lamp
+  output_mode: AUTO
+
+- id: activate
+  trigger:
+    de: aktiviere licht {area}
+    en: activate light {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase:
+    de: Aktiviert.
+    en: Activated.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+  name:
+    de: Licht {area} aktivieren
+    en: Activate light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Aktiviert das Licht in einem gesprochenen Bereich
+    en: Activates the light in the given area
+  examples:
+    de:
+    - aktiviere licht bad
+    en:
+    - activate light bathroom
+  output_mode: AUTO
+
+- id: deactivate
+  trigger:
+    de: deaktiviere licht {area}
+    en: deactivate light {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase:
+    de: Deaktiviert.
+    en: Deactivated.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+  name:
+    de: Licht {area} deaktivieren
+    en: Deactivate light {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Deaktiviert das Licht in einem gesprochenen Bereich
+    en: Deactivates the light in the given area
+  examples:
+    de:
+    - deaktiviere licht schlafzimmer
+    en:
+    - deactivate light bedroom
+  output_mode: AUTO
+
+- id: lights_all_on
+  trigger:
+    de: alle lichter an
+    en: all lights on
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': true
+  catchphrase:
+    de: Ganz Zwergstadt erstrahlt.
+    en: All of Zwergstadt lights up.
+  output:
+    de: Alle Lichter einschalten
+    en: Turn on all lights
+  name:
+    de: Alle Lichter an
+    en: All lights on
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig ein
+    en: Turns on all permitted lights at once
+  examples:
+    de:
+    - alle lichter an
+    en:
+    - all lights on
+  output_mode: AUTO
+
+- id: lights_all_off
+  trigger:
+    de: alle lichter aus
+    en: all lights off
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': false
+  catchphrase:
+    de: Alles dunkel.
+    en: Everything is dark.
+  output:
+    de: Alle Lichter ausschalten
+    en: Turn off all lights
+  name:
+    de: Alle Lichter aus
+    en: All lights off
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter gleichzeitig aus
+    en: Turns off all permitted lights at once
+  examples:
+    de:
+    - alle lichter aus
+    en:
+    - all lights off
+  output_mode: AUTO
+
+- id: clean_room
+  trigger:
+    de: reinige {area}
+    en: clean {area}
+  operation: vacuum.clean_area
+  target:
+    kind: area_name
+    capture: area
+  catchphrase:
+    de: Wird gereinigt.
+    en: Cleaning now.
+  output:
+    de: "{area} reinigen"
+    en: Clean {area}
+  name:
+    de: "{area} reinigen"
+    en: Clean {area}
+  tags:
+  - Reinigung
+  enabled: true
+  description:
+    de: Startet den Staubsauger in einem gesprochenen Bereich
+    en: Starts the vacuum in the given area
+  examples:
+    de:
+    - reinige wohnzimmer
+    en:
+    - clean living room
+  output_mode: AUTO
+
+- id: next_track
+  trigger:
+    de: naechster titel
+    en: next track
+  operation: media_player.skip_track
+  target:
+    kind: all_allowed
+  arguments:
+    forward: true
+  catchphrase:
+    de: Naechster Titel.
+    en: Next track.
+  output:
+    de: Nächster Titel
+    en: Next track
+  name:
+    de: Nächster Titel
+    en: Next track
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum nächsten Titel in der Wiedergabe
+    en: Skips to the next track in playback
+  examples:
+    de:
+    - naechster titel
+    en:
+    - next track
+  output_mode: AUTO
+
+- id: previous_track
+  trigger:
+    de: voriger titel
+    en: previous track
+  operation: media_player.skip_track
+  target:
+    kind: all_allowed
+  arguments:
+    forward: false
+  catchphrase:
+    de: Voriger Titel.
+    en: Previous track.
+  output:
+    de: Voriger Titel
+    en: Previous track
+  name:
+    de: Voriger Titel
+    en: Previous track
+  tags:
+  - Musik
+  enabled: true
+  description:
+    de: Springt zum vorherigen Titel in der Wiedergabe
+    en: Skips to the previous track in playback
+  examples:
+    de:
+    - voriger titel
+    en:
+    - previous track
+  output_mode: AUTO
+
+# ── Engine test contract (DE + EN) ─────────────────────────────────────────
+# demo.yaml is the single source of truth for every generic HASE test. The
+# spells below cover the engine features the tests rely on; thematic
+# spellbooks (themed or user-provided) must never be required by
+# generic tests.
+
+# Area-scoped spell and a whole-house spell sharing a long literal prefix
+# (matcher regression: an area name must never fuzzy-match the whole-house
+# trigger and switch off every light).
+- id: beacons_off_area
+  trigger:
+    de: lösche die leuchtfeuer von {area}
+    en: extinguish the beacons of {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': false
+  catchphrase:
+    de: Das Leuchtfeuer erlischt.
+    en: The beacon goes out.
+  output:
+    de: Licht {area} ausschalten
+    en: Turn off the light in {area}
+  name:
+    de: Leuchtfeuer {area} löschen
+    en: Extinguish beacons {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet das Licht in einem Bereich aus (Bereichs-Variante)
+    en: Turns off the light in one area (area variant)
+  examples:
+    de:
+    - lösche die leuchtfeuer von küche
+    en:
+    - extinguish the beacons of kitchen
+  output_mode: AUTO
+
+- id: beacons_off_all
+  trigger:
+    de: lösche die leuchtfeuer von zwergstadt
+    en: extinguish the beacons of zwergstadt
+  operation: light.set_power
+  target:
+    kind: all_allowed
+  arguments:
+    'on': false
+  catchphrase:
+    de: Ganz Zwergstadt liegt im Dunkeln.
+    en: All of Zwergstadt goes dark.
+  output:
+    de: Alle Lichter ausschalten
+    en: Turn off all lights
+  name:
+    de: Alle Leuchtfeuer löschen
+    en: Extinguish all beacons
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Schaltet alle erlaubten Lichter aus (Gesamt-Variante)
+    en: Turns off all permitted lights (whole-house variant)
+  examples:
+    de:
+    - lösche die leuchtfeuer von zwergstadt
+    en:
+    - extinguish the beacons of zwergstadt
+  output_mode: AUTO
+
+# Query spell (source aggregation + response template with a variable).
+- id: lights_on_count
+  trigger:
+    de: wie viele lichter sind an in {area}
+    en: how many lights are on in {area}
+  sources:
+  - kind: count
+    target:
+      kind: area_name
+      capture: area
+    domain_filter: light
+    state_filter: 'on'
+    variable: n
+  output:
+    de: "{n} Lichter sind an."
+    en: "{n} lights are on."
+  name:
+    de: Anzahl Lichter an
+    en: Number of lights on
+  tags:
+  - Status
+  enabled: true
+  description:
+    de: Zählt die eingeschalteten Lichter in einem Bereich
+    en: Counts the lights that are on in an area
+  examples:
+    de:
+    - wie viele lichter sind an in küche
+    en:
+    - how many lights are on in kitchen
+  output_mode: AUTO
+
+# Text-only spell without an operation: forwarded to Assist (assist_redirect
+# defaults to True), speaks its own catchphrase on confirmed completion.
+- id: sunrise
+  trigger:
+    de: die sonne geht auf über {area}
+    en: the sun rises over {area}
+  output:
+    de: Licht {area} auf 100 Prozent stellen
+    en: Set the light in {area} to 100 percent
+  catchphrase:
+    de: Der neue Tag beginnt.
+    en: A new day begins.
+  name:
+    de: Sonnenaufgang {area}
+    en: Sunrise {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Textbefehl, der an Assist weitergeleitet wird
+    en: Text command that is forwarded to Assist
+  examples:
+    de:
+    - die sonne geht auf über küche
+    en:
+    - the sun rises over kitchen
+  output_mode: AUTO
+
+# Combined spell (multi-step action sequence with its own response).
+- id: bedtime
+  trigger:
+    de: gute nacht zwergstadt
+    en: good night zwergstadt
+  steps:
+  - alias: shutters
+    operation: cover.close_cover
+    target:
+      kind: all_allowed
+    arguments: {}
+  - alias: lamps
+    operation: light.set_power
+    target:
+      kind: all_allowed
+    arguments:
+      'on': false
+  output:
+    de: Zwergstadt schläft.
+    en: Zwergstadt is asleep.
+  name:
+    de: Gute Nacht
+    en: Good night
+  tags:
+  - Szene
+  enabled: true
+  description:
+    de: Schließt alle Rollos und schaltet alle Lichter aus
+    en: Closes all covers and turns all lights off
+  examples:
+    de:
+    - gute nacht zwergstadt
+    en:
+    - good night zwergstadt
+  output_mode: AUTO
+
+# Confirmed-safe text-only spell (assist_redirect: false): spoken directly,
+# never forwarded to Assist, so it needs no unrestricted Bridge.
+- id: place_fact
+  trigger:
+    de: erzähl mir etwas über {area}
+    en: tell me about {area}
+  output:
+    de: "{area} ist ein schöner Ort."
+    en: "{area} is a fine place to visit."
+  assist_redirect: false
+  name:
+    de: Ortsinfo {area}
+    en: Place fact {area}
+  tags:
+  - Info
+  enabled: true
+  description:
+    de: Feste Textantwort ohne Weiterleitung an Assist
+    en: Fixed text answer that is never forwarded to Assist
+  examples:
+    de:
+    - erzähl mir etwas über bruchtal
+    en:
+    - tell me about rivendell
+  output_mode: AUTO
+
+# Competing triggers with the same literal words: the general one lets {area}
+# swallow everything, the specific one splits the input into a validated
+# {area} + {color} (color is a closed vocabulary via value_map). Matcher rule:
+# the candidate that fills more validated placeholders wins; an unknown color
+# word falls back to the general trigger.
+- id: illuminate_area
+  trigger:
+    de: beleuchte {area}
+    en: illuminate {area}
+  operation: light.set_power
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    'on': true
+  catchphrase:
+    de: Beleuchtet.
+    en: Illuminated.
+  output:
+    de: Licht {area} einschalten
+    en: Turn on the light in {area}
+  name:
+    de: Beleuchten {area}
+    en: Illuminate {area}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Allgemeiner Trigger, der den ganzen Rest als Bereich aufnimmt
+    en: General trigger that takes the whole remainder as the area
+  examples:
+    de:
+    - beleuchte küche
+    en:
+    - illuminate kitchen
+  output_mode: AUTO
+
+- id: illuminate_area_color
+  trigger:
+    de: beleuchte {area} {color}
+    en: illuminate {area} {color}
+  operation: light.set_color
+  target:
+    kind: area_name
+    capture: area
+  arguments:
+    color_name:
+      capture: color
+      value_map:
+        rot: red
+        grün: green
+        blau: blue
+        red: red
+        green: green
+        blue: blue
+  catchphrase:
+    de: Farbig beleuchtet.
+    en: Lit in color.
+  output:
+    de: Licht {area} in {color} einschalten
+    en: Turn on the light in {area} in {color}
+  name:
+    de: Beleuchten {area} {color}
+    en: Illuminate {area} {color}
+  tags:
+  - Licht
+  enabled: true
+  description:
+    de: Spezifischer Trigger mit Bereich und Farbe aus geschlossenem Vokabular
+    en: Specific trigger with an area and a color from a closed vocabulary
+  examples:
+    de:
+    - beleuchte küche rot
+    en:
+    - illuminate kitchen red
+  output_mode: AUTO

@@ -1,0 +1,65 @@
+# Roborock - the reference vacuum provider, verified against a real
+# device (a "Kreacher" Roborock on the user's own test instance,
+# confirmed to actually drive off and clean the targeted room).
+#
+# Response shape confirmed live via Developer Tools -> Actions ->
+# roborock.get_maps (targeting all Roborock vacuum entities at once):
+#
+#   vacuum.creature:
+#     maps:
+#       - flag: 0
+#         name: EG
+#         rooms:
+#           '16': Flur
+#           '17': Zwergstadt
+#           ...
+#   vacuum.krummbein:
+#     maps:
+#       - flag: 0
+#         name: 1.OG
+#         rooms: {...}
+#       - flag: 1
+#         name: 2.OG
+#         rooms: {...}
+#
+# i.e. one entry per vacuum entity_id, each with a `maps` list (one entry
+# per floor/map the vacuum knows), each map having `flag` (an opaque
+# per-map id, not necessarily meaningful outside this response), `name`
+# (a human floor label - can be empty string) and `rooms` (segment id,
+# as a string key, -> room name).
+#
+# Cleaning a room: vacuum.send_command with command "app_segment_clean"
+# and params as a flat list of segment ids, e.g. params: [17] - NOT
+# {"segments": [17]} and NOT [[17]], both of which the real device
+# rejected with "command_failed" before the flat-list form (taken
+# directly from the user's own working Lovelace button config) was
+# confirmed to actually work.
+
+id: roborock
+name: "Roborock"
+platform: roborock
+
+discover:
+  domain: roborock
+  service: get_maps
+  maps_key: maps
+  flag_key: flag
+  name_key: name
+  rooms_key: rooms
+
+# Roborock vacuums with more than one map (typically one per floor) only
+# clean rooms on whichever map is currently active - switch first if the
+# target room lives on a different one. The select entity is found by
+# this translation_key (confirmed live: select.<name>_ausgewahlte_karte
+# carries translation_key "selected_map"), resolved per-vacuum via its
+# device_id, never by a hardcoded entity_id.
+select_map:
+  translation_key: selected_map
+
+clean:
+  domain: vacuum
+  service: send_command
+  data:
+    command: app_segment_clean
+    params:
+      - "{segment_id}"

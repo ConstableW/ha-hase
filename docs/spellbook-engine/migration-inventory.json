@@ -1,0 +1,1168 @@
+{
+  "sources": {
+    "middle_earth": {
+      "typed": [
+        {
+          "id": "light_of_earendil",
+          "trigger": {
+            "de": "licht von eärendil {area}",
+            "en": "light of eärendil {area}"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Ein Licht an dunklen Orten."
+        },
+        {
+          "id": "light_beacons_named_area",
+          "trigger": {
+            "de": "entzündet die leuchtfeuer von {area}",
+            "en": "light the beacons of {area}"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Ein Licht an dunklen Orten."
+        },
+        {
+          "id": "light_beacons_default_area",
+          "trigger": {
+            "de": "entzündet die leuchtfeuer",
+            "en": "light the beacons"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "source_area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Ein Licht in der Nähe."
+        },
+        {
+          "id": "extinguish_fires",
+          "trigger": {
+            "de": "löscht die feuer von {area}",
+            "en": "extinguish the fires of {area}"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Die Feuer sind erloschen."
+        },
+        {
+          "id": "extinguish_beacons",
+          "trigger": {
+            "de": "löscht die leuchtfeuer von {area}",
+            "en": "extinguish the beacons of {area}"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Die Feuer sind erloschen."
+        },
+        {
+          "id": "light_all_middle_earth",
+          "trigger": {
+            "de": "entzündet die feuer von mittelerde",
+            "en": "light the fires of middle-earth"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Ganz Mittelerde erstrahlt."
+        },
+        {
+          "id": "dark_all_middle_earth",
+          "trigger": {
+            "de": "löscht die feuer von mittelerde",
+            "en": "extinguish the fires of middle-earth"
+          },
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Ganz Mittelerde liegt im Dunkeln."
+        },
+        {
+          "id": "clean_the_halls",
+          "trigger": {
+            "de": "reinigt die hallen von {area}",
+            "en": "clean the halls of {area}"
+          },
+          "operation": "vacuum.clean_area",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "catchphrase": "Die Hallen werden gereinigt."
+        },
+        {
+          "id": "next_song",
+          "trigger": {
+            "de": "das nächste lied in {area}",
+            "en": "the next song in {area}"
+          },
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "forward": true
+          },
+          "catchphrase": "Ein neues Lied beginnt."
+        },
+        {
+          "id": "previous_song",
+          "trigger": {
+            "de": "das vorige lied in {area}",
+            "en": "the previous song in {area}"
+          },
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "forward": false
+          },
+          "catchphrase": "Noch einmal das vorige Lied."
+        }
+      ],
+      "legacy": [
+        {
+          "trigger": {
+            "de": "entzündet die leuchtfeuer von {area}",
+            "en": "light the beacons of {area}"
+          },
+          "output": {
+            "de": "Licht {area} auf 100 Prozent stellen",
+            "en": "Set the light in {area} to 100 percent"
+          },
+          "catchphrase": "Rohan wird antworten."
+        },
+        {
+          "trigger": {
+            "de": "licht von eärendil {area}",
+            "en": "light of eärendil {area}"
+          },
+          "output": {
+            "de": "Licht {area} einschalten",
+            "en": "Turn on the light in {area}"
+          },
+          "catchphrase": "Ein Licht an dunklen Orten."
+        },
+        {
+          "trigger": {
+            "de": "löscht die feuer von {area}",
+            "en": "extinguish the fires of {area}"
+          },
+          "output": {
+            "de": "Licht {area} ausschalten",
+            "en": "Turn off the light in {area}"
+          },
+          "catchphrase": "Die Feuer sind erloschen."
+        },
+        {
+          "trigger": {
+            "de": "löscht die leuchtfeuer von {area}",
+            "en": "extinguish the beacons of {area}"
+          },
+          "output": {
+            "de": "Licht {area} ausschalten",
+            "en": "Turn off the light in {area}"
+          },
+          "catchphrase": "Die Feuer sind erloschen."
+        },
+        {
+          "trigger": {
+            "de": "entzündet die feuer von mittelerde",
+            "en": "light the fires of middle-earth"
+          },
+          "action": "light_all_on",
+          "catchphrase": "Ganz Mittelerde erstrahlt."
+        },
+        {
+          "trigger": {
+            "de": "löscht die feuer von mittelerde",
+            "en": "extinguish the fires of middle-earth"
+          },
+          "action": "light_all_off",
+          "catchphrase": "Ganz Mittelerde liegt im Dunkeln."
+        },
+        {
+          "trigger": {
+            "de": "die sonne geht auf über {area}",
+            "en": "the sun rises over {area}"
+          },
+          "output": {
+            "de": "Licht {area} auf 100 Prozent stellen",
+            "en": "Set the light in {area} to 100 percent"
+          },
+          "catchphrase": "Der neue Tag beginnt."
+        },
+        {
+          "trigger": {
+            "de": "dämmerung über {area}",
+            "en": "dusk over {area}"
+          },
+          "output": {
+            "de": "Licht {area} auf 20 Prozent stellen",
+            "en": "Set the light in {area} to 20 percent"
+          },
+          "catchphrase": "Die Dämmerung fällt."
+        },
+        {
+          "trigger": {
+            "de": "licht von {area} auf {value} prozent",
+            "en": "light of {area} to {value} percent"
+          },
+          "output": {
+            "de": "Licht {area} auf {value} Prozent stellen",
+            "en": "Set the light in {area} to {value} percent"
+          },
+          "catchphrase": "So soll es sein."
+        },
+        {
+          "trigger": {
+            "de": "farben von valinor in {area} auf {color}",
+            "en": "colors of valinor in {area} to {color}"
+          },
+          "output": {
+            "de": "Licht {area} auf {color} stellen",
+            "en": "Set the light in {area} to {color}"
+          },
+          "catchphrase": "Das Licht Valinors kehrt zurück."
+        },
+        {
+          "trigger": "mellon {target}",
+          "output": {
+            "de": "{target} öffnen",
+            "en": "Open {target}"
+          },
+          "catchphrase": "Sprich Freund und tritt ein."
+        },
+        {
+          "trigger": {
+            "de": "öffnet die tore von {target}",
+            "en": "open the gates of {target}"
+          },
+          "output": {
+            "de": "{target} öffnen",
+            "en": "Open {target}"
+          },
+          "catchphrase": "Die Tore sind offen."
+        },
+        {
+          "trigger": {
+            "de": "schließt die tore von {target}",
+            "en": "close the gates of {target}"
+          },
+          "output": {
+            "de": "{target} schließen",
+            "en": "Close {target}"
+          },
+          "catchphrase": "Die Tore sind geschlossen."
+        },
+        {
+          "trigger": {
+            "de": "haltet die tore von {target}",
+            "en": "hold the gates of {target}"
+          },
+          "output": {
+            "de": "{target} stoppen",
+            "en": "Stop {target}"
+          },
+          "catchphrase": "Haltet die Tore."
+        },
+        {
+          "trigger": {
+            "de": "öffnet die hohen tore von {target}",
+            "en": "raise the high gates of {target}"
+          },
+          "output": {
+            "de": "{target} hochfahren",
+            "en": "Raise {target}"
+          },
+          "catchphrase": "Die Tore erheben sich."
+        },
+        {
+          "trigger": {
+            "de": "senkt die tore von {target}",
+            "en": "lower the gates of {target}"
+          },
+          "output": {
+            "de": "{target} herunterfahren",
+            "en": "Lower {target}"
+          },
+          "catchphrase": "Die Tore werden gesenkt."
+        },
+        {
+          "trigger": {
+            "de": "du kommst hier nicht vorbei {area}",
+            "en": "you shall not pass {area}"
+          },
+          "output": {
+            "de": "Alle Schlösser in {area} verriegeln",
+            "en": "Lock all locks in {area}"
+          },
+          "catchphrase": "Du kommst hier nicht vorbei!"
+        },
+        {
+          "trigger": {
+            "de": "bewacht die grenzen von {area}",
+            "en": "guard the borders of {area}"
+          },
+          "output": {
+            "de": "Alarm in {area} scharfschalten",
+            "en": "Arm the alarm in {area}"
+          },
+          "catchphrase": "Die Grenzen werden bewacht."
+        },
+        {
+          "trigger": {
+            "de": "die gefahr ist vorüber bei {target}",
+            "en": "the danger has passed at {target}"
+          },
+          "output": {
+            "de": "Alarm bei {target} deaktivieren",
+            "en": "Deactivate the alarm at {target}"
+          },
+          "catchphrase": "Die Gefahr ist vorüber."
+        },
+        {
+          "trigger": {
+            "de": "lieder der halle {area}",
+            "en": "songs of the hall {area}"
+          },
+          "output": {
+            "de": "Musik {area} fortsetzen",
+            "en": "Resume the music in {area}"
+          },
+          "catchphrase": "Lasst die Lieder erklingen."
+        },
+        {
+          "trigger": {
+            "de": "schweigt in der halle {area}",
+            "en": "silence in the hall {area}"
+          },
+          "output": {
+            "de": "Musik {area} pausieren",
+            "en": "Pause the music in {area}"
+          },
+          "catchphrase": "Die Halle schweigt."
+        },
+        {
+          "trigger": {
+            "de": "lauter sollen die lieder klingen in {area}",
+            "en": "let the songs ring louder in {area}"
+          },
+          "output": {
+            "de": "Musik {area} lauter",
+            "en": "Increase the volume for {area}"
+          },
+          "catchphrase": "Die Lieder tragen weit."
+        },
+        {
+          "trigger": {
+            "de": "leiser in der halle {area}",
+            "en": "quieter in the hall {area}"
+          },
+          "output": {
+            "de": "Musik {area} leiser",
+            "en": "Decrease the volume for {area}"
+          },
+          "catchphrase": "Die Stimmen werden leiser."
+        },
+        {
+          "trigger": {
+            "de": "das nächste lied in {area}",
+            "en": "the next song in {area}"
+          },
+          "output": {
+            "de": "nächster Titel im {area}",
+            "en": "Next track in {area}"
+          },
+          "catchphrase": "Ein neues Lied beginnt."
+        },
+        {
+          "trigger": {
+            "de": "das vorige lied in {area}",
+            "en": "the previous song in {area}"
+          },
+          "output": {
+            "de": "vorheriger Titel im {area}",
+            "en": "Previous track in {area}"
+          },
+          "catchphrase": "Noch einmal das vorige Lied."
+        },
+        {
+          "trigger": {
+            "de": "feuer von anor {area}",
+            "en": "flame of anor {area}"
+          },
+          "output": {
+            "de": "Temperatur in {area} erhöhen",
+            "en": "Increase the temperature in {area}"
+          },
+          "catchphrase": "Die Flamme von Anor brennt."
+        },
+        {
+          "trigger": {
+            "de": "atem des nordens {area}",
+            "en": "breath of the north {area}"
+          },
+          "output": {
+            "de": "Temperatur in {area} verringern",
+            "en": "Decrease the temperature in {area}"
+          },
+          "catchphrase": "Der Nordwind zieht auf."
+        },
+        {
+          "trigger": {
+            "de": "wind über {area}",
+            "en": "wind over {area}"
+          },
+          "output": {
+            "de": "Lüftung in {area} einschalten",
+            "en": "Turn on the ventilation in {area}"
+          },
+          "catchphrase": "Der Wind erhebt sich."
+        },
+        {
+          "trigger": {
+            "de": "wie warm sind die hallen von {area}",
+            "en": "how warm are the halls of {area}"
+          },
+          "output": {
+            "de": "Wie warm ist es in {area}",
+            "en": "What's the temperature in {area}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "reinigt die hallen von {area}",
+            "en": "clean the halls of {area}"
+          },
+          "action": "vacuum_clean",
+          "catchphrase": "Die Hallen werden gereinigt."
+        },
+        {
+          "trigger": {
+            "de": "wer wandert durch {area}",
+            "en": "who walks through {area}"
+          },
+          "output": {
+            "de": "Ist jemand im Bereich {area}",
+            "en": "Is anyone in {area}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "palantír {area}",
+            "en": "palantír {area}"
+          },
+          "output": {
+            "de": "Was ist in {area} aktiv",
+            "en": "What is active in {area}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "wo ist {target} palantír",
+            "en": "where is {target} palantír"
+          },
+          "output": {
+            "de": "Wo befindet sich {target}",
+            "en": "Where is {target}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "blick in den palantír von {area}",
+            "en": "look into the palantír of {area}"
+          },
+          "output": {
+            "de": "Was ist in {area} aktiv",
+            "en": "What is active in {area}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "offenbare den zustand von {target}",
+            "en": "reveal the state of {target}"
+          },
+          "output": {
+            "de": "Wie ist der Status von {target}",
+            "en": "What is the status of {target}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "was tut {target} palantír",
+            "en": "what does {target} do palantír"
+          },
+          "output": {
+            "de": "Was macht {target} gerade",
+            "en": "What is {target} currently doing"
+          }
+        },
+        {
+          "trigger": {
+            "de": "wie steht das wetter über {area}",
+            "en": "how is the weather over {area}"
+          },
+          "output": {
+            "de": "Wie ist das Wetter in {area}",
+            "en": "What's the weather like in {area}"
+          }
+        },
+        {
+          "trigger": {
+            "de": "die reise ist zu ende {area}",
+            "en": "the journey is over {area}"
+          },
+          "output": {
+            "de": "Alle Geräte im Bereich {area} ausschalten",
+            "en": "Turn off all devices in {area}"
+          },
+          "catchphrase": "Die Reise ist zu Ende."
+        },
+        {
+          "trigger": {
+            "de": "ein fest im auenland {area}",
+            "en": "a feast in the shire {area}"
+          },
+          "output": {
+            "de": "Gemütliche Szene in {area} aktivieren",
+            "en": "Activate the cozy scene in {area}"
+          },
+          "catchphrase": "Das Fest kann beginnen."
+        },
+        {
+          "trigger": {
+            "de": "die hallen von moria {area}",
+            "en": "the halls of moria {area}"
+          },
+          "output": {
+            "de": "Licht {area} auf 20 Prozent stellen",
+            "en": "Set the light in {area} to 20 percent"
+          },
+          "catchphrase": "Die tiefen Hallen erwachen."
+        },
+        {
+          "trigger": {
+            "de": "der weiße baum von {area}",
+            "en": "the white tree of {area}"
+          },
+          "output": {
+            "de": "Licht {area} auf warmweiß stellen",
+            "en": "Set the light in {area} to warm white"
+          },
+          "catchphrase": "Der Weiße Baum erstrahlt."
+        }
+      ]
+    },
+    "potter_verse": {
+      "typed": [
+        {
+          "id": "lumos",
+          "trigger": "lumos {area}",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Lumos."
+        },
+        {
+          "id": "nox",
+          "trigger": "nox {area}",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Nox."
+        },
+        {
+          "id": "lumos_maxima_all",
+          "trigger": "lumos maxima",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Lumos Maxima."
+        },
+        {
+          "id": "nox_maxima_all",
+          "trigger": "nox maxima",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Nox Maxima."
+        },
+        {
+          "id": "diffindo",
+          "trigger": "diffindo {area}",
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "forward": true
+          },
+          "catchphrase": "Diffindo."
+        },
+        {
+          "id": "reparifarge",
+          "trigger": "reparifarge {area}",
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "forward": false
+          },
+          "catchphrase": "Reparifarge."
+        }
+      ],
+      "legacy": [
+        {
+          "trigger": "lumos {area}",
+          "output": {
+            "de": "Licht {area} einschalten",
+            "en": "Turn on the light in {area}"
+          },
+          "catchphrase": "Lumos."
+        },
+        {
+          "trigger": "nox {area}",
+          "output": {
+            "de": "Licht {area} ausschalten",
+            "en": "Turn off the light in {area}"
+          },
+          "catchphrase": "Nox."
+        },
+        {
+          "trigger": "lumos maxima {area}",
+          "output": {
+            "de": "Licht {area} auf 100 Prozent stellen",
+            "en": "Set the light in {area} to 100 percent"
+          },
+          "catchphrase": "Lumos Maxima."
+        },
+        {
+          "trigger": "lumos minima {area}",
+          "output": {
+            "de": "Licht {area} auf 20 Prozent stellen",
+            "en": "Set the light in {area} to 20 percent"
+          },
+          "catchphrase": "Lumos Minima."
+        },
+        {
+          "trigger": "lumos maxima",
+          "action": "light_all_on",
+          "catchphrase": "Lumos Maxima."
+        },
+        {
+          "trigger": "nox maxima",
+          "action": "light_all_off",
+          "catchphrase": "Nox Maxima."
+        },
+        {
+          "trigger": {
+            "de": "lumos {area} auf {value} prozent",
+            "en": "lumos {area} to {value} percent"
+          },
+          "output": {
+            "de": "Licht {area} auf {value} Prozent stellen",
+            "en": "Set the light in {area} to {value} percent"
+          },
+          "catchphrase": "Lumos."
+        },
+        {
+          "trigger": "lumos solem {area}",
+          "output": {
+            "de": "Licht {area} auf warmweiß stellen",
+            "en": "Set the light in {area} to warm white"
+          },
+          "catchphrase": "Lumos Solem."
+        },
+        {
+          "trigger": {
+            "de": "colovaria {area} auf {color}",
+            "en": "colovaria {area} to {color}"
+          },
+          "output": {
+            "de": "Licht {area} auf {color} stellen",
+            "en": "Set the light in {area} to {color}"
+          },
+          "catchphrase": "Colovaria."
+        },
+        {
+          "trigger": "accio {target}",
+          "output": {
+            "de": "{target} einschalten",
+            "en": "Turn on {target}"
+          },
+          "catchphrase": "Accio."
+        },
+        {
+          "trigger": "expelliarmus {target}",
+          "output": {
+            "de": "{target} ausschalten",
+            "en": "Turn off {target}"
+          },
+          "catchphrase": "Expelliarmus."
+        },
+        {
+          "trigger": "reparo {target}",
+          "output": {
+            "de": "{target} neu starten",
+            "en": "Restart {target}"
+          },
+          "catchphrase": "Reparo."
+        },
+        {
+          "trigger": "engorgio {target}",
+          "output": {
+            "de": "{target} auf volle Leistung stellen",
+            "en": "Set {target} to full power"
+          },
+          "catchphrase": "Engorgio."
+        },
+        {
+          "trigger": "reducio {target}",
+          "output": {
+            "de": "{target} auf minimale Leistung stellen",
+            "en": "Set {target} to minimum power"
+          },
+          "catchphrase": "Reducio."
+        },
+        {
+          "trigger": "aguamenti {target}",
+          "output": {
+            "de": "{target} einschalten",
+            "en": "Turn on {target}"
+          },
+          "catchphrase": "Aguamenti."
+        },
+        {
+          "trigger": "alohomora {target}",
+          "output": {
+            "de": "{target} öffnen",
+            "en": "Open {target}"
+          },
+          "catchphrase": "Alohomora."
+        },
+        {
+          "trigger": "colloportus {target}",
+          "output": {
+            "de": "{target} schließen",
+            "en": "Close {target}"
+          },
+          "catchphrase": "Colloportus."
+        },
+        {
+          "trigger": "immobulus {target}",
+          "output": {
+            "de": "{target} stoppen",
+            "en": "Stop {target}"
+          },
+          "catchphrase": "Immobulus."
+        },
+        {
+          "trigger": "wingardium leviosa {target}",
+          "output": {
+            "de": "{target} hochfahren",
+            "en": "Raise {target}"
+          },
+          "catchphrase": "Wingardium Leviosa."
+        },
+        {
+          "trigger": "descendo {target}",
+          "output": {
+            "de": "{target} herunterfahren",
+            "en": "Lower {target}"
+          },
+          "catchphrase": "Descendo."
+        },
+        {
+          "trigger": "sonorus {area}",
+          "output": {
+            "de": "Musik {area} lauter",
+            "en": "Increase the volume for {area}"
+          },
+          "catchphrase": "Sonorus."
+        },
+        {
+          "trigger": "quietus {area}",
+          "output": {
+            "de": "Musik {area} leiser",
+            "en": "Decrease the volume for {area}"
+          },
+          "catchphrase": "Quietus."
+        },
+        {
+          "trigger": "muffliato {area}",
+          "output": {
+            "de": "Musik {area} pausieren",
+            "en": "Pause the music in {area}"
+          },
+          "catchphrase": "Muffliato."
+        },
+        {
+          "trigger": "renervate {area}",
+          "output": {
+            "de": "Musik {area} fortsetzen",
+            "en": "Resume the music in {area}"
+          },
+          "catchphrase": "Renervate."
+        },
+        {
+          "trigger": "diffindo {area}",
+          "output": {
+            "de": "nächster Titel im {area}",
+            "en": "Next track in {area}"
+          },
+          "catchphrase": "Diffindo."
+        },
+        {
+          "trigger": "reparifarge {area}",
+          "output": {
+            "de": "vorheriger Titel im {area}",
+            "en": "Previous track in {area}"
+          },
+          "catchphrase": "Reparifarge."
+        },
+        {
+          "trigger": "scourgify {target}",
+          "output": {
+            "de": "{target} starten",
+            "en": "Start {target}"
+          },
+          "catchphrase": "Scourgify."
+        },
+        {
+          "trigger": "tergeo {target}",
+          "output": {
+            "de": "{target} anhalten",
+            "en": "Stop {target}"
+          },
+          "catchphrase": "Tergeo."
+        },
+        {
+          "trigger": "incendio {area}",
+          "output": {
+            "de": "Temperatur in {area} erhöhen",
+            "en": "Increase the temperature in {area}"
+          },
+          "catchphrase": "Incendio."
+        },
+        {
+          "trigger": "glacius {area}",
+          "output": {
+            "de": "Temperatur in {area} verringern",
+            "en": "Decrease the temperature in {area}"
+          },
+          "catchphrase": "Glacius."
+        },
+        {
+          "trigger": "anapneo {area}",
+          "output": {
+            "de": "Lüftung in {area} einschalten",
+            "en": "Turn on the ventilation in {area}"
+          },
+          "catchphrase": "Anapneo."
+        },
+        {
+          "trigger": "aparecium {area}",
+          "output": {
+            "de": "Wie warm ist es in {area}",
+            "en": "What's the temperature in {area}"
+          }
+        },
+        {
+          "trigger": "finite incantatem {area}",
+          "output": {
+            "de": "Alle Geräte im Bereich {area} ausschalten",
+            "en": "Turn off all devices in {area}"
+          },
+          "catchphrase": "Finite Incantatem."
+        },
+        {
+          "trigger": "priori incantatem {area}",
+          "output": {
+            "de": "Vorherige Szene in {area} aktivieren",
+            "en": "Activate the previous scene in {area}"
+          },
+          "catchphrase": "Priori Incantatem."
+        },
+        {
+          "trigger": "expecto patronum {area}",
+          "output": {
+            "de": "Gemütliche Szene in {area} aktivieren",
+            "en": "Activate the cozy scene in {area}"
+          },
+          "catchphrase": "Expecto Patronum."
+        },
+        {
+          "trigger": "protego {area}",
+          "output": {
+            "de": "Alarm in {area} scharfschalten",
+            "en": "Arm the alarm in {area}"
+          },
+          "catchphrase": "Protego."
+        },
+        {
+          "trigger": "protego totalum {area}",
+          "output": {
+            "de": "Alle Schlösser in {area} verriegeln",
+            "en": "Lock all locks in {area}"
+          },
+          "catchphrase": "Protego Totalum."
+        },
+        {
+          "trigger": "finite {target}",
+          "output": {
+            "de": "Alarm bei {target} deaktivieren",
+            "en": "Deactivate the alarm at {target}"
+          },
+          "catchphrase": "Finite."
+        },
+        {
+          "trigger": "homenum revelio {area}",
+          "output": {
+            "de": "Ist jemand im Bereich {area}",
+            "en": "Is anyone in {area}"
+          }
+        },
+        {
+          "trigger": "point me {target}",
+          "output": {
+            "de": "Wo befindet sich {target}",
+            "en": "Where is {target}"
+          }
+        },
+        {
+          "trigger": "specialis revelio {target}",
+          "output": {
+            "de": "Wie ist der Status von {target}",
+            "en": "What is the status of {target}"
+          }
+        },
+        {
+          "trigger": "revelio {area}",
+          "output": {
+            "de": "Was ist in {area} aktiv",
+            "en": "What is active in {area}"
+          }
+        },
+        {
+          "trigger": "legilimens {target}",
+          "output": {
+            "de": "Was macht {target} gerade",
+            "en": "What is {target} currently doing"
+          }
+        },
+        {
+          "trigger": "meteolojinx recanto {area}",
+          "output": {
+            "de": "Wie ist das Wetter in {area}",
+            "en": "What's the weather like in {area}"
+          }
+        },
+        {
+          "trigger": "tempus",
+          "output": {
+            "de": "Wie spät ist es",
+            "en": "What time is it"
+          }
+        }
+      ]
+    },
+    "demo": {
+      "typed": [
+        {
+          "id": "light_on",
+          "trigger": "licht {area} an",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Mach ich."
+        },
+        {
+          "id": "light_off",
+          "trigger": "licht {area} aus",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Erledigt."
+        },
+        {
+          "id": "get_state",
+          "trigger": "wie ist der zustand von {entity}",
+          "operation": "entity.get_state",
+          "target": {
+            "kind": "entity_name",
+            "capture": "entity"
+          }
+        },
+        {
+          "id": "activate",
+          "trigger": "aktiviere licht {area}",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Aktiviert."
+        },
+        {
+          "id": "deactivate",
+          "trigger": "deaktiviere licht {area}",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Deaktiviert."
+        },
+        {
+          "id": "lights_all_on",
+          "trigger": "alle lichter an",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": true
+          },
+          "catchphrase": "Ganz Zwergstadt erstrahlt."
+        },
+        {
+          "id": "lights_all_off",
+          "trigger": "alle lichter aus",
+          "operation": "light.set_power",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "on": false
+          },
+          "catchphrase": "Alles dunkel."
+        },
+        {
+          "id": "clean_room",
+          "trigger": "reinige {area}",
+          "operation": "vacuum.clean_area",
+          "target": {
+            "kind": "area_name",
+            "capture": "area"
+          },
+          "catchphrase": "Wird gereinigt."
+        },
+        {
+          "id": "next_track",
+          "trigger": "naechster titel",
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "forward": true
+          },
+          "catchphrase": "Naechster Titel."
+        },
+        {
+          "id": "previous_track",
+          "trigger": "voriger titel",
+          "operation": "media_player.skip_track",
+          "target": {
+            "kind": "all_allowed"
+          },
+          "arguments": {
+            "forward": false
+          },
+          "catchphrase": "Voriger Titel."
+        }
+      ],
+      "legacy": []
+    }
+  },
+  "catchphrase_conflicts": [
+    {
+      "theme": "middle_earth",
+      "id": "light_beacons_named_area",
+      "typed": "Ein Licht an dunklen Orten.",
+      "legacy": "Rohan wird antworten."
+    }
+  ],
+  "source_sha256": {
+    "custom_components/hase/spellbooker_books/middle_earth.yaml": "67a72b3ae101b1cfc35d6902560fb0b0ac54296cf4681910059b516bdd2280c9",
+    "custom_components/hase/providers/code27/spellbooks/middle_earth.yaml": "3b56deec7af8f31432d3e89bff19400afa40ab52bdf13934443d0ebfcbe00950",
+    "custom_components/hase/spellbooker_books/potter_verse.yaml": "a4658353cabb6195958868962838a1e4b755f1f89872a2d432217862ab1e96bd",
+    "custom_components/hase/providers/code27/spellbooks/potter_verse.yaml": "d810fb433188969eb1509a21ab4a26a8c8ec919e4e3a67343af802a2b96225cf",
+    "custom_components/hase/spellbooker_books/demo.yaml": "bb5dd41957888b8d7e5b458b98bc6c5033ce291194b630afa211d8b3972b5e03"
+  }
+}

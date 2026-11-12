@@ -1,0 +1,41 @@
+# Xiaomi Miio - best-known provider definition.
+# NOT live-verified against a physical Xiaomi Miio vacuum.
+#
+# Native Home Assistant vacuum.clean_area is always preferred by the bridge
+# when supported/mapped. This provider exists only as a vendor fallback.
+#
+# Home Assistant documents room cleaning via:
+#   vacuum.send_command
+#   command: app_segment_clean
+#   params: [<segment_id>, ...]
+#
+# IMPORTANT:
+# Home Assistant's Xiaomi Miio integration does NOT expose a Roborock-like
+# get_maps action that returns room-name -> segment-id mappings. The official
+# HA documentation still points users to miiocli get_room_mapping (or manual
+# testing) to obtain that mapping.
+#
+# Therefore fully automatic name-based discovery cannot be implemented from
+# this YAML alone without an additional mapping source. Keep this provider
+# disabled/unavailable for automatic fallback until the bridge has either:
+#   1) a Xiaomi room-mapping helper/config source, or
+#   2) a future HA/integration API exposing room names and ids.
+#
+# The clean action below is nevertheless the documented execution schema and
+# can be used once a segment_id has been resolved by some other mechanism.
+
+id: xiaomi_miio
+name: "Xiaomi Miio"
+platform: xiaomi_miio
+
+discover:
+  source: unavailable
+  reason: "No Home Assistant API currently exposes room-name to segment-id mapping."
+
+clean:
+  domain: vacuum
+  service: send_command
+  data:
+    command: app_segment_clean
+    params:
+      - "{segment_id}"

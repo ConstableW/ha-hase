@@ -1,0 +1,32 @@
+# Python and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# Editors and local output
+.vscode/
+.idea/
+*.log
+dist/
+build/
+*.egg-info/
+
+# Local investigation artifacts
+audit-runtime-20260909/
+/audit-native-app-20260912/
+code27-origin-comparison-20260910.json
+code27-app-presence-comparison-20260910.json
+code27-app-transition-comparison-20260910.json
+origin-status-probe.cjs
+pre-hase-source.zip
+
+# Local data and dependencies
+.hasi-data/
+node_modules/
