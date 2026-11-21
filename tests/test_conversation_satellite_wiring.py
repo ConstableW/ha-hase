@@ -182,6 +182,7 @@ def _load_conversation_module(**extra_adapters):
         CONF_SPELLBOOKER_NO_MATCH_RESPONSE="spellbooker_no_match_response",
         CONF_SPELLBOOKER_PROFILE_ID="spellbooker_profile_id",
         CONF_SPELLBOOKER_UNRESTRICTED="spellbooker_unrestricted",
+        CODIE_AREA_LIMITS_KEY="hase_codie_area_limits",
         CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS="spellbooker_queries_allowed_areas",
         CONF_SPELLBOOKER_QUERIES_UNRESTRICTED="spellbooker_queries_unrestricted",
         CONF_BRIDGE_AI_TASK_ENTITY_ID="bridge_ai_task_entity_id",

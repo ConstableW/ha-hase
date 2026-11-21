@@ -20,10 +20,18 @@ from typing import Any
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
+from ...const import CODIE_AREA_LIMITS_KEY, DOMAIN
 from ..mcp.credentials import BridgeIdentity
 from ..mcp.local_dispatch import async_cast_spell, async_list_spells
-from .const import CONF_CODIE_AGENT, CONF_CODIE_TOOL_BRIDGE
+from .const import (
+    CONF_CODIE_AGENT,
+    CONF_CODIE_ALLOWED_AREAS,
+    CONF_CODIE_TOOL_BRIDGE,
+    CONF_CODIE_UNRESTRICTED,
+    CONF_MACHINE_ID,
+)
 
 _COMMAND_TIMEOUT_SEC = 15.0
 
@@ -37,10 +45,13 @@ class HaToolDispatcher:
         entry_id: str,
         identity: BridgeIdentity | None,
         agent_id: str | None,
+        area_limit: frozenset[str] | None = None,
     ) -> None:
         self._hass = hass
         self._identity = identity
+        self._entry_id = entry_id
         self._agent_id = agent_id
+        self._area_limit = area_limit  # None = no limit beyond the agent's own
         self._conversation_id = f"codie-{entry_id}"
         if agent_id:  # only an agent adds the home_command tool
             self.async_home_command = self._async_home_command
@@ -55,12 +66,39 @@ class HaToolDispatcher:
             return False, "spells_unavailable"
         return await async_cast_spell(self._hass, self._identity, spell_id, arguments)
 
+    def _device_id(self) -> str | None:
+        """HA device id of this CODE27: its HA area is the sentence's
+        default area ("Licht an" -> the room Codie stands in). Resolved per
+        call, so moving the device to another area takes effect at once; a
+        device without an area simply gives no default."""
+        entry = self._hass.config_entries.async_get_entry(self._entry_id)
+        if entry is None:
+            return None
+        owner = self._hass.config_entries.async_get_entry(entry.data.get("code27_entry_id") or "")
+        if owner is not None and owner.domain == "code27":
+            domain, source = "code27", owner
+        else:
+            domain, source = DOMAIN, entry
+        machine_id = source.data.get(CONF_MACHINE_ID, source.entry_id)
+        device = dr.async_get(self._hass).async_get_device(identifiers={(domain, machine_id)})
+        return device.id if device is not None else None
+
     async def _converse(self, text: str, agent_id: str | None, conversation_id: str | None):
+        device_id = self._device_id()
+        # The agent (conversation.py) narrows its own area policy by this
+        # limit for sentences that come from this device.
+        limits = self._hass.data.setdefault(CODIE_AREA_LIMITS_KEY, {})
+        if device_id is not None:
+            if self._area_limit is None:
+                limits.pop(device_id, None)
+            else:
+                limits[device_id] = self._area_limit
         async with asyncio.timeout(_COMMAND_TIMEOUT_SEC):
             return await conversation.async_converse(
                 self._hass, text=text, conversation_id=conversation_id,
                 context=Context(), agent_id=agent_id,
                 language=self._hass.config.language or "de",
+                device_id=device_id,
             )
 
     async def _async_home_command(self, text: str) -> tuple[bool, str]:
@@ -101,14 +139,22 @@ def dispatcher_from_options(hass: HomeAssistant, entry_id: str, options: Any) ->
     agent_id = options.get(CONF_CODIE_AGENT) or None
     if identity is None and agent_id is None:
         return None
-    return HaToolDispatcher(hass, entry_id, identity, agent_id)
+    limit = None
+    if not options.get(CONF_CODIE_UNRESTRICTED, True):
+        limit = frozenset(options.get(CONF_CODIE_ALLOWED_AREAS) or [])  # empty = no area at all
+    return HaToolDispatcher(hass, entry_id, identity, agent_id, limit)
 
 
 async def async_setup_tool_bridge(hass: HomeAssistant, entry: ConfigEntry, coordinator) -> None:
     """Apply the options now and whenever they change (no entry reload needed)."""
 
-    def _state(source: ConfigEntry) -> tuple[str, str]:
-        return (source.options.get(CONF_CODIE_TOOL_BRIDGE) or "", source.options.get(CONF_CODIE_AGENT) or "")
+    def _state(source: ConfigEntry) -> tuple:
+        return (
+            source.options.get(CONF_CODIE_TOOL_BRIDGE) or "",
+            source.options.get(CONF_CODIE_AGENT) or "",
+            bool(source.options.get(CONF_CODIE_UNRESTRICTED, True)),
+            tuple(sorted(source.options.get(CONF_CODIE_ALLOWED_AREAS) or [])),
+        )
 
     applied = _state(entry)
     await coordinator.async_set_tool_dispatcher(dispatcher_from_options(hass, entry.entry_id, entry.options))

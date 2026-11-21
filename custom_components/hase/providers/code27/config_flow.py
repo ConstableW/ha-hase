@@ -41,6 +41,8 @@ from ...spellbook_loader import async_discover_spellbooks
 from .api import Code27Client, Code27ConnectionError, Code27Error
 from .const import (
     CONF_CODIE_AGENT,
+    CONF_CODIE_ALLOWED_AREAS,
+    CONF_CODIE_UNRESTRICTED,
     CONF_CODIE_TOOL_BRIDGE,
     CONF_LOCAL_SECRET,
     CONF_MACHINE_ID,
@@ -478,8 +480,12 @@ class Code27OptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            if not user_input.get(CONF_CODIE_UNRESTRICTED, True) and not user_input.get(CONF_CODIE_ALLOWED_AREAS):
+                errors["base"] = "codie_areas_or_unrestricted_required"
+            else:
+                return self.async_create_entry(data=user_input)
 
         options = self._config_entry.options
         bridge_none = "— Aus —" if (self.hass.config.language or "en").lower().startswith("de") else "— Off —"
@@ -507,6 +513,14 @@ class Code27OptionsFlow(OptionsFlow):
                     selector.ConversationAgentSelectorConfig()
                 ),
                 vol.Required(
+                    CONF_CODIE_UNRESTRICTED,
+                    default=options.get(CONF_CODIE_UNRESTRICTED, True),
+                ): bool,
+                vol.Optional(
+                    CONF_CODIE_ALLOWED_AREAS,
+                    default=options.get(CONF_CODIE_ALLOWED_AREAS, []),
+                ): selector.AreaSelector(selector.AreaSelectorConfig(multiple=True)),
+                vol.Required(
                     CONF_REMOTE_RECOVERY_ENABLED,
                     default=options.get(CONF_REMOTE_RECOVERY_ENABLED, False),
                 ): bool,
@@ -524,4 +538,4 @@ class Code27OptionsFlow(OptionsFlow):
                     CONF_SCAN_INTERVAL, CONF_REMOTE_RECOVERY_ENABLED
                 )
             })
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

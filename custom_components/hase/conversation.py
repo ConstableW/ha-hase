@@ -34,6 +34,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CODIE_AREA_LIMITS_KEY,
     CONF_ENTRY_KIND,
     CONF_SPELLBOOKER_ALLOWED_AREAS,
     CONF_SPELLBOOKER_BOOK,
@@ -148,6 +149,13 @@ def intent_response_for(language: str, result) -> intent.IntentResponse:
         if any(er.status is ExecutionStatus.QUERY_ANSWER for er in result.execution_results):
             response.response_type = intent.IntentResponseType.QUERY_ANSWER
     return response
+
+
+def _narrowed(policy: AreaPolicy, limit: frozenset[str]) -> AreaPolicy:
+    """The stricter of the agent's own policy and a device's area limit."""
+    if policy.unrestricted:
+        return AreaPolicy(allowed_areas=frozenset(limit))
+    return AreaPolicy(allowed_areas=frozenset(policy.allowed_areas or ()) & frozenset(limit))
 
 
 class SpellbookerConversationEntity(ConversationEntity):
@@ -344,6 +352,12 @@ class SpellbookerConversationEntity(ConversationEntity):
             # through the updated options/subentry form ever sets
             # these keys.
             queries_policy = actions_policy
+        # A CODE27 device may limit its own sentences further (options
+        # "Allowed areas"): the stricter of both rules wins.
+        limit = (self.hass.data.get(CODIE_AREA_LIMITS_KEY) or {}).get(user_input.device_id or "")
+        if limit is not None:
+            actions_policy = _narrowed(actions_policy, limit)
+            queries_policy = _narrowed(queries_policy, limit)
         policy = ScopedAreaPolicy(actions=actions_policy, queries=queries_policy)
         no_match_response = (
             settings.get(CONF_SPELLBOOKER_NO_MATCH_RESPONSE) or DEFAULT_NO_MATCH_RESPONSE

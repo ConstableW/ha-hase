@@ -1,6 +1,8 @@
 """HASE integration identity and agent configuration keys."""
 
 DOMAIN = "hase"
+# hass.data key: {HA device id: frozenset of allowed area ids} for CODE27 devices with an area limit.
+CODIE_AREA_LIMITS_KEY = "hase_codie_area_limits"
 
 CONF_ENTRY_KIND = "entry_kind"
 

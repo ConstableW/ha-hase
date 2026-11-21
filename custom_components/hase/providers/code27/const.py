@@ -28,6 +28,9 @@ CONF_CODIE_TOOL_BRIDGE = "codie_tool_bridge"
 # from Codie's ``home_command`` tool (normally a HASE Spellbooker agent; HA's
 # default Assist answers whatever it does not know). Unset = no home_command.
 CONF_CODIE_AGENT = "codie_agent"
+# Area limit for Codie's sentences (HASE-side): unrestricted, or only these areas.
+CONF_CODIE_ALLOWED_AREAS = "codie_allowed_areas"
+CONF_CODIE_UNRESTRICTED = "codie_unrestricted"
 
 MUSIC_SOURCE_LOCAL_TF = "LOCAL_TF"
 

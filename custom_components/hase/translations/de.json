@@ -137,13 +137,17 @@
           "remote_recovery_enabled": "LAN-Adresse des Geräts nach einem DHCP-Wechsel über die CODE27-Cloud wiederfinden",
           "alarm_switches": "Pro Wecker einen Schalter behalten",
           "codie_tool_bridge": "Codie-Tool-Bridge",
-          "codie_agent": "Konversations-Agent für Codies Sätze"
+          "codie_agent": "Konversations-Agent für Codies Sätze",
+          "codie_unrestricted": "Uneingeschränkt (alle Bereiche)",
+          "codie_allowed_areas": "Erlaubte Bereiche"
         },
         "data_description": {
           "remote_recovery_enabled": "Standardmäßig aus. Bekommt dein CODE27 eine neue LAN-IP (z.B. nach einem Router-Neustart) und diese Integration erreicht es nicht mehr, kann sie mit dieser Option einmalig die eigene Cloud von CODE27 (codie-remote.prod.code27.co – ein Drittanbieter, nicht von Home Assistant oder dieser Integration kontrolliert) nach der aktuellen Adresse des Geräts fragen, lokal prüfen, dass es wirklich dieses Gerät ist, und den gespeicherten Host automatisch aktualisieren. Chat, Bilder und alle anderen Funktionen bleiben davon unabhängig immer im lokalen Netzwerk – die Cloud wird ausschließlich gefragt \"wo steht mein Gerät gerade?\", sonst nichts.",
           "alarm_switches": "An (Standard): jeder Wecker bekommt zusätzlich eine eigene Schalter-Entität. Aus: es bleiben keine Entitäten pro Wecker - vorhandene werden entfernt - und Wecker werden über die To-do-Liste 'Wecker' und die Dashboard-Karte bearbeitet. Schalter von Weckern, die gelöscht wurden, während Home Assistant aus war, werden beim Start aufgeräumt.",
           "codie_tool_bridge": "MCP-Bridge, deren Spells Codie als Tools ausführen darf (Firmware 1.6.0+). Aus = keine Tools.",
-          "codie_agent": "Codie reicht den Satz des Nutzers an diesen Agenten weiter (Firmware 1.6.0+): wähle einen HASE-Spellbooker für deine eigenen Trigger-Sätze. Was er nicht kennt, beantwortet das normale Assist von Home Assistant. Leer = kein home_command-Tool."
+          "codie_agent": "Codie reicht den Satz des Nutzers an diesen Agenten weiter (Firmware 1.6.0+): wähle einen HASE-Spellbooker für deine eigenen Trigger-Sätze. Was er nicht kennt, beantwortet das normale Assist von Home Assistant. Leer = kein home_command-Tool.",
+          "codie_unrestricted": "An (Standard): Codies Sätze dürfen in jedem Bereich handeln, den dein Agent erlaubt. Aus: nur die unten gewählten Bereiche – zusätzlich zu den Bereichsregeln des Agenten, es gilt die strengere.",
+          "codie_allowed_areas": "Wird nur genutzt, solange „Uneingeschränkt“ aus ist. Codies Sätze (home_command) gehen nie über diese Bereiche hinaus."
         }
       },
       "spellbooker": {
@@ -174,6 +178,9 @@
           "mcp_server_port": "Der interne TCP-Port, auf dem der MCP-Streamable-HTTP-Endpunkt lauscht. Dieser bindet an alle Netzwerkschnittstellen dieses Geräts - jedes Gerät in deinem lokalen Netzwerk kann ihn erreichen, nicht nur dieses Gerät selbst. Der einzige Schutz vor unbefugten Geräten in deinem LAN ist das Bearer-Token der jeweiligen Bridge - behandle diese Tokens daher als Geheimnis und dein lokales Netzwerk als Sicherheitsgrenze. HASE gibt diesen Port selbst nicht öffentlich im Internet frei - route bei Bedarf über deinen eigenen Reverse Proxy (mit eigener Authentifizierung/TLS) einen externen Hostnamen/Pfad dorthin. Eine Änderung startet den Listener sofort auf dem neuen Port neu."
         }
       }
+    },
+    "error": {
+      "codie_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich oder aktiviere „Uneingeschränkt“."
     }
   },
   "entity": {

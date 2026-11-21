@@ -143,6 +143,93 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((ok, text), (False, "unknown_tool:rm_rf"))
 
 
+class HomeCommandAreaTests(unittest.IsolatedAsyncioTestCase):
+    """home_command hands the CODE27's HA device to the agent, so the
+    device's HA area is the sentence's default area (like the old bridge)."""
+
+    TB = SRC.parent / "tool_bridge.py"
+
+    def _load(self, entries, devices, seen, limit=None, store=None):
+        tree = ast.parse(self.TB.read_text(encoding="utf-8"))
+        tree.body = [n for n in tree.body if not isinstance(n, (ast.ImportFrom, ast.Import))
+                     or (isinstance(n, ast.Import) and n.names[0].name in ("asyncio",))]
+        tree.body.insert(0, ast.parse("import asyncio").body[0])
+        registry = SimpleNamespace(async_get_device=lambda identifiers: devices.get(next(iter(identifiers))))
+
+        async def converse(hass, **kwargs):
+            seen.append(kwargs)
+            return SimpleNamespace(response=SimpleNamespace(
+                speech={"plain": {"speech": "ok"}}, error_code=None,
+                response_type=SimpleNamespace(value="action_done")), continue_conversation=False)
+
+        ns = {
+            "Any": object, "ConfigEntry": object, "HomeAssistant": object, "BridgeIdentity": SimpleNamespace,
+            "Context": lambda: "ctx", "DOMAIN": "hase", "CONF_CODIE_AGENT": "codie_agent",
+            "CODIE_AREA_LIMITS_KEY": "limits", "CONF_CODIE_ALLOWED_AREAS": "codie_allowed_areas",
+            "CONF_CODIE_UNRESTRICTED": "codie_unrestricted",
+            "CONF_CODIE_TOOL_BRIDGE": "codie_tool_bridge", "CONF_MACHINE_ID": "machine_id",
+            "async_list_spells": None, "async_cast_spell": None,
+            "conversation": SimpleNamespace(async_converse=converse),
+            "dr": SimpleNamespace(async_get=lambda hass: registry),
+            "__annotations__": {},
+        }
+        exec(compile(ast.fix_missing_locations(tree), str(self.TB), "exec"), ns)
+        hass = SimpleNamespace(
+            config=SimpleNamespace(language="de"), data={} if store is None else store,
+            config_entries=SimpleNamespace(async_get_entry=lambda eid: entries.get(eid)),
+        )
+        self.ns = ns
+        self.hass = hass
+        return ns["HaToolDispatcher"](hass, "binding", None, "agent.x", limit)
+
+    async def test_own_device_id_is_passed(self):
+        seen = []
+        entries = {"binding": SimpleNamespace(domain="hase", entry_id="binding", data={"machine_id": "M1"})}
+        dispatcher = self._load(entries, {("hase", "M1"): SimpleNamespace(id="dev1")}, seen)
+        self.assertEqual(await dispatcher.async_home_command("Licht an"), (True, "ok"))
+        self.assertEqual(seen[0]["device_id"], "dev1")
+
+    async def test_standalone_owned_device_uses_standalone_identity(self):
+        seen = []
+        entries = {
+            "binding": SimpleNamespace(domain="hase", entry_id="binding", data={"code27_entry_id": "sa"}),
+            "sa": SimpleNamespace(domain="code27", entry_id="sa", data={"machine_id": "M2"}),
+        }
+        dispatcher = self._load(entries, {("code27", "M2"): SimpleNamespace(id="dev2")}, seen)
+        await dispatcher.async_home_command("Licht an")
+        self.assertEqual(seen[0]["device_id"], "dev2")
+
+    async def test_area_limit_is_published_for_the_device_and_cleared_without_one(self):
+        store = {}
+        entries = {"binding": SimpleNamespace(domain="hase", entry_id="binding", data={"machine_id": "M1"})}
+        devices = {("hase", "M1"): SimpleNamespace(id="dev1")}
+        limited = self._load(entries, devices, [], limit=frozenset({"kitchen"}), store=store)
+        await limited.async_home_command("Licht an")
+        self.assertEqual(store["limits"], {"dev1": frozenset({"kitchen"})})
+        free = self._load(entries, devices, [], limit=None, store=store)
+        await free.async_home_command("Licht an")
+        self.assertEqual(store["limits"], {})
+
+    async def test_options_build_the_limit(self):
+        self._load({}, {}, [])
+        build = self.ns["dispatcher_from_options"]
+        common = {"codie_agent": "agent.x"}
+        self.assertIsNone(build(self.hass, "b", common)._area_limit)
+        self.assertIsNone(build(self.hass, "b", {**common, "codie_unrestricted": True,
+                                                  "codie_allowed_areas": ["kitchen"]})._area_limit)
+        self.assertEqual(build(self.hass, "b", {**common, "codie_unrestricted": False,
+                                                 "codie_allowed_areas": ["kitchen"]})._area_limit,
+                         frozenset({"kitchen"}))
+        # unrestricted off and nothing selected = no area at all, never "everything"
+        self.assertEqual(build(self.hass, "b", {**common, "codie_unrestricted": False})._area_limit, frozenset())
+
+    async def test_unknown_device_gives_no_default_area(self):
+        seen = []
+        dispatcher = self._load({}, {}, seen)
+        await dispatcher.async_home_command("Licht an")
+        self.assertIsNone(seen[0]["device_id"])
+
+
 class PlatformForwarderTests(unittest.TestCase):
     """HA imports custom_components.hase.<platform>; every platform the
     CODE27 provider forwards needs its root module (a missing one only
@@ -258,3 +345,33 @@ class SharedCodeBoundaryTests(unittest.TestCase):
                         or (node.level >= 2 and mod not in ("const",)),
                         f"{name} imports {'.' * node.level}{mod}",
                     )
+
+
+class NarrowedPolicyTests(unittest.TestCase):
+    """conversation._narrowed: the stricter of agent policy and device limit."""
+
+    def _narrowed(self):
+        import test_core_engine as core
+
+        src = SRC.parents[2] / "conversation.py"
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_narrowed")
+        ns = {"AreaPolicy": core.AreaPolicy}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(src), "exec"), ns)
+        return ns["_narrowed"], core.AreaPolicy
+
+    def test_stricter_wins(self):
+        narrowed, Policy = self._narrowed()
+        agent = Policy(frozenset({"kitchen", "hall"}))
+        result = narrowed(agent, frozenset({"hall", "garden"}))
+        self.assertEqual(result.allowed_areas, frozenset({"hall"}))
+        self.assertFalse(result.unrestricted)
+
+    def test_unrestricted_agent_is_cut_to_the_device_limit(self):
+        narrowed, Policy = self._narrowed()
+        result = narrowed(Policy(None, unrestricted=True), frozenset({"hall"}))
+        self.assertEqual((result.allowed_areas, result.unrestricted), (frozenset({"hall"}), False))
+
+    def test_empty_limit_permits_nothing(self):
+        narrowed, Policy = self._narrowed()
+        self.assertFalse(narrowed(Policy(None, unrestricted=True), frozenset()).permits_area("hall"))

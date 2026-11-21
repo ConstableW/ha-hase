@@ -137,13 +137,17 @@
           "remote_recovery_enabled": "Recover the device's LAN address via CODE27's cloud after a DHCP change",
           "alarm_switches": "Keep one switch per alarm",
           "codie_tool_bridge": "Codie tool bridge",
-          "codie_agent": "Conversation agent for Codie's sentences"
+          "codie_agent": "Conversation agent for Codie's sentences",
+          "codie_unrestricted": "Unrestricted (all areas)",
+          "codie_allowed_areas": "Allowed areas"
         },
         "data_description": {
           "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else.",
           "alarm_switches": "On (default): every alarm also gets its own switch entity. Off: no per-alarm entities are kept - the existing ones are removed - and alarms are edited through the 'Alarms' to-do list and the dashboard card instead. Switches of alarms deleted while Home Assistant was off are cleaned up on startup.",
           "codie_tool_bridge": "MCP Bridge whose Spells Codie may cast as tools (firmware 1.6.0+). Off = no tools.",
-          "codie_agent": "Codie hands the user's sentence to this agent (firmware 1.6.0+): choose a HASE Spellbooker for your own trigger phrases. Anything it does not know goes to Home Assistant's normal Assist. Empty = no home_command tool."
+          "codie_agent": "Codie hands the user's sentence to this agent (firmware 1.6.0+): choose a HASE Spellbooker for your own trigger phrases. Anything it does not know goes to Home Assistant's normal Assist. Empty = no home_command tool.",
+          "codie_unrestricted": "On (default): Codie's sentences may act in every area your agent allows. Off: only the areas selected below - on top of the agent's own area rules, whichever is stricter.",
+          "codie_allowed_areas": "Only used while \"Unrestricted\" is off. Codie's sentences (home_command) never reach beyond these areas."
         }
       },
       "spellbooker": {
@@ -174,6 +178,9 @@
           "mcp_server_port": "The internal TCP port the MCP Streamable HTTP endpoint listens on. This binds on every network interface of this machine, so any device on your local network can reach it, not just this machine itself - the only thing stopping an unauthorized device on your LAN is each Bridge's own bearer token, so keep those secret and treat your local network as the security boundary. HASE does not expose this port to the internet itself - route an external hostname/path to it through your own reverse proxy, with its own authentication/TLS, if you want that. Changing this restarts the listener on the new port immediately."
         }
       }
+    },
+    "error": {
+      "codie_areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted\"."
     }
   },
   "entity": {
