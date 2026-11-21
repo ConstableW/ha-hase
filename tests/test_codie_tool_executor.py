@@ -149,7 +149,8 @@ class HomeCommandAreaTests(unittest.IsolatedAsyncioTestCase):
 
     TB = SRC.parent / "tool_bridge.py"
 
-    def _load(self, entries, devices, seen, limit=None, store=None):
+    def _load(self, entries, devices, seen, limit=None, store=None, entity_registry=None):
+        entity_registry = entity_registry or {}
         tree = ast.parse(self.TB.read_text(encoding="utf-8"))
         tree.body = [n for n in tree.body if not isinstance(n, (ast.ImportFrom, ast.Import))
                      or (isinstance(n, ast.Import) and n.names[0].name in ("asyncio",))]
@@ -167,10 +168,14 @@ class HomeCommandAreaTests(unittest.IsolatedAsyncioTestCase):
             "Context": lambda: "ctx", "DOMAIN": "hase", "CONF_CODIE_AGENT": "codie_agent",
             "CODIE_AREA_LIMITS_KEY": "limits", "CONF_CODIE_ALLOWED_AREAS": "codie_allowed_areas",
             "CONF_CODIE_UNRESTRICTED": "codie_unrestricted",
+            "CONF_CODIE_QUERIES_ALLOWED_AREAS": "codie_queries_allowed_areas",
+            "CONF_CODIE_QUERIES_UNRESTRICTED": "codie_queries_unrestricted",
             "CONF_CODIE_TOOL_BRIDGE": "codie_tool_bridge", "CONF_MACHINE_ID": "machine_id",
             "async_list_spells": None, "async_cast_spell": None,
             "conversation": SimpleNamespace(async_converse=converse),
             "dr": SimpleNamespace(async_get=lambda hass: registry),
+            "er": SimpleNamespace(async_get=lambda hass: SimpleNamespace(
+                async_get=lambda eid: entity_registry.get(eid))),
             "__annotations__": {},
         }
         exec(compile(ast.fix_missing_locations(tree), str(self.TB), "exec"), ns)
@@ -203,25 +208,44 @@ class HomeCommandAreaTests(unittest.IsolatedAsyncioTestCase):
         store = {}
         entries = {"binding": SimpleNamespace(domain="hase", entry_id="binding", data={"machine_id": "M1"})}
         devices = {("hase", "M1"): SimpleNamespace(id="dev1")}
-        limited = self._load(entries, devices, [], limit=frozenset({"kitchen"}), store=store)
+        limited = self._load(entries, devices, [], limit=(frozenset({"kitchen"}), None), store=store)
         await limited.async_home_command("Licht an")
-        self.assertEqual(store["limits"], {"dev1": frozenset({"kitchen"})})
+        self.assertEqual(store["limits"], {"dev1": (frozenset({"kitchen"}), None)})
         free = self._load(entries, devices, [], limit=None, store=store)
         await free.async_home_command("Licht an")
         self.assertEqual(store["limits"], {})
 
-    async def test_options_build_the_limit(self):
+    async def test_options_build_separate_action_and_query_limits(self):
         self._load({}, {}, [])
         build = self.ns["dispatcher_from_options"]
         common = {"codie_agent": "agent.x"}
         self.assertIsNone(build(self.hass, "b", common)._area_limit)
         self.assertIsNone(build(self.hass, "b", {**common, "codie_unrestricted": True,
                                                   "codie_allowed_areas": ["kitchen"]})._area_limit)
-        self.assertEqual(build(self.hass, "b", {**common, "codie_unrestricted": False,
-                                                 "codie_allowed_areas": ["kitchen"]})._area_limit,
-                         frozenset({"kitchen"}))
+        # switching in two rooms only, querying everywhere
+        two = build(self.hass, "b", {**common, "codie_unrestricted": False,
+                                      "codie_allowed_areas": ["kitchen", "hall"]})
+        self.assertEqual(two._area_limit, (frozenset({"kitchen", "hall"}), None))
+        # queries limited, actions free
+        q = build(self.hass, "b", {**common, "codie_queries_unrestricted": False,
+                                    "codie_queries_allowed_areas": ["hall"]})
+        self.assertEqual(q._area_limit, (None, frozenset({"hall"})))
         # unrestricted off and nothing selected = no area at all, never "everything"
-        self.assertEqual(build(self.hass, "b", {**common, "codie_unrestricted": False})._area_limit, frozenset())
+        none = build(self.hass, "b", {**common, "codie_unrestricted": False})
+        self.assertEqual(none._area_limit, (frozenset(), None))
+
+    async def test_own_satellite_as_agent_falls_back_to_assist(self):
+        seen = []
+        entries = {"binding": SimpleNamespace(domain="hase", entry_id="binding", data={"machine_id": "M1"})}
+        registry = {"agent.x": SimpleNamespace(config_entry_id="binding"),
+                    "agent.other": SimpleNamespace(config_entry_id="elsewhere")}
+        dispatcher = self._load(entries, {}, seen, entity_registry=registry)
+        await dispatcher.async_home_command("Licht an")  # agent.x is a satellite of this device
+        self.assertIsNone(seen[0]["agent_id"])
+        self.assertIsNone(seen[0]["conversation_id"])
+        dispatcher._agent_id = "agent.other"
+        await dispatcher.async_home_command("Licht an")
+        self.assertEqual(seen[1]["agent_id"], "agent.other")
 
     async def test_unknown_device_gives_no_default_area(self):
         seen = []
@@ -348,30 +372,55 @@ class SharedCodeBoundaryTests(unittest.TestCase):
 
 
 class NarrowedPolicyTests(unittest.TestCase):
-    """conversation._narrowed: the stricter of agent policy and device limit."""
-
-    def _narrowed(self):
-        import test_core_engine as core
-
-        src = SRC.parents[2] / "conversation.py"
-        tree = ast.parse(src.read_text(encoding="utf-8"))
-        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_narrowed")
-        ns = {"AreaPolicy": core.AreaPolicy}
-        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(src), "exec"), ns)
-        return ns["_narrowed"], core.AreaPolicy
+    """The stricter of a policy and a CODE27 device's area limit, for the
+    agent (conversation.py) and for the MCP Bridge (local_dispatch._limited)."""
 
     def test_stricter_wins(self):
-        narrowed, Policy = self._narrowed()
-        agent = Policy(frozenset({"kitchen", "hall"}))
-        result = narrowed(agent, frozenset({"hall", "garden"}))
+        import test_core_engine as core
+
+        result = core.AreaPolicy(frozenset({"kitchen", "hall"})).narrowed_to(frozenset({"hall", "garden"}))
         self.assertEqual(result.allowed_areas, frozenset({"hall"}))
         self.assertFalse(result.unrestricted)
 
-    def test_unrestricted_agent_is_cut_to_the_device_limit(self):
-        narrowed, Policy = self._narrowed()
-        result = narrowed(Policy(None, unrestricted=True), frozenset({"hall"}))
+    def test_unrestricted_policy_is_cut_to_the_device_limit(self):
+        import test_core_engine as core
+
+        result = core.AreaPolicy(None, unrestricted=True).narrowed_to(frozenset({"hall"}))
         self.assertEqual((result.allowed_areas, result.unrestricted), (frozenset({"hall"}), False))
 
     def test_empty_limit_permits_nothing(self):
-        narrowed, Policy = self._narrowed()
-        self.assertFalse(narrowed(Policy(None, unrestricted=True), frozenset()).permits_area("hall"))
+        import test_core_engine as core
+
+        self.assertFalse(core.AreaPolicy(None, unrestricted=True).narrowed_to(frozenset()).permits_area("hall"))
+
+    def test_bridge_context_is_narrowed_for_actions_and_queries(self):
+        import dataclasses
+        import test_core_engine as core
+
+        src = SRC.parents[1] / "mcp" / "local_dispatch.py"
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_limited")
+        ns = {"dataclasses": dataclasses}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(src), "exec"), ns)
+
+        @dataclasses.dataclass(frozen=True)
+        class Ctx:
+            policy: object
+            language: str = "de"
+
+        scoped = core.ScopedAreaPolicy(
+            actions=core.AreaPolicy(None, unrestricted=True),
+            queries=core.AreaPolicy(frozenset({"kitchen", "hall"})),
+        )
+        ctx = Ctx(scoped)
+        self.assertIs(ns["_limited"](ctx, None), ctx)  # no limit: untouched
+        # actions cut to one room, queries left alone (None = no extra limit)
+        limited = ns["_limited"](ctx, (frozenset({"hall"}), None))
+        self.assertEqual(limited.policy.actions.allowed_areas, frozenset({"hall"}))
+        self.assertFalse(limited.policy.actions.unrestricted)
+        self.assertEqual(limited.policy.queries.allowed_areas, frozenset({"kitchen", "hall"}))
+        # both limited independently
+        both = ns["_limited"](ctx, (frozenset({"hall"}), frozenset({"kitchen"})))
+        self.assertEqual(both.policy.actions.allowed_areas, frozenset({"hall"}))
+        self.assertEqual(both.policy.queries.allowed_areas, frozenset({"kitchen"}))
+        self.assertEqual(ctx.policy, scoped)  # original is never mutated

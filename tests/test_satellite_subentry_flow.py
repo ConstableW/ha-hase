@@ -77,10 +77,7 @@ VOL = N(
 )
 
 
-def _load_flow_module(book_choices):
-    async def fake_discover_books(hass):
-        return book_choices
-
+def _load_flow_module():
     return support.load_source(
         "config_flow", **constants,
         vol=VOL, selector=FAKE_SELECTOR, callback=lambda f: f,
@@ -89,57 +86,38 @@ def _load_flow_module(book_choices):
         CONF_HOST="host", CONF_PORT="port",
         Code27Client=None, Code27ConnectionError=Exception, Code27Error=Exception,
         async_get_clientsession=lambda h: None,
-        async_discover_spellbooks=fake_discover_books,
     )
 
 
-VALID_INPUT = {
-    "name": "Lilya Satellite",
-    "spellbooker_profile_id": "1",
-    "spellbooker_book": "demo",
-    "spellbooker_allowed_areas": ["zwergstadt"],
-    "spellbooker_unrestricted": False,
-    "spellbooker_queries_allowed_areas": ["zwergstadt"],
-    "spellbooker_queries_unrestricted": False,
-    "spellbooker_no_match_response": "",
-}
+# The satellite is a slim pipe to the character: name + character slot only.
+VALID_INPUT = {"name": "Lilya Satellite", "spellbooker_profile_id": "1"}
 
 
 class CreateStepTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        module = _load_flow_module([("demo", "Demo")])
+        module = _load_flow_module()
         self.flow = module.SatelliteSubentryFlow()
         self.flow.hass = N(config=N(language="de"))
 
-    async def test_valid_input_creates_a_subentry_with_no_backend_field(self):
+    async def test_valid_input_stores_only_the_character_slot(self):
         result = await self.flow.async_step_user(dict(VALID_INPUT))
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["title"], "Lilya Satellite")
-        data = result["data"]
-        self.assertEqual(data["spellbooker_profile_id"], "1")
-        self.assertEqual(data["spellbooker_book"], "demo")
-        self.assertNotIn("spellbooker_backend_entry_id", data)
-        self.assertNotIn("spellbooker_mode", data)
+        self.assertEqual(result["data"], {"spellbooker_profile_id": "1", "spellbooker_pass_area": True})
 
-    async def test_no_book_choice_is_stored_as_empty_string(self):
-        user_input = {**VALID_INPUT, "spellbooker_book": ""}
-        result = await self.flow.async_step_user(user_input)
-        self.assertEqual(result["data"]["spellbooker_book"], "")
+    async def test_old_fields_are_not_stored(self):
+        legacy = {**VALID_INPUT, "spellbooker_book": "demo", "spellbooker_unrestricted": True,
+                  "spellbooker_allowed_areas": ["zwergstadt"], "spellbooker_no_match_response": "x"}
+        result = await self.flow.async_step_user(legacy)
+        self.assertEqual(result["data"], {"spellbooker_profile_id": "1", "spellbooker_pass_area": True})
 
-    async def test_missing_actions_areas_and_unrestricted_is_rejected(self):
-        user_input = {**VALID_INPUT, "spellbooker_allowed_areas": [], "spellbooker_unrestricted": False}
-        result = await self.flow.async_step_user(user_input)
-        self.assertEqual(result["type"], "form")
-        self.assertEqual(result["errors"]["base"], "areas_or_unrestricted_required")
+    async def test_passing_the_area_can_be_switched_off(self):
+        result = await self.flow.async_step_user({**VALID_INPUT, "spellbooker_pass_area": False})
+        self.assertIs(result["data"]["spellbooker_pass_area"], False)
 
-    async def test_missing_queries_areas_and_unrestricted_is_rejected(self):
-        user_input = {
-            **VALID_INPUT,
-            "spellbooker_queries_allowed_areas": [], "spellbooker_queries_unrestricted": False,
-        }
-        result = await self.flow.async_step_user(user_input)
-        self.assertEqual(result["type"], "form")
-        self.assertEqual(result["errors"]["base"], "queries_areas_or_unrestricted_required")
+    async def test_form_has_only_name_and_slot(self):
+        result = await self.flow.async_step_user(None)
+        self.assertEqual(list(result["data_schema"]), ["name", "spellbooker_profile_id", "spellbooker_pass_area"])
 
     async def test_non_numeric_profile_id_is_rejected(self):
         user_input = {**VALID_INPUT, "spellbooker_profile_id": "Lilya"}
@@ -155,19 +133,16 @@ class CreateStepTests(unittest.IsolatedAsyncioTestCase):
 
 class ReconfigureStepTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        module = _load_flow_module([("demo", "Demo")])
+        module = _load_flow_module()
         self.flow = module.SatelliteSubentryFlow()
         self.flow.hass = N(config=N(language="de"))
         self.flow.source = "reconfigure"
         self.entry = N(entry_id="dev-1", title="CODE27 Papa")
         self.subentry = N(
             subentry_id="sat-1", title="Lilya Satellite",
-            data={
-                "spellbooker_profile_id": "1", "spellbooker_book": "demo",
-                "spellbooker_allowed_areas": ["zwergstadt"], "spellbooker_unrestricted": False,
-                "spellbooker_queries_allowed_areas": ["zwergstadt"], "spellbooker_queries_unrestricted": False,
-                "spellbooker_no_match_response": "",
-            },
+            # an older satellite may still carry book/areas - they are simply ignored
+            data={"spellbooker_profile_id": "1", "spellbooker_book": "demo",
+                  "spellbooker_allowed_areas": ["zwergstadt"]},
         )
         self.flow._entry = self.entry
         self.flow._subentry = self.subentry

@@ -8,6 +8,7 @@ Assist exposure, expert gating and generation leases all apply unchanged.
 """
 from __future__ import annotations
 
+import dataclasses
 import time
 from typing import Any
 
@@ -28,6 +29,15 @@ from .transport import (
 )
 
 
+def _limited(context, area_limit: tuple[frozenset[str] | None, frozenset[str] | None] | None):
+    """A CODE27 device's own area limits (actions, queries) narrow the
+    Bridge's policy (never widen it); projection and execution both see the
+    narrowed policy."""
+    if area_limit is None:
+        return context
+    return dataclasses.replace(context, policy=context.policy.narrowed_to(*area_limit))
+
+
 def _supervisor(hass):
     return hass.data.get(DOMAIN, {}).get("mcp", {}).get(DATA_MCP_RUNTIME_SUPERVISOR)
 
@@ -44,13 +54,16 @@ async def _lease(hass, identity: BridgeIdentity):
     )
 
 
-async def async_list_spells(hass, identity: BridgeIdentity) -> list[dict[str, Any]]:
+async def async_list_spells(
+    hass, identity: BridgeIdentity, area_limit: tuple[frozenset[str] | None, frozenset[str] | None] | None = None
+) -> list[dict[str, Any]]:
     """[{spell_id, description, arguments:{name:{type,required,enum?}}, read_only}]"""
     supervisor, lease = await _lease(hass, identity)
     try:
         context = _bridge_context_from_snapshot(hass, lease.snapshot)
         if isinstance(context, BridgeConfigurationError):
             return []
+        context = _limited(context, area_limit)
         book = await _load_assigned_book(hass, lease.snapshot)
         if book is None:
             return []
@@ -73,7 +86,8 @@ async def async_list_spells(hass, identity: BridgeIdentity) -> list[dict[str, An
 
 
 async def async_cast_spell(
-    hass, identity: BridgeIdentity, spell_id: str, arguments: dict[str, Any] | None
+    hass, identity: BridgeIdentity, spell_id: str, arguments: dict[str, Any] | None,
+    area_limit: tuple[frozenset[str] | None, frozenset[str] | None] | None = None,
 ) -> tuple[bool, str]:
     """(ok, text). Never raises for an unusable Bridge - returns (False, reason)."""
     try:
@@ -84,6 +98,7 @@ async def async_cast_spell(
         context = _bridge_context_from_snapshot(hass, lease.snapshot)
         if isinstance(context, BridgeConfigurationError):
             return False, f"bridge_misconfigured:{context.reason}"
+        context = _limited(context, area_limit)
         book = await _load_assigned_book(hass, lease.snapshot)
         if book is None:
             return False, "no_spellbook_assigned"

@@ -138,16 +138,20 @@
           "alarm_switches": "Pro Wecker einen Schalter behalten",
           "codie_tool_bridge": "Codie-Tool-Bridge",
           "codie_agent": "Konversations-Agent für Codies Sätze",
-          "codie_unrestricted": "Uneingeschränkt (alle Bereiche)",
-          "codie_allowed_areas": "Erlaubte Bereiche"
+          "codie_unrestricted": "Aktionen uneingeschränkt (alle Bereiche)",
+          "codie_allowed_areas": "Erlaubte Bereiche (Aktionen)",
+          "codie_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche)",
+          "codie_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)"
         },
         "data_description": {
           "remote_recovery_enabled": "Standardmäßig aus. Bekommt dein CODE27 eine neue LAN-IP (z.B. nach einem Router-Neustart) und diese Integration erreicht es nicht mehr, kann sie mit dieser Option einmalig die eigene Cloud von CODE27 (codie-remote.prod.code27.co – ein Drittanbieter, nicht von Home Assistant oder dieser Integration kontrolliert) nach der aktuellen Adresse des Geräts fragen, lokal prüfen, dass es wirklich dieses Gerät ist, und den gespeicherten Host automatisch aktualisieren. Chat, Bilder und alle anderen Funktionen bleiben davon unabhängig immer im lokalen Netzwerk – die Cloud wird ausschließlich gefragt \"wo steht mein Gerät gerade?\", sonst nichts.",
           "alarm_switches": "An (Standard): jeder Wecker bekommt zusätzlich eine eigene Schalter-Entität. Aus: es bleiben keine Entitäten pro Wecker - vorhandene werden entfernt - und Wecker werden über die To-do-Liste 'Wecker' und die Dashboard-Karte bearbeitet. Schalter von Weckern, die gelöscht wurden, während Home Assistant aus war, werden beim Start aufgeräumt.",
           "codie_tool_bridge": "MCP-Bridge, deren Spells Codie als Tools ausführen darf (Firmware 1.6.0+). Aus = keine Tools.",
           "codie_agent": "Codie reicht den Satz des Nutzers an diesen Agenten weiter (Firmware 1.6.0+): wähle einen HASE-Spellbooker für deine eigenen Trigger-Sätze. Was er nicht kennt, beantwortet das normale Assist von Home Assistant. Leer = kein home_command-Tool.",
-          "codie_unrestricted": "An (Standard): Codies Sätze dürfen in jedem Bereich handeln, den dein Agent erlaubt. Aus: nur die unten gewählten Bereiche – zusätzlich zu den Bereichsregeln des Agenten, es gilt die strengere.",
-          "codie_allowed_areas": "Wird nur genutzt, solange „Uneingeschränkt“ aus ist. Codies Sätze (home_command) gehen nie über diese Bereiche hinaus."
+          "codie_unrestricted": "An (Standard): Codies Sätze dürfen in jedem Bereich schalten und handeln, den dein Agent und deine Bridge erlauben. Aus: nur die unten gewählten Bereiche – zusätzlich zu deren eigenen Bereichsregeln, es gilt die strengere.",
+          "codie_allowed_areas": "Wird nur genutzt, solange „Aktionen uneingeschränkt“ aus ist. Codie schaltet und handelt nie außerhalb dieser Bereiche.",
+          "codie_queries_unrestricted": "An (Standard): Codie darf Statusfragen (z. B. „wie warm ist es in X“) für jeden Bereich beantworten, den dein Agent und deine Bridge erlauben. Unabhängig von der Aktionen-Einstellung oben.",
+          "codie_queries_allowed_areas": "Wird nur genutzt, solange „Abfragen uneingeschränkt“ aus ist. Codie beantwortet nie Statusfragen zu Bereichen außerhalb dieser."
         }
       },
       "spellbooker": {
@@ -180,7 +184,8 @@
       }
     },
     "error": {
-      "codie_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich oder aktiviere „Uneingeschränkt“."
+      "codie_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich für Aktionen oder aktiviere „Aktionen uneingeschränkt“.",
+      "codie_queries_areas_or_unrestricted_required": "Wähle mindestens einen erlaubten Bereich für Abfragen oder aktiviere „Abfragen uneingeschränkt“."
     }
   },
   "entity": {
@@ -777,24 +782,15 @@
       "step": {
         "user": {
           "title": "HASE-Agent-Satellit hinzufügen",
-          "description": "Experimentell. Ein Sprachassistent, der zuerst sein eigenes Spellbook probiert und bei Nicht-Treffer an ein echtes Charakter-Gespräch auf diesem CODE27-Gerät weiterreicht. Die Antwortkorrelation mit dem CODE27-Gerät wurde nicht gegen gleichzeitige physische Chat-Nutzung geprüft - nicht auf etwas verlassen, bei dem eine falsche oder verzögerte Antwort ein Problem wäre.",
+          "description": "Ein Sprachassistent, der alles, was er hört, direkt an den Charakter auf diesem CODE27-Gerät weitergibt. Der Charakter antwortet – und kann mit den Tools des Geräts (Firmware 1.6.0+) selbst schalten. Hier gibt es kein Spellbook und keine Bereiche: Agent und Bereichsgrenzen stellst du in den CODE27-Optionen ein.",
           "data": {
             "name": "Name",
             "spellbooker_profile_id": "Charakter-Slot",
-            "spellbooker_book": "Spellbook",
-            "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
-            "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
-            "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
-            "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)",
-            "spellbooker_no_match_response": "Antwort bei Nicht-Treffer"
+            "spellbooker_pass_area": "Bereich des sprechenden Geräts an Codie übergeben"
           },
           "data_description": {
-            "spellbooker_profile_id": "Die Charakter-Slot-Nummer auf diesem Gerät, die angesprochen wird (dieselbe Nummer wie in dessen eigener Charakter-Slot-Auswahl).",
-            "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf - gilt für das lokale Spellbook UND für alles, was das CODE27-Backend vorschlägt. Wird ignoriert, wenn \"Aktionen uneingeschränkt\" aktiviert ist.",
-            "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
-            "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf. Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
-            "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf.",
-            "spellbooker_no_match_response": "Ungenutzt, solange ein Spellbook ausgewählt ist - ein lokaler Nicht-Treffer geht dann immer an den Charakter dieses Geräts."
+            "spellbooker_profile_id": "Die Nummer des Charakter-Slots auf diesem Gerät, mit dem gesprochen wird (dieselbe Nummer wie in der Slot-Auswahl des Geräts).",
+            "spellbooker_pass_area": "An (Standard): Der Satz erreicht Codie mit dem Home-Assistant-Bereich des Geräts, das ihn gesprochen hat, z. B. „[Bereich: Küche] Mach das Licht an“, damit „das Licht“ dieses Zimmer meint. Der Zusatz steht auch im Chat-Verlauf."
           }
         },
         "reconfigure": {
@@ -802,20 +798,11 @@
           "data": {
             "name": "Name",
             "spellbooker_profile_id": "Charakter-Slot",
-            "spellbooker_book": "Spellbook",
-            "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
-            "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
-            "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
-            "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)",
-            "spellbooker_no_match_response": "Antwort bei Nicht-Treffer"
+            "spellbooker_pass_area": "Bereich des sprechenden Geräts an Codie übergeben"
           },
           "data_description": {
-            "spellbooker_profile_id": "Die Charakter-Slot-Nummer auf diesem Gerät, die angesprochen wird (dieselbe Nummer wie in dessen eigener Charakter-Slot-Auswahl).",
-            "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf - gilt für das lokale Spellbook UND für alles, was das CODE27-Backend vorschlägt. Wird ignoriert, wenn \"Aktionen uneingeschränkt\" aktiviert ist.",
-            "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
-            "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf. Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
-            "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf.",
-            "spellbooker_no_match_response": "Ungenutzt, solange ein Spellbook ausgewählt ist - ein lokaler Nicht-Treffer geht dann immer an den Charakter dieses Geräts."
+            "spellbooker_profile_id": "Die Nummer des Charakter-Slots auf diesem Gerät, mit dem gesprochen wird (dieselbe Nummer wie in der Slot-Auswahl des Geräts).",
+            "spellbooker_pass_area": "An (Standard): Der Satz erreicht Codie mit dem Home-Assistant-Bereich des Geräts, das ihn gesprochen hat, z. B. „[Bereich: Küche] Mach das Licht an“, damit „das Licht“ dieses Zimmer meint. Der Zusatz steht auch im Chat-Verlauf."
           }
         }
       },

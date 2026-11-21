@@ -39,6 +39,7 @@ from .const import (
     CONF_SPELLBOOKER_ALLOWED_AREAS,
     CONF_SPELLBOOKER_BOOK,
     CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
+    CONF_SPELLBOOKER_PASS_AREA,
     CONF_SPELLBOOKER_PROFILE_ID,
     CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS,
     CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
@@ -149,13 +150,6 @@ def intent_response_for(language: str, result) -> intent.IntentResponse:
         if any(er.status is ExecutionStatus.QUERY_ANSWER for er in result.execution_results):
             response.response_type = intent.IntentResponseType.QUERY_ANSWER
     return response
-
-
-def _narrowed(policy: AreaPolicy, limit: frozenset[str]) -> AreaPolicy:
-    """The stricter of the agent's own policy and a device's area limit."""
-    if policy.unrestricted:
-        return AreaPolicy(allowed_areas=frozenset(limit))
-    return AreaPolicy(allowed_areas=frozenset(policy.allowed_areas or ()) & frozenset(limit))
 
 
 class SpellbookerConversationEntity(ConversationEntity):
@@ -288,7 +282,9 @@ class SpellbookerConversationEntity(ConversationEntity):
             settings = self._config_entry.options
             mode = FrontendMode.SPELLBOOK_ONLY
 
-        book_id = settings.get(CONF_SPELLBOOKER_BOOK)
+        # A satellite has no local spellbook (older satellites may still carry
+        # one in their data - ignored): everything goes to the CODE27 character.
+        book_id = None if mode is FrontendMode.SATELLITE else settings.get(CONF_SPELLBOOKER_BOOK)
         if not book_id:
             if mode is not FrontendMode.SATELLITE:
                 # A SPELLBOOK_ONLY entry has no backend to fall
@@ -355,9 +351,9 @@ class SpellbookerConversationEntity(ConversationEntity):
         # A CODE27 device may limit its own sentences further (options
         # "Allowed areas"): the stricter of both rules wins.
         limit = (self.hass.data.get(CODIE_AREA_LIMITS_KEY) or {}).get(user_input.device_id or "")
-        if limit is not None:
-            actions_policy = _narrowed(actions_policy, limit)
-            queries_policy = _narrowed(queries_policy, limit)
+        if limit is not None:  # (actions limit, queries limit), each None = no extra limit
+            actions_policy = actions_policy.narrowed_to(limit[0])
+            queries_policy = queries_policy.narrowed_to(limit[1])
         policy = ScopedAreaPolicy(actions=actions_policy, queries=queries_policy)
         no_match_response = (
             settings.get(CONF_SPELLBOOKER_NO_MATCH_RESPONSE) or DEFAULT_NO_MATCH_RESPONSE
@@ -376,7 +372,18 @@ class SpellbookerConversationEntity(ConversationEntity):
             if coordinator is not None:
                 from .providers.code27.backend import Code27ConversationBackend
 
-                backend = Code27ConversationBackend(self.hass, coordinator)
+                # The speaking device's HA area travels with the sentence, so
+                # "Licht an" from a kitchen satellite means the kitchen.
+                from homeassistant.helpers import area_registry as ar
+
+                area_id = (
+                    resolve_source_area_id(self.hass, user_input.device_id)
+                    if settings.get(CONF_SPELLBOOKER_PASS_AREA, True) else None
+                )
+                area = ar.async_get(self.hass).async_get_area(area_id) if area_id else None
+                backend = Code27ConversationBackend(
+                    self.hass, coordinator, source_area=area.name if area is not None else None
+                )
             # coordinator is None here whenever the backend CODE27
             # entry was removed, isn't loaded (yet), or the option
             # never resolved - backend stays None and

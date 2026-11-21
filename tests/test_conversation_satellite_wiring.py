@@ -113,9 +113,10 @@ class FakeServiceCaller:
 
 
 class FakeBackend:
-    def __init__(self, hass, coordinator):
+    def __init__(self, hass, coordinator, source_area=None):
         self.hass = hass
         self.coordinator = coordinator
+        self.source_area = source_area
 
     async def converse(self, text, language, scope):
         return BackendResult(status="reply", response_text=f"backend saw: {text}")
@@ -183,6 +184,7 @@ def _load_conversation_module(**extra_adapters):
         CONF_SPELLBOOKER_PROFILE_ID="spellbooker_profile_id",
         CONF_SPELLBOOKER_UNRESTRICTED="spellbooker_unrestricted",
         CODIE_AREA_LIMITS_KEY="hase_codie_area_limits",
+        CONF_SPELLBOOKER_PASS_AREA="spellbooker_pass_area",
         CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS="spellbooker_queries_allowed_areas",
         CONF_SPELLBOOKER_QUERIES_UNRESTRICTED="spellbooker_queries_unrestricted",
         CONF_BRIDGE_AI_TASK_ENTITY_ID="bridge_ai_task_entity_id",
@@ -570,15 +572,11 @@ class SatelliteNoLocalBookTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("backend saw: irgendwas", result.response.speech["plain"]["speech"])
 
 
-class SatelliteBrokenBookFailsClosedTests(unittest.IsolatedAsyncioTestCase):
-    """#13 (external audit): a SATELLITE with a CONCRETELY configured
-    book that fails to load (deleted file, parse error, every command
-    invalid - anything async_get_spellbook returns None for)
-    must fail closed with a real conversation error - never silently
-    treated the same as "no book configured", which would forward the
-    turn to the CODE27 backend as if the misconfiguration didn't
-    exist. This is a different case from SatelliteNoLocalBookTests
-    above (book_id itself empty, a deliberate and valid choice)."""
+class SatelliteLegacyBookIsIgnoredTests(unittest.IsolatedAsyncioTestCase):
+    """A satellite is a slim pipe to the CODE27 character and has no local
+    spellbook. An older satellite whose data still names one (even a deleted
+    or broken book) must not fail and must not load it: the sentence goes
+    straight to the backend, like a satellite with no book."""
 
     def _make_entity(self, conversation, coordinator):
         hass = N(data={"hase": {"code27-1": coordinator}}, config=N(language="de"))
@@ -595,13 +593,14 @@ class SatelliteBrokenBookFailsClosedTests(unittest.IsolatedAsyncioTestCase):
         entity = conversation.SpellbookerConversationEntity(hass, backend_entry, subentry=subentry)
         return entity, hass, backend_entry
 
-    async def test_configured_but_unloadable_book_fails_closed_never_reaches_backend(self):
-        conversation = _load_conversation_module(
-            # Simulates a deleted/broken book file: async_get_spellbook
-            # returns None for a book_id that IS set, as spellbooker_ha.py's
-            # real function does when the file no longer exists or fails to load.
-            async_get_spellbook=AsyncStub(returns=None),
-        )
+    async def test_legacy_book_in_data_is_ignored_and_reaches_the_backend(self):
+        loaded = []
+
+        async def tracking_loader(hass, book_id):
+            loaded.append(book_id)
+            return None  # would be a broken book if anything asked for it
+
+        conversation = _load_conversation_module(async_get_spellbook=tracking_loader)
         coordinator = N(entry=N(entry_id="code27-1"))
         entity, _hass, _entry = self._make_entity(conversation, coordinator)
 
@@ -609,11 +608,45 @@ class SatelliteBrokenBookFailsClosedTests(unittest.IsolatedAsyncioTestCase):
             text="irgendwas", language="de", conversation_id=None, device_id=None,
             context=None, agent_id="conversation.sat_brokenbook",
         )
-        chat_log = N(conversation_id="conv-brokenbook")
-        result = await entity._async_handle_message(user_input, chat_log)
+        result = await entity._async_handle_message(user_input, N(conversation_id="conv-legacy"))
 
-        self.assertEqual(result.response.error_code, "failed_to_handle")
-        self.assertIn("deleted_book", result.response.speech["plain"]["speech"])
+        self.assertEqual(loaded, [])  # the stored book id is never looked at
+        self.assertIn("backend saw: irgendwas", result.response.speech["plain"]["speech"])
+
+
+class SatellitePassAreaTests(unittest.IsolatedAsyncioTestCase):
+    """The satellite hands the speaking device's HA area to the backend -
+    unless its option "spellbooker_pass_area" is switched off."""
+
+    async def _backend_area(self, data_extra):
+        seen = {}
+
+        class Spy(FakeBackend):
+            def __init__(self, hass, coordinator, source_area=None):
+                super().__init__(hass, coordinator, source_area)
+                seen["area"] = source_area
+
+        areas = N(async_get_area=lambda area_id: N(name="Küche") if area_id == "kitchen" else None)
+        conversation = _load_conversation_module(
+            async_get_spellbook=AsyncStub(returns=None),
+            resolve_source_area_id=lambda hass, device_id: "kitchen",
+            ar=N(async_get=lambda hass: areas),
+            Code27ConversationBackend=Spy,
+        )
+        hass = N(data={"hase": {"code27-1": N(entry=N(entry_id="code27-1"))}}, config=N(language="de"))
+        backend_entry = N(entry_id="code27-1", title="CODE27", data={"entry_kind": "code27_device"})
+        subentry = _fake_subentry("sat-1", "Sat", data={"spellbooker_profile_id": "1", **data_extra})
+        entity = conversation.SpellbookerConversationEntity(hass, backend_entry, subentry=subentry)
+        user_input = N(text="Licht an", language="de", conversation_id=None, device_id="dev-1",
+                       context=None, agent_id="conversation.sat")
+        await entity._async_handle_message(user_input, N(conversation_id="conv-area"))
+        return seen.get("area", "never built")
+
+    async def test_area_is_passed_by_default(self):
+        self.assertEqual(await self._backend_area({}), "Küche")
+
+    async def test_area_can_be_switched_off(self):
+        self.assertIsNone(await self._backend_area({"spellbooker_pass_area": False}))
 
 
 class AsyncStub:

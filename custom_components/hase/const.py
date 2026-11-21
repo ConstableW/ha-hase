@@ -41,6 +41,8 @@ CONF_SPELLBOOKER_QUERIES_UNRESTRICTED = "spellbooker_queries_unrestricted"
 CONF_SPELLBOOKER_NO_MATCH_RESPONSE = "spellbooker_no_match_response"
 
 CONF_SPELLBOOKER_PROFILE_ID = "spellbooker_profile_id"
+# Satellite: tell the character which HA area the speaking device is in (default on).
+CONF_SPELLBOOKER_PASS_AREA = "spellbooker_pass_area"
 
 # Shared by standalone Spellbookers and provider frontends. Kept in the
 # integration contract rather than imported from any optional provider.

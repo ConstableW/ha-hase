@@ -585,6 +585,15 @@ async def verify():
     )
     assert (await backend.converse("hello", "en", mismatch)).status == "unavailable"
     coordinator.async_send_chat_reply.assert_awaited_once()
+    # The speaking device's area travels with the sentence (de/en label), none = unchanged.
+    coordinator.async_send_chat_reply.reset_mock()
+    kitchen = backend_module.Code27ConversationBackend(hass, coordinator, source_area="Küche")
+    await kitchen.converse("Licht an", "de", scope)
+    assert coordinator.async_send_chat_reply.await_args.args[0] == "[Bereich: Küche] Licht an"
+    await kitchen.converse("Lights on", "en", scope)
+    assert coordinator.async_send_chat_reply.await_args.args[0] == "[Area: Küche] Lights on"
+    await backend.converse("Licht an", "de", scope)
+    assert coordinator.async_send_chat_reply.await_args.args[0] == "Licht an"
 
     # Load both real YAML formats from their relocated __file__ paths.
     async def executor(fn, *args):

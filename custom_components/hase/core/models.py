@@ -439,6 +439,16 @@ class AreaPolicy:
         assert self.allowed_areas is not None
         return area_id in self.allowed_areas
 
+    def narrowed_to(self, limit: frozenset[str] | None) -> "AreaPolicy":
+        """The stricter of this policy and an extra area limit (a CODE27
+        device's own "allowed areas"): never wider than either. None = no
+        extra limit."""
+        if limit is None:
+            return self
+        if self.unrestricted:
+            return AreaPolicy(allowed_areas=frozenset(limit))
+        return AreaPolicy(allowed_areas=frozenset(self.allowed_areas or ()) & frozenset(limit))
+
 
 @dataclass(frozen=True)
 class ScopedAreaPolicy:
@@ -454,6 +464,14 @@ class ScopedAreaPolicy:
 
     actions: AreaPolicy
     queries: AreaPolicy
+
+    def narrowed_to(
+        self, actions: frozenset[str] | None, queries: frozenset[str] | None
+    ) -> "ScopedAreaPolicy":
+        """Actions and queries keep their own, independent extra limits."""
+        return ScopedAreaPolicy(
+            actions=self.actions.narrowed_to(actions), queries=self.queries.narrowed_to(queries)
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -138,16 +138,20 @@
           "alarm_switches": "Keep one switch per alarm",
           "codie_tool_bridge": "Codie tool bridge",
           "codie_agent": "Conversation agent for Codie's sentences",
-          "codie_unrestricted": "Unrestricted (all areas)",
-          "codie_allowed_areas": "Allowed areas"
+          "codie_unrestricted": "Unrestricted actions (all areas)",
+          "codie_allowed_areas": "Allowed areas (actions)",
+          "codie_queries_unrestricted": "Unrestricted queries (all areas)",
+          "codie_queries_allowed_areas": "Allowed areas (queries)"
         },
         "data_description": {
           "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else.",
           "alarm_switches": "On (default): every alarm also gets its own switch entity. Off: no per-alarm entities are kept - the existing ones are removed - and alarms are edited through the 'Alarms' to-do list and the dashboard card instead. Switches of alarms deleted while Home Assistant was off are cleaned up on startup.",
           "codie_tool_bridge": "MCP Bridge whose Spells Codie may cast as tools (firmware 1.6.0+). Off = no tools.",
           "codie_agent": "Codie hands the user's sentence to this agent (firmware 1.6.0+): choose a HASE Spellbooker for your own trigger phrases. Anything it does not know goes to Home Assistant's normal Assist. Empty = no home_command tool.",
-          "codie_unrestricted": "On (default): Codie's sentences may act in every area your agent allows. Off: only the areas selected below - on top of the agent's own area rules, whichever is stricter.",
-          "codie_allowed_areas": "Only used while \"Unrestricted\" is off. Codie's sentences (home_command) never reach beyond these areas."
+          "codie_unrestricted": "On (default): Codie's sentences may switch and act in every area your agent and Bridge allow. Off: only the areas selected below - on top of their own area rules, whichever is stricter.",
+          "codie_allowed_areas": "Only used while \"Unrestricted actions\" is off. Codie never switches or acts outside these areas.",
+          "codie_queries_unrestricted": "On (default): Codie may answer status questions (e.g. \"how warm is it in X\") for every area your agent and Bridge allow. Independent of the actions setting above.",
+          "codie_queries_allowed_areas": "Only used while \"Unrestricted queries\" is off. Codie never answers status questions about areas outside these."
         }
       },
       "spellbooker": {
@@ -180,7 +184,8 @@
       }
     },
     "error": {
-      "codie_areas_or_unrestricted_required": "Pick at least one allowed area, or enable \"Unrestricted\"."
+      "codie_areas_or_unrestricted_required": "Pick at least one allowed area for actions, or enable \"Unrestricted actions\".",
+      "codie_queries_areas_or_unrestricted_required": "Pick at least one allowed area for queries, or enable \"Unrestricted queries\"."
     }
   },
   "entity": {
@@ -777,24 +782,15 @@
       "step": {
         "user": {
           "title": "Add a HASE-Agent Satellite",
-          "description": "Experimental. A voice assistant that tries its own spellbook first, then falls back to a real character conversation on this CODE27 device for anything that doesn't match. Reply correlation with the CODE27 device has not been verified against concurrent physical chat use on it - avoid relying on this for anything where a wrong or delayed reply would matter.",
+          "description": "A voice assistant that hands everything it hears straight to the character on this CODE27 device. The character answers - and with the device's own tools (firmware 1.6.0+) it can switch things itself. No spellbook or areas here: the agent and the area limits are set in the CODE27 options.",
           "data": {
             "name": "Name",
             "spellbooker_profile_id": "Character slot",
-            "spellbooker_book": "Spellbook",
-            "spellbooker_allowed_areas": "Allowed areas (actions)",
-            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
-            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
-            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
-            "spellbooker_no_match_response": "No-match response"
+            "spellbooker_pass_area": "Pass the area of the speaking device to Codie"
           },
           "data_description": {
             "spellbooker_profile_id": "The character slot number on this device to talk to (the same number shown in its own character-slot selector).",
-            "spellbooker_allowed_areas": "Which areas this assistant may act in - applies to the local spellbook AND to anything the CODE27 backend proposes. Ignored if \"Unrestricted actions\" is on.",
-            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
-            "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
-            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in.",
-            "spellbooker_no_match_response": "Unused while a book is selected below - a local non-match always goes to this device's own character instead."
+            "spellbooker_pass_area": "On (default): the sentence reaches Codie with the Home Assistant area of the device that spoke it, e.g. \"[Area: Kitchen] turn on the light\", so \"the light\" means that room. The prefix also shows in the chat history."
           }
         },
         "reconfigure": {
@@ -802,20 +798,11 @@
           "data": {
             "name": "Name",
             "spellbooker_profile_id": "Character slot",
-            "spellbooker_book": "Spellbook",
-            "spellbooker_allowed_areas": "Allowed areas (actions)",
-            "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
-            "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
-            "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)",
-            "spellbooker_no_match_response": "No-match response"
+            "spellbooker_pass_area": "Pass the area of the speaking device to Codie"
           },
           "data_description": {
             "spellbooker_profile_id": "The character slot number on this device to talk to (the same number shown in its own character-slot selector).",
-            "spellbooker_allowed_areas": "Which areas this assistant may act in - applies to the local spellbook AND to anything the CODE27 backend proposes. Ignored if \"Unrestricted actions\" is on.",
-            "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
-            "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about. Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
-            "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in.",
-            "spellbooker_no_match_response": "Unused while a book is selected below - a local non-match always goes to this device's own character instead."
+            "spellbooker_pass_area": "On (default): the sentence reaches Codie with the Home Assistant area of the device that spoke it, e.g. \"[Area: Kitchen] turn on the light\", so \"the light\" means that room. The prefix also shows in the chat history."
           }
         }
       },

@@ -26,22 +26,18 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from ...const import (
     CONF_ENTRY_KIND,
     DOMAIN,
-    CONF_SPELLBOOKER_ALLOWED_AREAS,
-    CONF_SPELLBOOKER_BOOK,
-    CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
+    CONF_SPELLBOOKER_PASS_AREA,
     CONF_SPELLBOOKER_PROFILE_ID,
-    CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS,
-    CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
-    CONF_SPELLBOOKER_UNRESTRICTED,
     ENTRY_KIND_CODE27_DEVICE,
     ENTRY_KIND_CODE27_EXTERNAL_HUB,
     SUBENTRY_TYPE_MCP_BRIDGE,
 )
-from ...spellbook_loader import async_discover_spellbooks
 from .api import Code27Client, Code27ConnectionError, Code27Error
 from .const import (
     CONF_CODIE_AGENT,
     CONF_CODIE_ALLOWED_AREAS,
+    CONF_CODIE_QUERIES_ALLOWED_AREAS,
+    CONF_CODIE_QUERIES_UNRESTRICTED,
     CONF_CODIE_UNRESTRICTED,
     CONF_CODIE_TOOL_BRIDGE,
     CONF_LOCAL_SECRET,
@@ -58,20 +54,6 @@ from .const import (
 from .duplicate import find_existing_device_entry
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _no_local_book_label(hass) -> str:
-    """Label for the SATELLITE book selector's "no local spellbook"
-    choice - a SATELLITE may run with none at all, falling straight
-    through to its CODE27 backend for everything (see
-    conversation.py's _EMPTY_SATELLITE_BOOK). Same ad hoc
-    language check as Code27OptionsFlow's own none_label below,
-    rather than a strings.json key, since it's just this one label."""
-    return (
-        "— Kein lokales Spellbook —"
-        if (hass.config.language or "en").lower().startswith("de")
-        else "— No local spellbook —"
-    )
 
 
 STEP_DEVICE_SCHEMA = vol.Schema(
@@ -318,79 +300,28 @@ class SatelliteSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         errors: dict[str, str] = {}
-        book_choices = await async_discover_spellbooks(self.hass)
         is_reconfigure = self.source == "reconfigure"
         existing = self._get_reconfigure_subentry() if is_reconfigure else None
         existing_data = existing.data if existing is not None else {}
 
         if user_input is not None:
-            if not user_input.get(CONF_SPELLBOOKER_UNRESTRICTED) and not user_input.get(
-                CONF_SPELLBOOKER_ALLOWED_AREAS
-            ):
-                errors["base"] = "areas_or_unrestricted_required"
-            elif not user_input.get(
-                CONF_SPELLBOOKER_QUERIES_UNRESTRICTED
-            ) and not user_input.get(CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS):
-                errors["base"] = "queries_areas_or_unrestricted_required"
-            elif not user_input.get(CONF_SPELLBOOKER_PROFILE_ID, "").strip().isdigit():
+            if not user_input.get(CONF_SPELLBOOKER_PROFILE_ID, "").strip().isdigit():
                 errors["base"] = "invalid_profile_id"
             else:
+                # Only the character slot: the satellite hands every sentence
+                # to the character; switching is done by Codie's own tools
+                # (the CODE27 options hold the agent and the area limits).
                 data = {
-                    # "" (the "Keins" choice) means no local book at
-                    # all - every utterance falls straight through to
-                    # the CODE27 backend, see conversation.py's
-                    # _EMPTY_SATELLITE_BOOK.
-                    CONF_SPELLBOOKER_BOOK: user_input.get(CONF_SPELLBOOKER_BOOK) or "",
-                    CONF_SPELLBOOKER_PROFILE_ID: user_input[
-                        CONF_SPELLBOOKER_PROFILE_ID
-                    ].strip(),
-                    CONF_SPELLBOOKER_ALLOWED_AREAS: user_input.get(
-                        CONF_SPELLBOOKER_ALLOWED_AREAS, []
-                    ),
-                    CONF_SPELLBOOKER_UNRESTRICTED: user_input.get(
-                        CONF_SPELLBOOKER_UNRESTRICTED, False
-                    ),
-                    CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS: user_input.get(
-                        CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS, []
-                    ),
-                    CONF_SPELLBOOKER_QUERIES_UNRESTRICTED: user_input.get(
-                        CONF_SPELLBOOKER_QUERIES_UNRESTRICTED, False
-                    ),
-                    CONF_SPELLBOOKER_NO_MATCH_RESPONSE: user_input.get(
-                        CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""
-                    ),
+                    CONF_SPELLBOOKER_PROFILE_ID: user_input[CONF_SPELLBOOKER_PROFILE_ID].strip(),
+                    CONF_SPELLBOOKER_PASS_AREA: bool(user_input.get(CONF_SPELLBOOKER_PASS_AREA, True)),
                 }
                 if is_reconfigure:
-                    # NOT async_update_reload_and_abort: it raises if
-                    # the parent entry has ANY update_listener, and the
-                    # CODE27 device entry always has one (for its own
-                    # scan_interval-triggered reload) - see __init__.py.
-                    # That listener also detects a satellite subentry's
-                    # data/title changing and reloads the whole entry
-                    # for it, same "any change reloads" semantics as
-                    # every other spellbooker entry (conversation.py's
-                    # own note) - just via the entry's own listener
-                    # instead of this flow reloading directly.
-                    #
-                    # self._get_entry() is a ConfigSubentryFlow method
-                    # (works regardless of source, not reconfigure-only)
-                    # only from HA 2025.4.0 on - at 2025.3.0 (the first
-                    # release subentries existed at all) the SAME class
-                    # had a differently-named, reconfigure-only
-                    # _get_reconfigure_entry() instead, replaced the
-                    # very next release. Verified live against a real
-                    # HA instance, not just source inspection: an
-                    # earlier attempt to support 2025.3.0 by calling
-                    # _get_reconfigure_entry() crashed with
-                    # AttributeError on this integration's own actual
-                    # minimum-target version once deployed, because
-                    # THAT name belongs to the unrelated top-level
-                    # ConfigFlow class from 2025.4.0 onward, not
-                    # ConfigSubentryFlow. Supporting the single release
-                    # 2025.3.0 would need a version-shim for one method
-                    # rename on a two-month-old API surface - not worth
-                    # it. hacs.json's minimum is 2025.4.0, not 2025.3.0,
-                    # specifically because of this.
+                    # NOT async_update_reload_and_abort: it raises if the
+                    # parent entry has ANY update_listener, and the CODE27
+                    # device entry always has one - see __init__.py. That
+                    # listener also reloads the entry when a satellite
+                    # subentry changes. self._get_entry() needs HA 2025.4.0+
+                    # (hacs.json's minimum).
                     return self.async_update_and_abort(
                         self._get_entry(), existing, title=user_input["name"], data=data
                     )
@@ -406,52 +337,10 @@ class SatelliteSubentryFlow(ConfigSubentryFlow):
                     CONF_SPELLBOOKER_PROFILE_ID,
                     default=existing_data.get(CONF_SPELLBOOKER_PROFILE_ID, "1"),
                 ): str,
-                vol.Optional(
-                    CONF_SPELLBOOKER_BOOK,
-                    default=existing_data.get(CONF_SPELLBOOKER_BOOK, ""),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="", label=_no_local_book_label(self.hass)
-                            )
-                        ]
-                        + [
-                            selector.SelectOptionDict(value=book_id, label=name)
-                            for book_id, name in book_choices
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(
-                    CONF_SPELLBOOKER_ALLOWED_AREAS,
-                    default=existing_data.get(CONF_SPELLBOOKER_ALLOWED_AREAS, []),
-                ): selector.AreaSelector(selector.AreaSelectorConfig(multiple=True)),
                 vol.Required(
-                    CONF_SPELLBOOKER_UNRESTRICTED,
-                    default=existing_data.get(CONF_SPELLBOOKER_UNRESTRICTED, False),
+                    CONF_SPELLBOOKER_PASS_AREA,
+                    default=existing_data.get(CONF_SPELLBOOKER_PASS_AREA, True),
                 ): bool,
-                # Mirrors the actions fields whenever this satellite
-                # predates #11 - same reasoning as
-                # SpellbookerOptionsFlow above.
-                vol.Optional(
-                    CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS,
-                    default=existing_data.get(
-                        CONF_SPELLBOOKER_QUERIES_ALLOWED_AREAS,
-                        existing_data.get(CONF_SPELLBOOKER_ALLOWED_AREAS, []),
-                    ),
-                ): selector.AreaSelector(selector.AreaSelectorConfig(multiple=True)),
-                vol.Required(
-                    CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
-                    default=existing_data.get(
-                        CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
-                        existing_data.get(CONF_SPELLBOOKER_UNRESTRICTED, False),
-                    ),
-                ): bool,
-                vol.Optional(
-                    CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
-                    default=existing_data.get(CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""),
-                ): str,
             }
         )
         return self.async_show_form(
@@ -484,6 +373,10 @@ class Code27OptionsFlow(OptionsFlow):
         if user_input is not None:
             if not user_input.get(CONF_CODIE_UNRESTRICTED, True) and not user_input.get(CONF_CODIE_ALLOWED_AREAS):
                 errors["base"] = "codie_areas_or_unrestricted_required"
+            elif not user_input.get(CONF_CODIE_QUERIES_UNRESTRICTED, True) and not user_input.get(
+                CONF_CODIE_QUERIES_ALLOWED_AREAS
+            ):
+                errors["base"] = "codie_queries_areas_or_unrestricted_required"
             else:
                 return self.async_create_entry(data=user_input)
 
@@ -519,6 +412,14 @@ class Code27OptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_CODIE_ALLOWED_AREAS,
                     default=options.get(CONF_CODIE_ALLOWED_AREAS, []),
+                ): selector.AreaSelector(selector.AreaSelectorConfig(multiple=True)),
+                vol.Required(
+                    CONF_CODIE_QUERIES_UNRESTRICTED,
+                    default=options.get(CONF_CODIE_QUERIES_UNRESTRICTED, True),
+                ): bool,
+                vol.Optional(
+                    CONF_CODIE_QUERIES_ALLOWED_AREAS,
+                    default=options.get(CONF_CODIE_QUERIES_ALLOWED_AREAS, []),
                 ): selector.AreaSelector(selector.AreaSelectorConfig(multiple=True)),
                 vol.Required(
                     CONF_REMOTE_RECOVERY_ENABLED,

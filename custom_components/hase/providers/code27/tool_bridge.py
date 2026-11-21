@@ -21,6 +21,7 @@ from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from ...const import CODIE_AREA_LIMITS_KEY, DOMAIN
 from ..mcp.credentials import BridgeIdentity
@@ -28,6 +29,8 @@ from ..mcp.local_dispatch import async_cast_spell, async_list_spells
 from .const import (
     CONF_CODIE_AGENT,
     CONF_CODIE_ALLOWED_AREAS,
+    CONF_CODIE_QUERIES_ALLOWED_AREAS,
+    CONF_CODIE_QUERIES_UNRESTRICTED,
     CONF_CODIE_TOOL_BRIDGE,
     CONF_CODIE_UNRESTRICTED,
     CONF_MACHINE_ID,
@@ -45,13 +48,14 @@ class HaToolDispatcher:
         entry_id: str,
         identity: BridgeIdentity | None,
         agent_id: str | None,
-        area_limit: frozenset[str] | None = None,
+        area_limit: tuple[frozenset[str] | None, frozenset[str] | None] | None = None,
     ) -> None:
         self._hass = hass
         self._identity = identity
         self._entry_id = entry_id
         self._agent_id = agent_id
-        self._area_limit = area_limit  # None = no limit beyond the agent's own
+        # (actions, queries), each None = no limit beyond the agent's/Bridge's own
+        self._area_limit = area_limit
         self._conversation_id = f"codie-{entry_id}"
         if agent_id:  # only an agent adds the home_command tool
             self.async_home_command = self._async_home_command
@@ -59,12 +63,12 @@ class HaToolDispatcher:
     async def async_list_spells(self) -> list[dict[str, Any]]:
         if self._identity is None:
             return []
-        return await async_list_spells(self._hass, self._identity)
+        return await async_list_spells(self._hass, self._identity, self._area_limit)
 
     async def async_cast_spell(self, spell_id: str, arguments: dict[str, Any]) -> tuple[bool, str]:
         if self._identity is None:
             return False, "spells_unavailable"
-        return await async_cast_spell(self._hass, self._identity, spell_id, arguments)
+        return await async_cast_spell(self._hass, self._identity, spell_id, arguments, self._area_limit)
 
     def _device_id(self) -> str | None:
         """HA device id of this CODE27: its HA area is the sentence's
@@ -101,11 +105,21 @@ class HaToolDispatcher:
                 device_id=device_id,
             )
 
+    def _agent_is_own_satellite(self) -> bool:
+        """A satellite of this very device hands its sentences back to Codie;
+        as the home_command target it would loop (Codie -> satellite -> Codie)."""
+        entity = er.async_get(self._hass).async_get(self._agent_id) if self._agent_id else None
+        return entity is not None and entity.config_entry_id == self._entry_id
+
     async def _async_home_command(self, text: str) -> tuple[bool, str]:
         """One sentence -> agent. A stable conversation id per device lets a
         clarification question be answered by the next call."""
         try:
-            result = await self._converse(text, self._agent_id, self._conversation_id)
+            if self._agent_is_own_satellite():
+                # Ordinary Assist answers instead of looping back into Codie.
+                result = await self._converse(text, None, None)
+            else:
+                result = await self._converse(text, self._agent_id, self._conversation_id)
             response = getattr(result, "response", None)
             if str(getattr(response, "error_code", "") or "").endswith("no_intent_match"):
                 # The Spellbook has no trigger for this sentence: ordinary
@@ -133,16 +147,26 @@ def _identity_from_option(raw: Any) -> BridgeIdentity | None:
     return BridgeIdentity(entry_id=entry_id, subentry_id=subentry_id)
 
 
+def _limit(options: Any, unrestricted_key: str, areas_key: str) -> frozenset[str] | None:
+    if options.get(unrestricted_key, True):
+        return None
+    return frozenset(options.get(areas_key) or [])  # nothing selected = no area at all
+
+
+def _area_limit_from(options: Any) -> tuple[frozenset[str] | None, frozenset[str] | None] | None:
+    """Device options -> (actions limit, queries limit); None = no limit at all."""
+    actions = _limit(options, CONF_CODIE_UNRESTRICTED, CONF_CODIE_ALLOWED_AREAS)
+    queries = _limit(options, CONF_CODIE_QUERIES_UNRESTRICTED, CONF_CODIE_QUERIES_ALLOWED_AREAS)
+    return None if actions is None and queries is None else (actions, queries)
+
+
 def dispatcher_from_options(hass: HomeAssistant, entry_id: str, options: Any) -> HaToolDispatcher | None:
     """Device options -> dispatcher; neither option set -> None (tools off)."""
     identity = _identity_from_option(options.get(CONF_CODIE_TOOL_BRIDGE))
     agent_id = options.get(CONF_CODIE_AGENT) or None
     if identity is None and agent_id is None:
         return None
-    limit = None
-    if not options.get(CONF_CODIE_UNRESTRICTED, True):
-        limit = frozenset(options.get(CONF_CODIE_ALLOWED_AREAS) or [])  # empty = no area at all
-    return HaToolDispatcher(hass, entry_id, identity, agent_id, limit)
+    return HaToolDispatcher(hass, entry_id, identity, agent_id, _area_limit_from(options))
 
 
 async def async_setup_tool_bridge(hass: HomeAssistant, entry: ConfigEntry, coordinator) -> None:
@@ -154,6 +178,8 @@ async def async_setup_tool_bridge(hass: HomeAssistant, entry: ConfigEntry, coord
             source.options.get(CONF_CODIE_AGENT) or "",
             bool(source.options.get(CONF_CODIE_UNRESTRICTED, True)),
             tuple(sorted(source.options.get(CONF_CODIE_ALLOWED_AREAS) or [])),
+            bool(source.options.get(CONF_CODIE_QUERIES_UNRESTRICTED, True)),
+            tuple(sorted(source.options.get(CONF_CODIE_QUERIES_ALLOWED_AREAS) or [])),
         )
 
     applied = _state(entry)

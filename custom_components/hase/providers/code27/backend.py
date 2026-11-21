@@ -68,10 +68,21 @@ def _lock_for_device(entry_id: str) -> asyncio.Lock:
 
 
 class Code27ConversationBackend:
-    def __init__(self, hass: "HomeAssistant", coordinator: "Code27Coordinator") -> None:
+    def __init__(
+        self, hass: "HomeAssistant", coordinator: "Code27Coordinator", source_area: str | None = None
+    ) -> None:
         self._hass = hass
         self._coordinator = coordinator
+        self._source_area = source_area
         self._lock = _lock_for_device(coordinator.entry.entry_id)
+
+    def _with_area(self, text: str, language: str) -> str:
+        """Tell the character where the speaker is (the area of the HA device
+        the sentence came from); none known = the sentence unchanged."""
+        if not self._source_area:
+            return text
+        label = "Bereich" if (language or "").lower().startswith("de") else "Area"
+        return f"[{label}: {self._source_area}] {text}"
 
     async def converse(self, text: str, language: str, scope: ConversationScope) -> BackendResult:
         from homeassistant.core import callback
@@ -118,7 +129,9 @@ class Code27ConversationBackend:
                 coordinator_module.EVENT_ASSISTANT_MESSAGE, _on_assistant_message
             )
             try:
-                await self._coordinator.async_send_chat_reply(text, target_slot)
+                await self._coordinator.async_send_chat_reply(
+                    self._with_area(text, language), target_slot
+                )
                 try:
                     await asyncio.wait_for(got_reply.wait(), timeout=_REPLY_TIMEOUT_SECONDS)
                 except asyncio.TimeoutError:

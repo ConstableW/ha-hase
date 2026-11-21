@@ -31,6 +31,8 @@ CONF_CODIE_AGENT = "codie_agent"
 # Area limit for Codie's sentences (HASE-side): unrestricted, or only these areas.
 CONF_CODIE_ALLOWED_AREAS = "codie_allowed_areas"
 CONF_CODIE_UNRESTRICTED = "codie_unrestricted"
+CONF_CODIE_QUERIES_ALLOWED_AREAS = "codie_queries_allowed_areas"
+CONF_CODIE_QUERIES_UNRESTRICTED = "codie_queries_unrestricted"
 
 MUSIC_SOURCE_LOCAL_TF = "LOCAL_TF"
 
