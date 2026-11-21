@@ -359,7 +359,6 @@ coordinator_module = load_source(
     merge_music_inventory=code27_music.merge_music_inventory,
     usable_music_storage=code27_music.usable_music_storage,
     sync_music_mode_recovery_issue=lambda *args, **kwargs: None,
-    sync_music_chat_conflict_issue=lambda *args, **kwargs: None,
 )
 # Import the HA-independent core normally; only HA boundaries are adapted.
 import importlib
@@ -436,16 +435,13 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("1", self.c._chat_seen[1])
         self.assertNotIn((1, "1"), self.c._own_chat_ids)
 
-    async def test_music_mode_chat_conflict_issue_is_once_and_clears_on_mode_change(self):
+    async def test_chat_while_music_page_is_open_is_a_normal_message(self):
+        """Firmware 1.6.0 chats in music mode (and with the display off), so a
+        new user message then is no sign of an out-of-sync mode any more."""
         self.c.data.music_page = {"is_open": True}
         await self.poll([])
-        with patch.object(coordinator_module, "sync_music_chat_conflict_issue") as sync:
-            await self.poll(self.messages("new-1"))
-            await self.poll(self.messages("new-1", "new-2"))
-            sync.assert_called_once_with(self.hass, entry_id="device-a", suspected=True)
-            self.c._handle_ws_music_page({"is_open": False})
-            self.assertEqual(sync.call_count, 2)
-            self.assertEqual(sync.call_args.kwargs["suspected"], False)
+        await self.poll(self.messages("new-1"))
+        self.assertEqual([e[0] for e in self.events], ["hase_user_message"])
 
     async def test_switch_and_return_do_not_replay_inactive_history(self):
         await self.poll(self.messages("a-old"))

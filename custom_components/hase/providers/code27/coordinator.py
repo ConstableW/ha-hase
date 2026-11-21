@@ -41,7 +41,7 @@ from .const import (
     LIGHT_EFFECT_TO_TYPE,
 )
 from .music import merge_music_inventory, usable_music_storage
-from .repairs import sync_music_chat_conflict_issue, sync_music_mode_recovery_issue
+from .repairs import sync_music_mode_recovery_issue
 from .websocket_client import Code27WebSocket
 
 _LOGGER = logging.getLogger(__name__)
@@ -142,7 +142,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         self.stopping = False
         self._own_chat_ids: set[tuple[int, str]] = set()
         self._own_chat_ids_at: dict[tuple[int, str], float] = {}
-        self._music_chat_conflict = False
         # Each entry: (slot, text, deadline). Expiry is reconciled against
         # history first; an outage must not turn our output into a command.
         self._pending_chat_replies: list[tuple[int, str, float]] = []
@@ -558,8 +557,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
                 if (self._music_revisions.get(field, 0) != revisions.get(field, 0)
                         or self._music_is_older(incoming, current)):
                     setattr(snapshot, field, current)
-        if snapshot.music_page.get("is_open") is False:
-            self._clear_music_chat_conflict()
         return snapshot
 
     @staticmethod
@@ -607,8 +604,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         if data == current or self._music_is_older(data, current):
             return
         setattr(self.data, field, data)
-        if field == "music_page" and data.get("is_open") is False:
-            self._clear_music_chat_conflict()
         self._music_revisions[field] = self._music_revisions.get(field, 0) + 1
         # A partial push neither reschedules the full poll nor repairs its
         # error state (alarms/memos/system may still be unreachable).
@@ -822,20 +817,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
 
     # -- realtime-ish: fast, dedicated chat polling ---------------------------
 
-    def _clear_music_chat_conflict(self) -> None:
-        if self._music_chat_conflict:
-            self._music_chat_conflict = False
-            sync_music_chat_conflict_issue(
-                self.hass, entry_id=self.entry.entry_id, suspected=False
-            )
-
-    def _note_music_chat_conflict(self) -> None:
-        if not self._music_chat_conflict:
-            self._music_chat_conflict = True
-            sync_music_chat_conflict_issue(
-                self.hass, entry_id=self.entry.entry_id, suspected=True
-            )
-
     def _purge_chat_dedupe(self) -> None:
         """Bound both ID sets without a timer; insertion order is oldest first."""
         cutoff = time.monotonic() - _CHAT_DEDUPE_TTL_SEC
@@ -969,9 +950,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
                         own = True
                     if baseline or own:
                         continue
-                    if (message.get("role") == "user"
-                            and self.data.music_page.get("is_open") is True):
-                        self._note_music_chat_conflict()
                     event_type = {
                         "user": EVENT_USER_MESSAGE,
                         "assistant": EVENT_ASSISTANT_MESSAGE,

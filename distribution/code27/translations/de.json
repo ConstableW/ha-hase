@@ -3,10 +3,6 @@
     "code27_music_mode_recovery": {
       "title": "CODE27-Musikmodus nach Neustart eventuell nicht synchron",
       "description": "Dieses Gerät hat sich gerade von \"nicht verfügbar\" erholt und sofort gemeldet, dass die Musikseite offen ist. Das hat sich live nach einem Geräte-Neustart als unzuverlässig erwiesen - vermutlich ein CODE27-Firmware-Problem, das Home Assistant nicht selbst lösen kann.\n\nWechsle am Gerät selbst einmal in den Musikmodus und wieder zurück, um eine echte Synchronisierung zu erzwingen - danach verschwindet dieser Hinweis von selbst."
-    },
-    "code27_music_chat_conflict": {
-      "title": "CODE27-Modus widerspricht der Chat-Aktivität",
-      "description": "CODE27 meldet Musikmodus, obwohl eine neue Benutzer-Nachricht im Chat beobachtet wurde. Der gemeldete Modus ist möglicherweise nicht synchron. Wähle den gewünschten Modus am Gerät erneut aus. Der Hinweis verschwindet, sobald CODE27 meldet, dass die Musikseite geschlossen ist."
     }
   },
   "config": {

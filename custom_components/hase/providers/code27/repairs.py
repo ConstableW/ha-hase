@@ -40,18 +40,3 @@ def sync_music_mode_recovery_issue(hass, *, entry_id: str, suspected: bool) -> N
         )
     else:
         ir.async_delete_issue(hass, DOMAIN, issue_id)
-
-
-def sync_music_chat_conflict_issue(hass, *, entry_id: str, suspected: bool) -> None:
-    """Surface observed chat activity conflicting with the reported mode."""
-    from homeassistant.helpers import issue_registry as ir
-
-    issue_id = f"code27_music_chat_conflict_{entry_id}"
-    if suspected:
-        ir.async_create_issue(
-            hass, DOMAIN, issue_id, is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key="code27_music_chat_conflict",
-        )
-    else:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)

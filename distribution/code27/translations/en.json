@@ -3,10 +3,6 @@
     "code27_music_mode_recovery": {
       "title": "CODE27 music mode may be out of sync after a reboot",
       "description": "This device just recovered from being unavailable and immediately reported its music page as open. This has been seen live to be unreliable right after a device reboot - a suspected CODE27 firmware issue, not something Home Assistant can resolve on its own.\n\nOn the device itself, switch into music mode and back once to force a real resync, then this issue clears on its own."
-    },
-    "code27_music_chat_conflict": {
-      "title": "CODE27 mode conflicts with chat activity",
-      "description": "CODE27 reports Music Mode, but a new user chat message was observed. Its reported mode may be out of sync. Select the intended mode again on the device; this issue clears when CODE27 reports that the music page is closed."
     }
   },
   "config": {
