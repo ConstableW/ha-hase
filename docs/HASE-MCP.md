@@ -189,7 +189,7 @@ the Bridge's own settings. Reconfiguring an existing Bridge (the gear icon)
 shows the same form pre-filled, plus a **"Neues Token erzeugen"** checkbox
 that immediately invalidates the old token when checked.
 
-A real, now-fixed bug from a live testing session on `testzwerg`
+A real, now-fixed bug from a live testing session on a test instance
 (2026-09-16): two `AreaSelector`
 fields placed immediately adjacent in this form's own field order caused a
 selection meant for one field to be silently written into the *other* one
@@ -265,7 +265,7 @@ Streamable HTTP (`mcp.server.lowlevel.Server`, `stateless_http=True` —
 `providers/mcp/transport.py`), protocol version `2025-06-18`. Every method
 below is real and verified against `tests/_mcp_protocol_check.py` (a real
 network round-trip via the official `mcp` Python SDK) and, where noted, a
-live call against `testzwerg`.
+live call against a test instance.
 
 **Session behavior**: `stateless_http=True` means no server-side client
 session is persisted across requests. `BridgeRuntimeSupervisor` nevertheless
@@ -595,7 +595,7 @@ The two enforcement points that actually decide whether a call is allowed:
   is denied `assist_redirect` calls outright, before Assist is ever asked
   — `DENIED: assist_redirect_requires_unrestricted_policy`. This is not
   automatically disqualifying for a Bridge that legitimately needs it
-  (the live-tested `testzwerg` Bridges used exactly this), but it does mean
+  (the live-tested Bridges used exactly this), but it does mean
   an unrestricted policy is a real, broad grant — restrict a Bridge's
   policy whenever its Spellbook has no `assist_redirect` Spells that need
   it.
@@ -651,14 +651,14 @@ identity and generation come from the current verifier binding.
 | Expected tool missing from `tools/list` | The Spell is skipped (`ProjectionSkip`) for this Bridge, or its `spell_id` collides with another command in the book | Run Spellbook Studio's "MCP prüfen" (section 3) for the exact reason; a duplicate `spell_id` is never exposed to *any* Bridge, not just this one |
 | `DENIED: <reason>` from `tools/call` | A real, server-side policy refusal — not a bug | Match `<reason>` against section 6 (`AreaPolicy` scope, `assist_redirect_requires_unrestricted_policy`, expert-tier gating) |
 | `FAILED: <reason>` | The Spell ran but did not complete (e.g. `assist_error` — Assist itself reported an error) | Check Home Assistant's own conversation-agent logs for the underlying cause; HASE only relays Assist's own outcome (section 5) |
-| SSE connection aborts mid-`initialize` (`HTTP 200`, `text/event-stream`, then no message, connection closed) | **Not root-caused.** Seen once, live, against `testzwerg` (2026-09-16), reproduced independently via `curl` and via a Chrome `fetch()` call, ruling out a client-specific bug | A full Home Assistant restart made a fresh `initialize` call succeed immediately afterward — but this is **not confirmed as the actual fix**; the underlying trigger (hypothesized: transient server-side state after repeated credential-index rebuilds) was never proven. If this recurs, capture Home Assistant's own log around the failing request before restarting, so the real cause has a chance of being found |
+| SSE connection aborts mid-`initialize` (`HTTP 200`, `text/event-stream`, then no message, connection closed) | **Not root-caused.** Seen once, live, against a test instance (2026-09-16), reproduced independently via `curl` and via a Chrome `fetch()` call, ruling out a client-specific bug | A full Home Assistant restart made a fresh `initialize` call succeed immediately afterward — but this is **not confirmed as the actual fix**; the underlying trigger (hypothesized: transient server-side state after repeated credential-index rebuilds) was never proven. If this recurs, capture Home Assistant's own log around the failing request before restarting, so the real cause has a chance of being found |
 
 ### Live findings vs. the automated test suite
 
 Everything in the "Automated tests" list below runs against mocked Home
 Assistant calls, per this repository's own rule that no automated test
 ever performs a real device action. Two calls in this document's own
-history are different: they were made against the real, live `testzwerg`
+history are different: they were made against a real, live test instance
 instance, by the user, with a real physical outcome, and are recorded here
 precisely because they are **not** reproducible by re-running the test
 suite:

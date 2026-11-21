@@ -10,4 +10,4 @@ All five implemented execution forms reach the same router: actions, single-oper
 
 Matching prefers more specific triggers and supports aliases. If two near-equal candidates would produce opposite outcomes, HASE asks for clarification rather than guessing. Conversation and clarification state is in memory and does not survive a restart.
 
-CODE27's Assist Bridge is a separate provider feature: it detects codewords or Spellbook phrases in CODE27 chat and can forward them to Assist. See [CODE27](providers/code27.md).
+On firmware 1.6.0+, Codie's own model hands your sentences to a HASE Spellbooker (with Assist as fallback) through the `home_command` tool. See [CODE27](providers/code27.md).

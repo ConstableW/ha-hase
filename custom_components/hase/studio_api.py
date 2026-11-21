@@ -62,7 +62,7 @@ async def studio_command(hass, connection, msg):
         connection.send_result(msg["id"], result)
 
 
-CARDS_VERSION = "0.3.0"
+CARDS_VERSION = "2.0.1"
 
 
 async def async_setup_studio(hass):

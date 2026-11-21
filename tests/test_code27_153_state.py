@@ -8,58 +8,42 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 api = support.api
-bridge = support.bridge
 PROVIDER = Path(__file__).resolve().parents[1] / "custom_components" / "hase" / "providers" / "code27"
 
 
 class UtteranceSpeechTests(unittest.IsolatedAsyncioTestCase):
     setUp = support.DeliveryTests.setUp
 
-    def _speak(self, **kwargs):
-        self.activity = []
-        patcher = patch.object(
-            bridge, "_log_activity", lambda hass, entry, message, entity_id=None: self.activity.append(message)
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return bridge.async_speak_text(self.hass, self.entry, self.c, "Hallo", "sensor.test", **kwargs)
+    def _speech(self):
+        return support.load_source("speech", Code27Error=api.Code27Error)
 
-    async def test_utterance_is_followed_to_completion(self):
-        self.client.speak_text = AsyncMock(return_value={"utterance_id": "u1", "state": "queued"})
-        self.client.get_utterance = AsyncMock(side_effect=[{"state": "playing"}, {"state": "completed"}])
-        self.client.tts_audition = AsyncMock()
-        with patch.object(bridge, "_TTS_POLL_INTERVAL", 0):
-            await self._speak()
-        self.client.speak_text.assert_awaited_once_with("Hallo", 1)
-        self.client.tts_audition.assert_not_awaited()
-        self.assertIn(bridge._msg(self.hass, "tts_ok"), self.activity)
-        self.assertEqual(self.c.data.last_tts_message["content"], "Hallo")
-
-    async def test_failed_utterance_is_reported(self):
-        self.client.speak_text = AsyncMock(return_value={"utterance_id": "u1", "state": "queued"})
-        self.client.get_utterance = AsyncMock(return_value={"state": "failed"})
-        with patch.object(bridge, "_TTS_POLL_INTERVAL", 0):
-            await self._speak()
-        self.assertIn(bridge._msg(self.hass, "tts_failed"), self.activity)
-
-    async def test_start_error_is_reported_without_fallback(self):
+    async def test_start_error_is_logged_without_fallback(self):
         self.client.speak_text = AsyncMock(side_effect=api.Code27Error("blocked"))
         self.client.tts_audition = AsyncMock()
-        await self._speak()
+        self.c.client = self.client
+        self.c.stopping = False
+        with self.assertLogs("code27_test_speech", level="WARNING"):
+            await self._speech().async_speak_text(self.hass, self.entry, self.c, "Hallo")
         self.client.tts_audition.assert_not_awaited()
-        self.assertTrue(any("blocked" in m for m in self.activity))
 
-    async def test_old_firmware_falls_back_to_preview_endpoint(self):
+    async def test_utterance_is_followed_until_completed(self):
+        self.client.speak_text = AsyncMock(return_value={"utterance_id": "u1", "state": "queued"})
+        self.client.get_utterance = AsyncMock(return_value={"state": "completed"})
+        self.c.client = self.client
+        self.c.stopping = False
+        await self._speech().async_speak_text(self.hass, self.entry, self.c, "Hallo")
+        self.client.get_utterance.assert_awaited_once_with("u1")
+        self.assertEqual(self.c.data.last_tts_message["content"], "Hallo")
+
+    async def test_older_firmware_without_endpoint_stays_silent(self):
         self.client.speak_text = AsyncMock(return_value=None)
-        self.client.tts_audition = AsyncMock()
-        self.client.get_tts_audition_state = AsyncMock(return_value={"state": "ENDED"})
-        self.c.data.character_slots = [{"slot_number": 1, "voice_id": "v", "group_key": "g"}]
-        with patch.object(bridge, "_TTS_POLL_INTERVAL", 0):
-            await self._speak()
-        self.client.tts_audition.assert_awaited_once_with("v", "Hallo", "g")
+        self.c.client = self.client
+        self.c.stopping = False
+        await self._speech().async_speak_text(self.hass, self.entry, self.c, "Hallo")
+        self.assertEqual(self.c.data.last_tts_message, {})
 
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
@@ -73,12 +57,10 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((body["slot"], body["text"]), (2, "hi"))
         self.assertEqual(len(body["request_id"]), 36)
 
-    async def test_speak_text_is_none_and_remembered_before_1_5_3(self):
+    async def test_speak_text_is_none_without_endpoint(self):
         client = api.Code27Client(None, "device", 8081)
         client._call = AsyncMock(side_effect=api.Code27NotFoundError("404"))
         self.assertIsNone(await client.speak_text("hi"))
-        self.assertIsNone(await client.speak_text("again"))
-        self.assertEqual(client._call.await_count, 1)
 
     async def test_state_reads_are_empty_before_1_5_3(self):
         client = api.Code27Client(None, "device", 8081)
@@ -184,7 +166,6 @@ class OutfitLinkTests(unittest.IsolatedAsyncioTestCase):
         # Ella's link "1:2" means the factory outfit 2 of slot 1.
         client = api.Code27Client(None, "device", 8081)
         client.list_character_settings = AsyncMock(return_value=self.CHARS)
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[])
         client.get_original_portraits_manifest = AsyncMock(
             return_value=[{"slot_number": 1, "cloth_id": 2, "filename": "1_2.png"}]
         )
@@ -198,7 +179,6 @@ class OutfitLinkTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unlinked_custom_outfit_still_uses_its_own_thumbnail(self):
         client = api.Code27Client(None, "device", 8081)
         client.list_character_settings = AsyncMock(return_value=self.CHARS)
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[])
         client._call_binary = AsyncMock(return_value=("image/png", b"custom"))
         self.assertEqual(await client.get_character_portrait(1, 2), ("image/png", b"custom"))
         client._call_binary.assert_awaited_once_with(
@@ -208,7 +188,6 @@ class OutfitLinkTests(unittest.IsolatedAsyncioTestCase):
     async def test_portrait_still_works_when_the_character_list_cannot_be_read(self):
         client = api.Code27Client(None, "device", 8081)
         client.list_character_settings = AsyncMock(side_effect=api.Code27Error("down"))
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[])
         client.get_original_portraits_manifest = AsyncMock(return_value=[])
         client._call_binary = AsyncMock(return_value=("image/png", b"png"))
         self.assertEqual(await client.get_character_portrait(2, 2), ("image/png", b"png"))

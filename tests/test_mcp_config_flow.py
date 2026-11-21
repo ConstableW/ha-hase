@@ -1,6 +1,6 @@
 """HASE MCP architecture, Phase 3: MCP Server/Bridge config flow tests.
 
-Loaded via test_bridge_delivery's load_source (AST-stripped of
+Loaded via test_harness_support's load_source (AST-stripped of
 homeassistant/relative imports) with small fakes standing in for the
 ConfigFlow/ConfigSubentryFlow base classes and the selector helpers -
 mirrors test_satellite_subentry_flow.py's own harness closely, since
@@ -17,7 +17,7 @@ import unittest
 from itertools import pairwise
 from pathlib import Path
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 N = support.N
 constants = support.constants

@@ -4,7 +4,7 @@ Per-word fuzzy matching and full consumption now exercise core/matching.py.
 """
 import unittest
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 spellbook = support.matching
 

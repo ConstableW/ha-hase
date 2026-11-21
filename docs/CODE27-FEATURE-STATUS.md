@@ -41,7 +41,7 @@ PAKET-1-UMSETZUNG.md).
 | Option | Standard | Bedeutung |
 |---|---|---|
 | Polling-Intervall | 15s | Haupt-Poll-Zyklus |
-| Assist-Bridge + Unteroptionen | aus | Codeword, Spellbook, TTS, Entity-Korrektur, KI-Aufräumen, Vacuum-Freigabe - unverändert seit vor diesem Feature-Zyklus |
+| Konversations-Agent für Codies Sätze / Codie-Tool-Bridge | leer (keine Tools) | Firmware ≥ 1.6.0: Codies Modell ruft `home_command`, `spell_cast`, `spell_list`. Die frühere Assist-Bridge (Codewort, Chat-Mitlesen, Bereinigung) ist entfernt. |
 | **LAN-IP-Recovery über die Cloud** | **aus** | Neu in Phase 8. Nennt `codie-remote.prod.code27.co` explizit in der Beschreibung. |
 
 ## Entitäten (neu seit Paket 1, nach Plattform)

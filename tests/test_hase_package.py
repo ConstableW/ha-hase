@@ -110,7 +110,6 @@ class HasePackageTests(unittest.TestCase):
             self.assertEqual(keys(strings), keys(translation))
         card = (ROOT / "custom_components/hase/cards/code27-card.js").read_text(encoding="utf-8")
         self.assertIn('this._call(owner.domain, "send_chat_message"', card)
-        self.assertIn('data.domain !== "hase"', card)
 
     def test_resource_inventory_not_empty_after_move(self):
         # demo.yaml is the only spellbook guaranteed to ship (thematic books

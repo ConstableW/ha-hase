@@ -139,24 +139,6 @@ class Code27Client:
         self.machine_id = machine_id
         self._last_recovery_attempt: float | None = None
         self.clock_skew_s: float | None = None
-        # Endpoint families this device has proven to only speak the
-        # pre-1.5.3 dialect for (see `_new_or_legacy`).
-        self._legacy: set[str] = set()
-
-    async def _new_or_legacy(self, key: str, new, legacy):
-        """Try the 1.5.3 endpoint, fall back to the pre-1.5.3 one on 404/405.
-
-        A family is only remembered as legacy once the legacy call itself
-        succeeded, so a 404 caused by e.g. an unknown resource id cannot
-        permanently demote a device that does speak the new API."""
-        if key in self._legacy:
-            return await legacy()
-        try:
-            return await new()
-        except Code27NotFoundError:
-            result = await legacy()
-            self._legacy.add(key)
-            return result
 
     @property
     def base_url(self) -> str:
@@ -360,18 +342,10 @@ class Code27Client:
         await self._set_alarm_enabled(alarm_id, False)
 
     async def _set_alarm_enabled(self, alarm_id: str, enabled: bool) -> None:
-        # 1.5.3: PATCH /alarm/{id} {"enabled": bool}; earlier firmware had
-        # dedicated /enable and /disable POSTs.
-        async def new() -> None:
-            await self._call(
-                "PATCH", f"/data/user/alarm/{alarm_id}", body={"enabled": enabled}
-            )
-
-        async def legacy() -> None:
-            verb = "enable" if enabled else "disable"
-            await self._call("POST", f"/data/user/alarm/{alarm_id}/{verb}")
-
-        await self._new_or_legacy("alarm_toggle", new, legacy)
+        # PATCH /alarm/{id} {"enabled": bool}
+        await self._call(
+            "PATCH", f"/data/user/alarm/{alarm_id}", body={"enabled": enabled}
+        )
 
     # -- memos (notes & reminders) ------------------------------------------
 
@@ -512,32 +486,13 @@ class Code27Client:
         return (await self._call("GET", f"/data/user/slot?scope={scope}")).get("data", {})
 
     async def update_selected_slot(self, slot_number: int, scope: str = "chat") -> None:
-        # 1.5.3 takes only the slot number; earlier firmware also wanted a scope.
-        try:
-            await self._call("PUT", "/data/user/slot", body={"slot_number": slot_number})
-        except (Code27AuthError, Code27ConnectionError, Code27SlotMismatchError):
-            raise
-        except Code27Error:
-            await self._call(
-                "PUT", "/data/user/slot", body={"slot_number": slot_number, "scope": scope}
-            )
+        await self._call("PUT", "/data/user/slot", body={"slot_number": slot_number})
 
     # -- portraits -------------------------------------------------------------
     # Custom-cloth thumbnail (rendered VRM portrait) first, falling back to the
     # device-wide stock portrait, exactly the resolution order confirmed live
     # against a real device (see the audit's "Portrait-Picker" findings) -
     # not every slot/cloth combination has either.
-
-    async def get_cloth_uploaded_models(self) -> list[dict[str, Any]]:
-        """Custom-cloth filenames keyed by slot/cloth-id, straight from the
-        device instead of having to parse a character's `custom_cloths` CSV
-        string ourselves."""
-        try:
-            return (await self._call("GET", "/data/user/cloth/uploaded-models")).get(
-                "data", {}
-            ).get("models", [])
-        except Code27NotFoundError:
-            return []  # gone in 1.5.3; custom thumbnails can't be resolved there
 
     async def get_original_portraits_manifest(self) -> list[dict[str, Any]]:
         """Which stock slot/cloth combinations have a bundled portrait at
@@ -607,11 +562,10 @@ class Code27Client:
         requested = (slot_number, cloth_id)
         slot_number, cloth_id = self._resolve_outfit_link(characters, slot_number, cloth_id)
         linked = (slot_number, cloth_id) != requested
-        models = [] if linked else await self.get_cloth_uploaded_models()
-        if not models and not linked:
-            # 1.5.3 dropped the uploaded-models endpoint; the same filenames
-            # are in the slot's `custom_cloths`: one line per cloth id
-            # (line 1 = cloth 1), empty where the cloth is a stock one.
+        models: list[dict[str, Any]] = []
+        if not linked:
+            # The filenames are in the slot's `custom_cloths`: one line per
+            # cloth id (line 1 = cloth 1), empty where the cloth is a stock one.
             for character in characters:
                 if character.get("slot_number") == slot_number:
                     lines = str(character.get("custom_cloths") or "").split("\n")
@@ -661,11 +615,10 @@ class Code27Client:
         return None
 
     # -- chat ------------------------------------------------------------------
-    # Firmware 1.5.3 reworked this whole family: history is paged
-    # (`{items, next_cursor, has_more}`) and `/history/latest`, `/history/count`,
-    # `/chat/text` and `/chat/image-text` are gone - messages are now sent as
-    # "chat turns". Every method below tries the 1.5.3 endpoint first and falls
-    # back to the older one (see `_new_or_legacy`).
+    # History is paged (`{items, next_cursor, has_more}`) and messages are sent
+    # as "chat turns"; `/history/latest`, `/history/count`, `/chat/text` and
+    # `/chat/image-text` no longer exist (firmware >= 1.5.3; only >= 1.6.0 is
+    # supported).
 
     _TURN_TERMINAL_STATES = {"completed", "failed", "cancelled"}
 
@@ -695,8 +648,6 @@ class Code27Client:
         data = (
             await self._call("GET", f"/data/user/chat/history?{urlencode(params)}")
         ).get("data", {})
-        if isinstance(data, list):  # pre-1.5.3 dialect answered on this path
-            return data, None, False
         items = data.get("items") or []
         if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
             raise Code27Error("invalid_response: expected object list")
@@ -719,20 +670,10 @@ class Code27Client:
             return []
         latest_date = max(dates)
 
-        async def new() -> list[dict[str, Any]]:
-            items, _, _ = await self._history_page(
-                slot, date=latest_date, limit=min(max(limit, 1), 100)
-            )
-            return items
-
-        async def legacy() -> list[dict[str, Any]]:
-            result = await self._call(
-                "GET",
-                f"/data/user/chat/history/latest?date={latest_date}&slot={slot}&limit={limit}",
-            )
-            return result.get("data", [])
-
-        return await self._new_or_legacy("history_latest", new, legacy)
+        items, _, _ = await self._history_page(
+            slot, date=latest_date, limit=min(max(limit, 1), 100)
+        )
+        return items
 
     async def get_chat_history_snapshot(
         self, slot: int, since_date: str | None = None, after_chat_id: str | None = None
@@ -756,40 +697,55 @@ class Code27Client:
         return dates[-1], self._by_time(messages)
 
     async def _history_day(self, slot: int, date: str) -> list[dict[str, Any]]:
-        async def new() -> list[dict[str, Any]]:
-            out: list[dict[str, Any]] = []
-            cursor: str | None = None
-            for _ in range(100):  # hard cap: 10k turns on one day is not real
-                items, cursor, more = await self._history_page(
-                    slot, date=date, limit=100, cursor=cursor, direction="newer"
-                )
-                out.extend(items)
-                if not more or not cursor:
-                    break
-            return out
-
-        async def legacy() -> list[dict[str, Any]]:
-            result = await self._call(
-                "GET", f"/data/user/chat/history?date={date}&slot={slot}"
+        out: list[dict[str, Any]] = []
+        cursor: str | None = None
+        for _ in range(100):  # hard cap: 10k turns on one day is not real
+            items, cursor, more = await self._history_page(
+                slot, date=date, limit=100, cursor=cursor, direction="newer"
             )
-            return result.get("data", [])
-
-        return await self._new_or_legacy("history_day", new, legacy)
+            out.extend(items)
+            if not more or not cursor:
+                break
+        return out
 
     # -- chat turns (1.5.3) -----------------------------------------------------
 
     async def create_chat_turn(
-        self, text: str, slot: int = 1, speech: str = "device"
+        self,
+        text: str,
+        slot: int = 1,
+        speech: str = "device",
+        *,
+        interrupt: bool | None = None,
+        retention: str | None = None,
+        tools: str | None = None,
     ) -> dict[str, Any]:
         """Start a text turn. ``speech="device"`` lets the character speak the
         reply (completed then also means playback finished); ``"none"`` only
-        generates it. 202 means accepted - poll `get_chat_turn`."""
+        generates it. 202 means accepted - poll `get_chat_turn`.
+
+        1.6.0: ``interrupt=False`` fails with DEVICE_BUSY instead of ending a
+        running session; ``retention`` ("full"/"chat"/"none") decides what the
+        turn leaves behind; ``tools="none"`` keeps the model from calling
+        device or external tools (e.g. the Spell gateway) for this turn."""
         body = {
             "request_id": str(uuid.uuid4()),
             "slot": slot,
             "input": {"type": "text", "text": text},
             "output": {"speech": speech},
         }
+        # 1.6.0 options; omitted = device defaults (interrupt=true,
+        # retention="full", tools="all").
+        if interrupt is not None:
+            body["interrupt"] = bool(interrupt)
+        if retention is not None:
+            if retention not in {"full", "chat", "none"}:
+                raise ValueError("retention must be full, chat or none")
+            body["retention"] = retention
+        if tools is not None:
+            if tools not in {"all", "none"}:
+                raise ValueError("tools must be all or none")
+            body["tools"] = tools
         return (await self._call("POST", "/data/user/chat/turns", body=body)).get("data", {})
 
     async def get_chat_turn(self, turn_id: str) -> dict[str, Any]:
@@ -825,23 +781,11 @@ class Code27Client:
     ) -> str | None:
         """Write a user message into a slot's chat; the device reacts to it
         exactly like to a spoken one. Returns the message's ``chat_id`` when
-        known. (``language`` only applies to the pre-1.5.3 endpoint - turns
-        use the device's AI language.)"""
+        known. (``language`` is ignored - turns use the device's AI language.)"""
 
-        async def new() -> str | None:
-            turn = await self.create_chat_turn(text, slot)
-            ids = await self._turn_user_chat_ids(turn)
-            return ids[0] if ids else None
-
-        async def legacy() -> str | None:
-            body: dict[str, Any] = {"text": text, "slot": slot}
-            if language:
-                body["language"] = language
-            result = await self._call("POST", "/data/user/chat/text", body=body)
-            chat_id = result.get("chat_id")
-            return str(chat_id) if chat_id is not None else None
-
-        return await self._new_or_legacy("chat_send", new, legacy)
+        turn = await self.create_chat_turn(text, slot)
+        ids = await self._turn_user_chat_ids(turn)
+        return ids[0] if ids else None
 
     async def get_chat_history_count(self) -> list[dict[str, Any]]:
         """Every slot's latest message at once: `[{slot, messages: [...]}...]`
@@ -853,23 +797,17 @@ class Code27Client:
         1.5.3 has no all-slot endpoint any more, so this reads the newest
         turn of each slot (up to five small requests)."""
 
-        async def new() -> list[dict[str, Any]]:
-            async def one(slot: int) -> dict[str, Any] | None:
-                try:
-                    items, _, _ = await self._history_page(slot, limit=1)
-                except Code27NotFoundError:
-                    raise
-                except Code27Error:
-                    return None  # an empty/unused slot must not fail the poll
-                return {"slot": slot, "messages": self._by_time(items)}
+        async def one(slot: int) -> dict[str, Any] | None:
+            try:
+                items, _, _ = await self._history_page(slot, limit=1)
+            except Code27NotFoundError:
+                raise
+            except Code27Error:
+                return None  # an empty/unused slot must not fail the poll
+            return {"slot": slot, "messages": self._by_time(items)}
 
-            results = await asyncio.gather(*(one(s) for s in range(1, 6)))
-            return [r for r in results if r is not None]
-
-        async def legacy() -> list[dict[str, Any]]:
-            return (await self._call("GET", "/data/user/chat/history/count")).get("data", [])
-
-        return await self._new_or_legacy("history_count", new, legacy)
+        results = await asyncio.gather(*(one(s) for s in range(1, 6)))
+        return [r for r in results if r is not None]
 
     async def get_chat_history_slot_count(self, slot: int) -> int:
         return int(
@@ -936,42 +874,22 @@ class Code27Client:
                 f"{self._MAX_CHAT_IMAGE_BYTES} bytes (1MB)"
             )
 
-        async def new() -> tuple[str | None, str | None]:
-            request: dict[str, Any] = {
-                "request_id": str(uuid.uuid4()),
-                "slot": slot,
-                "input": {"type": "image_text"},
-                "output": {"speech": "device"},
-            }
-            if text:
-                request["input"]["text"] = text
-            result = await self._call_multipart(
-                "POST",
-                "/data/user/chat/turns",
-                fields={"request": json.dumps(request, separators=(",", ":"))},
-                files=[("image", image, filename, content_type)],
-            )
-            ids = await self._turn_user_chat_ids(result.get("data") or {})
-            return (ids[0] if ids else None, ids[1] if len(ids) > 1 else None)
-
-        async def legacy() -> tuple[str | None, str | None]:
-            fields = {"text": text, "slot": str(slot)}
-            if language:
-                fields["language"] = language
-            result = await self._call_multipart(
-                "POST",
-                "/data/user/chat/image-text",
-                fields=fields,
-                files=[("image", image, filename, content_type)],
-            )
-            chat_id = result.get("chat_id")
-            image_chat_id = result.get("image_chat_id")
-            return (
-                str(chat_id) if chat_id is not None else None,
-                str(image_chat_id) if image_chat_id is not None else None,
-            )
-
-        return await self._new_or_legacy("chat_image", new, legacy)
+        request: dict[str, Any] = {
+            "request_id": str(uuid.uuid4()),
+            "slot": slot,
+            "input": {"type": "image_text"},
+            "output": {"speech": "device"},
+        }
+        if text:
+            request["input"]["text"] = text
+        result = await self._call_multipart(
+            "POST",
+            "/data/user/chat/turns",
+            fields={"request": json.dumps(request, separators=(",", ":"))},
+            files=[("image", image, filename, content_type)],
+        )
+        ids = await self._turn_user_chat_ids(result.get("data") or {})
+        return (ids[0] if ids else None, ids[1] if len(ids) > 1 else None)
 
     async def get_chat_image(self, uuid: str) -> tuple[str, bytes]:
         """Fetch a previously sent/received chat image by its `content`
@@ -1150,13 +1068,7 @@ class Code27Client:
 
     async def _sound_control(self, action: str) -> None:
         # 1.5.3: POST /sound/control {"action": "play"|"stop"}.
-        async def new() -> None:
-            await self._call("POST", "/data/user/sound/control", body={"action": action})
-
-        async def legacy() -> None:
-            await self._call("POST", f"/data/user/sound/{action}")
-
-        await self._new_or_legacy("sound", new, legacy)
+        await self._call("POST", "/data/user/sound/control", body={"action": action})
 
     # -- device / conversation state, speech (1.5.3) ----------------------------
 
@@ -1168,6 +1080,36 @@ class Code27Client:
             return (await self._call("GET", "/data/user/device/state")).get("data", {})
         except Code27NotFoundError:
             return {}
+
+    # -- device brightness / screen / mode (1.6.0) -------------------------------
+
+    async def get_device_brightness(self) -> dict[str, Any]:
+        """``level`` (0-100 or None) and ``writable``. Empty on firmware < 1.6.0."""
+        try:
+            return (await self._call("GET", "/data/user/device/brightness")).get("data", {})
+        except Code27NotFoundError:
+            return {}
+
+    async def set_device_brightness(self, level: int) -> dict[str, Any]:
+        level = max(0, min(100, int(level)))
+        return await self._call("PUT", "/data/user/device/brightness", body={"level": level})
+
+    async def get_device_screen(self) -> dict[str, Any]:
+        """``on`` (bool/None), ``channels`` and ``command_sent``. Empty on firmware < 1.6.0."""
+        try:
+            return (await self._call("GET", "/data/user/device/screen")).get("data", {})
+        except Code27NotFoundError:
+            return {}
+
+    async def set_device_screen(self, on: bool) -> dict[str, Any]:
+        return await self._call("PUT", "/data/user/device/screen", body={"on": bool(on)})
+
+    async def set_device_mode(self, game_mode: str) -> dict[str, Any]:
+        """``game_mode`` is ``LIVE`` or ``MUSIC`` (1.6.0)."""
+        mode = str(game_mode).upper()
+        if mode not in {"LIVE", "MUSIC"}:
+            raise ValueError("game_mode must be LIVE or MUSIC")
+        return await self._call("PUT", "/data/user/device/mode", body={"game_mode": mode})
 
     async def get_conversation_state(self) -> dict[str, Any]:
         """``state`` (e.g. Idle / Thinking) and ``updated_at_ms``. Empty on
@@ -1192,14 +1134,11 @@ class Code27Client:
         """Let the current character read a fixed text aloud - no LLM call,
         no chat history; the device uses the character's own voice. Returns
         the accepted utterance (poll `get_utterance`), or ``None`` on
-        firmware older than 1.5.3, which has no such endpoint."""
-        if "tts" in self._legacy:
-            return None
+        firmware without such an endpoint."""
         body = {"request_id": str(uuid.uuid4()), "slot": slot, "text": text}
         try:
             result = await self._call("POST", "/data/user/tts/utterances", body=body)
         except Code27NotFoundError:
-            self._legacy.add("tts")
             return None
         return result.get("data", {})
 
@@ -1217,8 +1156,10 @@ class Code27Client:
 
     # -- realtime (WebSocket) ---------------------------------------------
 
-    async def build_ws_url(self) -> str:
-        """A freshly-signed URL for the device's push-update WebSocket.
+    async def build_ws_url(self, path: str = "/v1/ws/channel") -> str:
+        """A freshly-signed URL for one of the device's WebSockets
+        (default: the push-update channel; 1.6.0 adds the tool executor
+        channel ``/v1/ws/tool-integrations/{id}/executor``).
 
         Same HMAC scheme as REST calls, just passed as query parameters
         since a WebSocket handshake can't carry custom headers - exactly how
@@ -1227,7 +1168,6 @@ class Code27Client:
         if not self.local_secret or not self.user_id:
             raise Code27AuthError("not_paired")
 
-        path = "/v1/ws/channel"
         timestamp = str(int(time.time()))
         nonce = _nonce()
         body_hash = _sha256_hex("")
@@ -1578,8 +1518,7 @@ class Code27Client:
         list_paths = {
             "/data/user/character/list", "/data/user/alarm/list", "/data/user/memos",
             "/data/user/light-projects", "/data/user/chat/history",
-            "/data/user/chat/history/latest", "/data/user/chat/history/dates",
-            "/data/user/chat/history/count",
+            "/data/user/chat/history/dates",
         }
         expect_list = method == "GET" and path in list_paths
         if not isinstance(value, list if expect_list else dict):

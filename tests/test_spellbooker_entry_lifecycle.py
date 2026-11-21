@@ -5,7 +5,7 @@ working exactly as before. Both directions are covered.
 """
 import unittest
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 N = support.N
 constants = support.constants
@@ -18,7 +18,7 @@ VOL = N(
 FAKE_PLATFORM = N(
     **{
         v.upper(): v
-        for v in ["binary_sensor", "button", "image", "light", "media_player", "select",
+        for v in ["binary_sensor", "button", "image", "light", "media_player", "number", "select",
                    "sensor", "switch", "todo", "conversation"]
     }
 )

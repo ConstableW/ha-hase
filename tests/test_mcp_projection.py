@@ -2,7 +2,7 @@
 
 core/mcp_projection.py has zero Home Assistant imports (same boundary rule
 as the rest of core/), so it is loaded exactly like core.spellbook_engine/
-core.models already are elsewhere in this suite - see test_bridge_delivery.
+core.models already are elsewhere in this suite - see test_harness_support.
 py's own `hase_spellbook_core` package alias, reproduced here standalone so
 this file has no dependency on test collection order.
 """

@@ -9,7 +9,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 HASE = ROOT / "custom_components" / "hase"
@@ -106,7 +106,6 @@ class ExternalBindingTests(unittest.IsolatedAsyncioTestCase):
             subscribe_updates=lambda callback: (lambda: None),
             subscribe_chat=lambda callback: chats.append(callback) or (lambda: chats.remove(callback)),
             send_chat_reply=AsyncMock(return_value="chat-1"),
-            cleanup_assist_exchange=AsyncMock(return_value=[]),
             speak_text=AsyncMock(), trigger_notification=AsyncMock(),
             acknowledge_notification=AsyncMock(),
         )
@@ -140,6 +139,31 @@ class ExternalBindingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0][1]["config_entry_id"], "hase-binding")
         await binding.async_stop()
         self.assertFalse(chats)
+
+    async def test_tool_dispatcher_is_handed_to_a_hub_that_supports_it(self):
+        binding, _, hub, _, _, _ = self.make_binding()
+        hub.set_tool_dispatcher = AsyncMock()
+        binding.entry.options = {"codie_tool_bridge": "e:s"}
+        sentinel = object()
+        modules = {
+            "split_hase.providers": types.ModuleType("split_hase.providers"),
+            "split_hase.providers.code27": types.ModuleType("split_hase.providers.code27"),
+            "split_hase.providers.code27.tool_bridge": types.SimpleNamespace(
+                dispatcher_from_options=lambda hass, entry_id, options: sentinel if options.get("codie_tool_bridge") == "e:s" else None
+            ),
+        }
+        with patch.dict(sys.modules, modules):
+            await binding.async_start()
+            hub.set_tool_dispatcher.assert_awaited_once_with(sentinel)
+            await binding.async_stop()
+        self.assertIsNone(hub.set_tool_dispatcher.await_args_list[-1].args[0])
+
+    async def test_hub_without_tool_support_still_binds(self):
+        binding, _, hub, _, _, _ = self.make_binding()
+        self.assertFalse(hasattr(hub, "set_tool_dispatcher"))
+        await binding.async_start()
+        self.assertEqual(binding.reason, "bound")
+        await binding.async_stop()
 
     async def test_chat_from_executor_uses_thread_safe_event_bus(self):
         binding, _, _, _, chats, events = self.make_binding()

@@ -6,15 +6,12 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import test_bridge_delivery as support
+import test_harness_support as support
 import yaml
 
 engine = support.engine
 models = support.models
 executor = importlib.import_module('hase_spellbook_core.executor')
-support.bridge.response_text_for_failure = executor.response_text_for_failure
-support.bridge.response_text_for_success = executor.response_text_for_success
-support.bridge.record_execution = lambda *args, **kwargs: None
 N = types.SimpleNamespace
 ROOT = support.ROOT
 
@@ -145,10 +142,6 @@ class RealTargetExecutionTests(unittest.IsolatedAsyncioTestCase):
             ResolvedTargets=executor.ResolvedTargets, TargetNotFound=executor.TargetNotFound,
             VacuumCleanOutcome=executor.VacuumCleanOutcome,
             ServiceCallOutcome=executor.ServiceCallOutcome)
-        self.frontend = support.load_source('frontend', ActionExecutor=executor.ActionExecutor,
-            ActionDraft=models.ActionDraft, AreaPolicy=models.AreaPolicy,
-            ScopedAreaPolicy=models.ScopedAreaPolicy, ExecutionResult=models.ExecutionResult,
-            HaTargetResolver=self.ha.HaTargetResolver, HaServiceCaller=self.ha.HaServiceCaller)
 
     @staticmethod
     def _service_targets(call):
@@ -157,22 +150,6 @@ class RealTargetExecutionTests(unittest.IsolatedAsyncioTestCase):
         target = call.kwargs.get('target') or {}
         return target.get('entity_id') or call.args[2]['entity_id']
 
-    async def test_real_adapter_all_allowed_on_off_and_scoped_satellite(self):
-        book = enabled_demo()
-        for text, on in [('alle lichter an',True),('alle lichter aus',False)]:
-            neutral = engine.find_command(book,text,'de')
-            typed = engine.match(book,text,'de')
-            self.assertEqual(neutral.action_draft,typed.action_draft)
-            result = await self.frontend.Code27FrontendAdapter(self.hass).execute(neutral.action_draft)
-            self.assertEqual(result.status, models.ExecutionStatus.SUCCESS)
-            call = self.hass.services.async_call.call_args
-            self.assertEqual(call.args[:2], ('light', 'turn_on' if on else 'turn_off'))
-            self.assertEqual(set(self._service_targets(call)), {'light.a','light.b','light.c'})
-            restricted = models.AreaPolicy(frozenset({'kitchen'}))
-            result = await executor.ActionExecutor(self.ha.HaTargetResolver(self.hass),self.ha.HaServiceCaller(self.hass)).execute(
-                typed.action_draft, models.ScopedAreaPolicy(restricted,restricted))
-            self.assertEqual(result.status,models.ExecutionStatus.SUCCESS)
-            self.assertEqual(set(self._service_targets(self.hass.services.async_call.call_args)),{'light.a','light.b'})
 
     async def test_named_forbidden_target_is_denied(self):
         restricted = models.AreaPolicy(frozenset({'kitchen'}))
@@ -182,190 +159,5 @@ class RealTargetExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status,models.ExecutionStatus.DENIED)
         self.hass.services.async_call.assert_not_awaited()
 
-    async def test_query_plan_respects_the_same_exposure_and_area_policy_as_actions(self):
-        # CODE27's new query_plan dispatch (providers/code27/bridge.py's
-        # _handle_typed_query, providers/code27/frontend.py's
-        # Code27FrontendAdapter.execute_query_plan) reuses the exact same
-        # ActionExecutor.execute_query_plan/TargetResolver/AreaPolicy
-        # machinery real actions already go through above - proven here
-        # against the SAME real entity/area registries and the SAME
-        # already-established {light.a, light.b, light.c} exposed/
-        # resolvable set (light.private/disabled/hidden/unavailable/group
-        # never counted, exactly as test_real_adapter_all_allowed_on_off_
-        # and_scoped_satellite already proves for actions).
-        plan = models.QueryPlan(
-            sources=(models.QuerySourceSpec(kind='count', target=models.ActionTarget('all_allowed'), domain_filter='light', variable='n'),),
-            response_template='{n}',
-        )
-        adapter = self.frontend.Code27FrontendAdapter(self.hass)
-        result = await adapter.execute_query_plan(plan)
-        self.assertEqual(result.status, models.ExecutionStatus.QUERY_ANSWER)
-        self.assertEqual(result.data['response_text'], '3')
-
-        # Same query, but through a RESTRICTED policy (mirroring what a
-        # real Bridge/Satellite would enforce, even though CODE27 itself
-        # always uses the unrestricted owner policy) - kitchen-only
-        # excludes light.c (office), proving AreaPolicy is genuinely
-        # consulted for this path, not bypassed.
-        restricted = models.AreaPolicy(frozenset({'kitchen'}))
-        restricted_result = await executor.ActionExecutor(
-            self.ha.HaTargetResolver(self.hass), self.ha.HaServiceCaller(self.hass),
-        ).execute_query_plan(plan, models.ScopedAreaPolicy(restricted, restricted))
-        self.assertEqual(restricted_result.status, models.ExecutionStatus.QUERY_ANSWER)
-        self.assertEqual(restricted_result.data['response_text'], '2')
 
 
-class UnifiedBridgeTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        support.DeliveryTests.setUp(self)
-        # A real Home Assistant ConfigEntry always exposes .data.
-        # DeliveryTests' lightweight SimpleNamespace fixture predates that contract.
-        self.entry.data = {}
-    def book(self, commands):
-        return engine.load_spellbook_from_dict('test',{'name':'Test','commands':commands})
-
-    async def run_spell(self, book, text, result):
-        self.entry.options['bridge_spellbook'] = 'test'
-        adapter = N(execute=AsyncMock(return_value=result))
-        with patch.object(support.loader,'async_get_spellbook',AsyncMock(return_value=book)), \
-             patch.object(support.bridge,'Code27FrontendAdapter',return_value=adapter,create=True), \
-             patch.object(support.bridge,'_forward_to_assist',AsyncMock(return_value=(None,None,''))) as assist, \
-             patch.object(support.bridge,'_output_speech',AsyncMock()), \
-             patch.object(support.bridge,'_log_activity'):
-            await support.bridge._handle_bridge_message(self.hass,self.entry,self.c,text,None)
-        return adapter, assist
-
-    async def test_output_only_reaches_assist_via_code27_bridge_and_satellite_alike(self):
-        # Was: "...but not Satellite" - the real gap this session's live
-        # voice trace found and fixed (docs/HASE-MCP.md's own "Text-only
-        # Spells and assist_redirect" section). CODE27's own chat Bridge
-        # (asserted below, unchanged) and core.router.SpellbookRouter's
-        # native Satellite/SPELLBOOK_ONLY matching now both reach this
-        # execution kind - see test_router.py's own
-        # VoiceReachesEveryExecutionKindTests for the router-side proof.
-        book = self.book([{'trigger':'evening','output':'Activate evening mood'}])
-        adapter,assist = await self.run_spell(book,'evening',None)
-        adapter.execute.assert_not_awaited()
-        self.assertEqual(assist.call_args.args[3],'Activate evening mood')
-        satellite_match = engine.match(book,'evening')
-        self.assertIsInstance(satellite_match, models.EngineMatch)
-        self.assertIsNone(satellite_match.action_draft)
-        self.assertEqual(satellite_match.command.output, 'Activate evening mood')
-
-    async def test_typed_plus_output_success_failure_and_unsupported_never_forward(self):
-        book = self.book([{'trigger':'lumos','operation':'light.set_power','target':{'kind':'all_allowed'},
-                           'arguments':{'on':True},'output':'Never send me','catchphrase':'Lumos.'}])
-        for status in [models.ExecutionStatus.SUCCESS,models.ExecutionStatus.FAILED,models.ExecutionStatus.UNSUPPORTED]:
-            adapter,assist = await self.run_spell(book,'lumos',models.ExecutionResult(status,'test'))
-            adapter.execute.assert_awaited_once_with(engine.match(book,'lumos').action_draft, source_area_id=None)
-            assist.assert_not_awaited()
-
-    async def test_typed_ambiguity_choice_keeps_typed_intent(self):
-        commands = [{'trigger':trigger,'operation':'light.set_power','target':{'kind':'all_allowed'},
-                     'arguments':{'on':on},'output':output} for trigger,on,output in
-                    [('activate lamps',True,'lights on'),('deactivate lamps',False,'lights off')]]
-        book = self.book(commands)
-        a = engine.find_command(book,'activate lamps')
-        b = engine.find_command(book,'deactivate lamps')
-        with patch.object(support.bridge,'_output_speech',AsyncMock()), patch.object(support.bridge,'_log_activity'):
-            await support.bridge._begin_spell_choice_correction(self.hass,self.entry,self.c,engine.CommandAmbiguity(a,b),None)
-        self.assertIsInstance(self.c.pending_correction.spell_option_a[0],models.ActionDraft)
-        with patch.object(support.bridge,'_handle_typed_action',AsyncMock()) as typed, \
-             patch.object(support.bridge,'_forward_to_assist',AsyncMock()) as assist, \
-             patch.object(support.bridge,'_log_activity'):
-            await support.bridge._consume_spell_choice_reply(self.hass,self.entry,self.c,self.c.pending_correction,'lights on',None)
-        typed.assert_awaited_once()
-        assist.assert_not_awaited()
-
-
-    async def test_typed_entity_correction_retries_draft_without_assist(self):
-        self.entry.options['bridge_entity_correction_enabled'] = True
-        draft = models.ActionDraft('light.set_power', models.ActionTarget('area_name','Kithen'), {'on':True}, 'Lumos.')
-        adapter = N(execute=AsyncMock(side_effect=[
-            models.ExecutionResult(models.ExecutionStatus.INVALID,'target_not_found'),
-            models.ExecutionResult(models.ExecutionStatus.SUCCESS,'ok'),
-        ]))
-        with patch.object(support.bridge,'Code27FrontendAdapter',return_value=adapter,create=True), \
-             patch.object(support.spellbook,'find_correction_candidate',return_value=('Kitchen',0.9)), \
-             patch.object(support.spellbook,'verify_named_candidate',return_value=('Kitchen',1.0)), \
-             patch.object(support.bridge,'_output_speech',AsyncMock()), \
-             patch.object(support.bridge,'_log_activity'), \
-             patch.object(support.bridge,'_forward_to_assist',AsyncMock()) as assist:
-            await support.bridge._handle_typed_action(self.hass,self.entry,self.c,draft,None)
-            pending = self.c.pending_correction
-            self.assertEqual(pending.typed_draft,draft)
-            await support.bridge._retry_with_candidate(self.hass,self.entry,self.c,pending,'Kitchen',None)
-        self.assertIsNone(self.c.pending_correction)
-        self.assertEqual(adapter.execute.await_args_list[1].args[0],
-                         models.ActionDraft('light.set_power',models.ActionTarget('area_name','Kitchen'),{'on':True},'Lumos.'))
-        assist.assert_not_awaited()
-
-    async def test_light_all_percentage_dim_reports_on_not_off(self):
-        # Regression: light.set_power's percentage variant (the Wizard's
-        # "Licht dimmen" action) targeting all_allowed used to always
-        # speak "aus" (off), because draft.arguments.get("on") is None
-        # for a percentage-based draft - see _handle_typed_action's
-        # light_all branch. The real HA call was always correct; only
-        # the spoken confirmation lied.
-        draft = models.ActionDraft('light.set_power', models.ActionTarget('all_allowed'), {'percentage': 30})
-        adapter = N(execute=AsyncMock(return_value=models.ExecutionResult(models.ExecutionStatus.SUCCESS, 'ok')))
-        with patch.object(support.bridge, 'Code27FrontendAdapter', return_value=adapter, create=True), \
-             patch.object(support.bridge, '_output_speech', AsyncMock()) as speak, \
-             patch.object(support.bridge, '_log_activity'):
-            await support.bridge._handle_typed_action(self.hass, self.entry, self.c, draft, None)
-        self.assertIn('an', speak.call_args.args[3])
-        self.assertNotIn('aus', speak.call_args.args[3])
-
-    async def test_light_all_percentage_zero_reports_off(self):
-        draft = models.ActionDraft('light.set_power', models.ActionTarget('all_allowed'), {'percentage': 0})
-        adapter = N(execute=AsyncMock(return_value=models.ExecutionResult(models.ExecutionStatus.SUCCESS, 'ok')))
-        with patch.object(support.bridge, 'Code27FrontendAdapter', return_value=adapter, create=True), \
-             patch.object(support.bridge, '_output_speech', AsyncMock()) as speak, \
-             patch.object(support.bridge, '_log_activity'):
-            await support.bridge._handle_typed_action(self.hass, self.entry, self.c, draft, None)
-        self.assertIn('aus', speak.call_args.args[3])
-
-    async def test_canonical_vacuum_uses_generic_execution_and_frontend_toggle(self):
-        book = enabled_demo()
-        for lang, text in (('de', 'reinige Gondor'), ('en', 'clean Gondor')):
-            self.hass.config.language = lang
-            self.entry.options['bridge_vacuum_enabled'] = True
-            adapter,assist = await self.run_spell(book,text,
-                                                 models.ExecutionResult(models.ExecutionStatus.SUCCESS,'ok'))
-            adapter.execute.assert_awaited_once_with(engine.match(book,text,lang).action_draft, source_area_id=None)
-            assist.assert_not_awaited()
-            self.entry.options['bridge_vacuum_enabled'] = False
-            adapter,assist = await self.run_spell(book,text,None)
-            adapter.execute.assert_not_awaited()
-            assist.assert_not_awaited()
-
-    def test_neutral_ambiguity_includes_output_and_mixed_commands(self):
-        for typed in [False, True]:
-            commands = [
-                {'trigger':'aktiviere licht {area}','output':'Licht {area} an'},
-                {'trigger':'deaktiviere licht {area}','output':'Licht {area} aus'},
-            ]
-            if typed:
-                commands[0].update(operation='light.set_power', target={'kind':'area_name','capture':'area'}, arguments={'on':True})
-            found = engine.find_command(self.book(commands),'daktiviere licht Buero','de')
-            self.assertIsInstance(found,engine.CommandAmbiguity)
-            self.assertNotEqual(found.option_a.spoken_trigger,found.option_b.spoken_trigger)
-
-
-    async def test_canonical_output_only_bridge_localization(self):
-        book = enabled_demo()
-        for lang, text, forwarded, catchphrase in [
-            ('de', 'die sonne geht auf über Gondor', 'Licht Gondor auf 100 Prozent stellen', 'Der neue Tag beginnt.'),
-            ('en', 'the sun rises over Gondor', 'Set the light in Gondor to 100 percent', 'A new day begins.'),
-        ]:
-            self.hass.config.language = lang
-            adapter, assist = await self.run_spell(book, text, None)
-            adapter.execute.assert_not_awaited()
-            self.assertEqual(assist.call_args.args[3], forwarded, lang)
-            self.assertEqual(assist.call_args.kwargs['catchphrase'], catchphrase, lang)
-            # core.router.SpellbookRouter reaches this same Spell via native
-            # Satellite/SPELLBOOK_ONLY matching too.
-            satellite_match = engine.match(book, text, lang)
-            self.assertIsInstance(satellite_match, models.EngineMatch)
-            self.assertIsNone(satellite_match.action_draft)
-            self.assertEqual(satellite_match.command.spell_id, 'sunrise')

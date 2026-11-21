@@ -111,7 +111,7 @@ grundsätzlich nicht – dieselbe Grenze wie bei HAs eigenem Assist-Frontend.
 
 ## Capability-gesteuerte Aktionsliste im Wizard
 
-Live-Test gegen testzwerg deckte auf: der Wizard bot in Schritt „Aktion“
+Live-Test gegen eine Test-Instanz deckte auf: der Wizard bot in Schritt „Aktion“
 (vor der Zielauswahl) uneingeschränkt alle Aktionen an, unabhängig vom
 später gewählten Gerät – ein Licht sah z. B. „Öffnen“/„Schließen“ (Cover).
 Behoben, vollständig aus Backend-Metadaten abgeleitet, kein hartkodiertes

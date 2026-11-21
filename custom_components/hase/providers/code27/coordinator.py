@@ -26,7 +26,6 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from ...const import DOMAIN
-from ...core.models import ActionDraft
 from .api import (
     Code27AuthError,
     Code27Client,
@@ -111,45 +110,9 @@ class Code27Data:
     # Both stay empty on older firmware.
     device_state: dict[str, Any] = field(default_factory=dict)
     conversation_state: dict[str, Any] = field(default_factory=dict)
+    # 1.6.0 GET device/brightness: {"level": 0-100|None, "writable": bool}
+    device_brightness: dict[str, Any] = field(default_factory=dict)
     poll_errors: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class PendingCorrection:
-    """An open "Meintest du...?" entity-correction dialog for this
-    device's Assist bridge (see bridge.py). Lives only in memory on the
-    coordinator - lost on reload/restart, which is fine, a stale
-    multi-turn dialog shouldn't survive that anyway. At most one open
-    dialog per device at a time."""
-
-    original_command: str
-    failed_phrase: str
-    tried_candidates: list[str] = field(default_factory=list)
-    last_suggested: str | None = None
-    catchphrase: str | None = None
-    include_areas: bool = False
-    entity_id: str | None = None
-    slot: int | None = None
-    language: str | None = None
-    created_at: float = field(default_factory=time.monotonic)
-    # Set instead of the fields above when this dialog is a spellbook
-    # "which one did you mean" choice (see bridge.py's
-    # _begin_spell_choice_correction) rather than an entity/area name
-    # correction - each is (resolved_command, catchphrase, trigger_text).
-    spell_wording_a: str | None = None
-    spell_wording_b: str | None = None
-    typed_draft: ActionDraft | None = None
-    spell_option_a: tuple[ActionDraft | str, str | None, str] | None = None
-    spell_option_b: tuple[ActionDraft | str, str | None, str] | None = None
-
-    def is_expired(self, timeout_seconds: float) -> bool:
-        return time.monotonic() - self.created_at > timeout_seconds
-
-    def touch(self) -> None:
-        """Reset the idle timer - called on every reply the dialog
-        actually consumes, even one that didn't resolve to a candidate,
-        since replying at all means the user is still engaged."""
-        self.created_at = time.monotonic()
 
 
 class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
@@ -166,14 +129,12 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         )
         self.entry = entry
         self.client = client
-        self.pending_correction: PendingCorrection | None = None
         self._chat_seen: dict[int, set[str]] = {}
         self._chat_seen_at: dict[tuple[int, str], float] = {}
         self._chat_dates: dict[int, str | None] = {}
         self._chat_last_ids: dict[int, str | None] = {}
         self._chat_active_slot: int | None = None
         self._chat_lock = asyncio.Lock()
-        self.bridge_lock = asyncio.Lock()
         self._notification_lock = asyncio.Lock()
         self._music_revisions: dict[str, int] = {}
         self._owned_tasks: set[asyncio.Task] = set()
@@ -195,6 +156,8 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         self._startup_cleanup_done: bool = False
         self._poll_values: dict[str, Any] = {}
         self._websocket: Code27WebSocket | None = None
+        self._tool_executor: Any = None
+        self._events_ws: Code27WebSocket | None = None
         self._chat_poll_unsub: Any = None
 
         # Notification ("Hinweis") state: CODE27 has no concept of this
@@ -300,6 +263,7 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
             self._poll_proactive_config(),
             self._poll_optional_state("get_device_state"),
             self._poll_optional_state("get_conversation_state"),
+            self._poll_optional_state("get_device_brightness"),
             self._poll_music_storage(),
             return_exceptions=True,
         )
@@ -336,7 +300,7 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
             "music_audio_route", "bluetooth_state", "light_master_switch",
             "light_projects", "applied_light_project", "alarms", "memos",
             "character_slots", "current_slot", "history_counts", "proactive_config",
-            "device_state", "conversation_state", "music_storage",
+            "device_state", "conversation_state", "device_brightness", "music_storage",
         )
         lists = {"light_projects", "alarms", "memos", "character_slots", "history_counts"}
         merged, errors = [], {}
@@ -502,6 +466,7 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
             proactive_config,
             device_state,
             conversation_state,
+            device_brightness,
             polled_music_storage,
         ) = results
 
@@ -582,6 +547,7 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
             proactive_config=proactive_config if isinstance(proactive_config, dict) else {},
             device_state=device_state if isinstance(device_state, dict) else {},
             conversation_state=conversation_state if isinstance(conversation_state, dict) else {},
+            device_brightness=device_brightness if isinstance(device_brightness, dict) else {},
             poll_errors=poll_errors,
         )
         if self.data:
@@ -661,9 +627,38 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         self._websocket.on("music_storage", self._handle_ws_music_storage)
         self._websocket.start()
 
+        # 1.6.0 status channel: a `chat_history` sync event means "something
+        # new in the chat" - poll right away (and wake from idle backoff)
+        # instead of waiting for the next timer tick. The timer stays as the
+        # fallback, so a missing/broken events channel only costs latency.
+        self._events_ws = Code27WebSocket(
+            self.hass, self.client, path="/v1/ws/events",
+            subscribe=["chat_history"], name="code27_events_websocket",
+        )
+        self._events_ws.on("chat_history", self._handle_ws_chat_history)
+        self._events_ws.start()
+
         self._chat_poll_unsub = async_track_time_interval(
             self.hass, self._async_poll_chat, CHAT_POLL_INTERVAL
         )
+
+    async def async_set_tool_dispatcher(self, dispatcher: Any | None) -> None:
+        """Firmware >= 1.6.0: (re)start or stop the Codie tool gateway.
+
+        The dispatcher (catalog + execution, see tool_executor.ToolDispatcher)
+        comes from the host: HASE injects an MCP-Bridge-backed one, standalone
+        CODE27 injects none. None stops the gateway."""
+        from .tool_executor import CodieToolExecutor, integration_id_for
+
+        if self._tool_executor is not None:
+            await self._tool_executor.stop()
+            self._tool_executor = None
+        if dispatcher is None or self.stopping:
+            return
+        self._tool_executor = CodieToolExecutor(
+            self.hass, self.client, dispatcher, integration_id_for(self.entry.entry_id)
+        )
+        self._tool_executor.start()
 
     def async_create_owned_task(self, coroutine: Any, name: str) -> None:
         """Keep work cancellable even when its event listener is removed."""
@@ -679,12 +674,9 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
     ) -> str | None:
         """Register our output before polling can observe it as user input.
 
-        Returns the written message's `chat_id` (or None on failure) so a
-        caller that wants it cleaned up later (see
-        `async_cleanup_assist_exchange`) can track it - the device itself
-        still reacts to this write with its own new chat turn, exactly
-        like any other message (see CONF_BRIDGE_RELAY_RESPONSE's
-        strings.json description)."""
+        Returns the written message's `chat_id` (or None on failure). The
+        device still reacts to this write with its own new chat turn, like
+        any other message."""
         async with self._chat_lock:
             if self.stopping:
                 return None
@@ -743,8 +735,8 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
         """Register our image output before polling can observe it as user input.
 
         Image sends produce two chat entries (caption + image); both are
-        pre-registered as own-writes so the bridge doesn't echo them back
-        to Assist. Mirrors async_send_chat_reply for the image path (B2)."""
+        pre-registered as own-writes so they are never mistaken for
+        user input. Mirrors async_send_chat_reply for the image path (B2)."""
         async with self._chat_lock:
             if self.stopping:
                 return None, None
@@ -768,112 +760,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
                 self._remember_own_chat_id(slot, image_chat_id)
             return chat_id, image_chat_id
 
-    async def async_cleanup_assist_exchange(
-        self,
-        slot: int,
-        seed_chat_ids: list[str],
-        timeout: float = 9.0,
-        poll_interval: float = 1.5,
-    ) -> int:
-        """Remove an Assist-bridge command exchange from the device's own
-        chat history (both on-device and CODE27's cloud copy - see
-        `Code27Client.delete_chat_messages`) once it's played out, so
-        routine smart-home chatter never lands in the character's
-        long-term memory/context (CONF_BRIDGE_HISTORY_CLEANUP_ENABLED).
-
-        `seed_chat_ids` is the triggering command's own `chat_id` (always
-        present the moment EVENT_USER_MESSAGE fires) plus, if
-        CONF_BRIDGE_RELAY_RESPONSE also wrote into the chat, those
-        `chat_id`s too - the device reacts to those the same way (see
-        that option's strings.json description). Each seed is deleted by
-        `chat_id` directly (see `Code27Client.delete_chat_messages` for
-        why that's the only identifier that reliably works, unlike
-        `history_id`). For each seed, this also looks for the single
-        chronologically-next assistant message - the device's own
-        spontaneous in-character reaction, if any - and deletes that too;
-        it has no id we're handed in advance, so has to be found by
-        polling. Confirmed live: a recognized Assist-bridge command
-        (spellbook or codeword, spoken or typed) never actually gets one
-        of these - CODE27 classifies it as a command, not conversation -
-        so in practice this poll loop usually just runs out its full
-        `timeout` finding nothing further to delete beyond the seeds
-        themselves, which is normal, not a failure. Best-effort and
-        conservative - only pins a reply to its seed by strict "next
-        after" ordering, and simply times out (leaving anything
-        unresolved in place) rather than guess, e.g. if an unrelated
-        message arrives in the same window. Returns how many messages
-        were actually deleted, purely for logging.
-        """
-        seed_chat_ids = list(dict.fromkeys(cid for cid in seed_chat_ids if cid))
-        if not seed_chat_ids:
-            return 0
-        reply_chat_ids: set[str] = set()
-        seed_created_at: dict[str, str] = {}
-        found_replies: set[str] = set()
-
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            await asyncio.sleep(poll_interval)
-            try:
-                messages = await self.client.get_latest_chat_messages(slot=slot, limit=20)
-            except Code27Error as err:
-                _LOGGER.debug("Assist-history cleanup: poll failed, retrying: %s", err)
-                continue
-
-            by_chat_id = {str(m.get("chat_id")): m for m in messages}
-            for cid in seed_chat_ids:
-                if cid not in seed_created_at:
-                    message = by_chat_id.get(cid)
-                    if message is not None:
-                        seed_created_at[cid] = str(message.get("created_at") or "")
-
-            for cid, created_at in seed_created_at.items():
-                if cid in found_replies:
-                    continue
-                reply = self._next_assistant_reply(messages, created_at)
-                if reply is not None:
-                    reply_chat_id = reply.get("chat_id")
-                    if reply_chat_id:
-                        reply_chat_ids.add(str(reply_chat_id))
-                    found_replies.add(cid)
-
-            if len(seed_created_at) == len(seed_chat_ids) and len(found_replies) == len(seed_chat_ids):
-                break
-
-        # Only include seeds that were positively resolved from the device's
-        # own history (seed_created_at populated) - avoid deleting IDs that
-        # never appeared in the poll window (e.g. stale/synthetic seeds).
-        all_chat_ids = sorted(set(seed_created_at.keys()) | reply_chat_ids)
-        try:
-            await self.client.delete_chat_messages(all_chat_ids, slot=slot)
-        except Code27Error as err:
-            # Confirmed live: the device can reject an otherwise-valid
-            # delete outright (generic device-side failure, not "message
-            # not found") - a single retry after a short backoff is cheap
-            # insurance against that kind of one-off hiccup.
-            _LOGGER.debug("Assist-history cleanup: delete failed, retrying once: %s", err)
-            await asyncio.sleep(2.0)
-            try:
-                await self.client.delete_chat_messages(all_chat_ids, slot=slot)
-            except Code27Error as retry_err:
-                _LOGGER.warning("Could not clean up Assist chat exchange: %s", retry_err)
-                raise
-        return len(all_chat_ids)
-
-    @staticmethod
-    def _next_assistant_reply(
-        messages: list[dict[str, Any]], after_created_at: str | None
-    ) -> dict[str, Any] | None:
-        if not after_created_at:
-            return None
-        candidates = [
-            m for m in messages
-            if m.get("role") == "assistant" and str(m.get("created_at") or "") > after_created_at
-        ]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda m: str(m.get("created_at") or ""))
-
     async def async_stop_realtime(self) -> None:
         self.stopping = True
         if self._chat_poll_unsub is not None:
@@ -887,10 +773,22 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        self.pending_correction = None
         if self._websocket is not None:
             await self._websocket.stop()
             self._websocket = None
+        if self._events_ws is not None:
+            await self._events_ws.stop()
+            self._events_ws = None
+        if self._tool_executor is not None:
+            await self._tool_executor.stop()
+            self._tool_executor = None
+
+    def _handle_ws_chat_history(self, data: dict[str, Any]) -> None:
+        if self.stopping or data.get("event") != "sync":
+            return
+        self._chat_last_event_at = time.monotonic()
+        self._chat_last_polled_at = 0.0
+        self.async_create_owned_task(self._async_poll_chat(), "code27_chat_poll_event")
 
     def _handle_ws_music_page(self, data: dict[str, Any]) -> None:
         self._handle_music_push("music_page", data)
@@ -1048,8 +946,6 @@ class Code27Coordinator(DataUpdateCoordinator[Code27Data]):
                     if messages and messages[-1].get("chat_id") is not None else None
                 )
                 self._chat_active_slot = slot
-                if switched:
-                    self.pending_correction = None
                 for message in messages:
                     chat_id = message.get("chat_id")
                     if chat_id is None:

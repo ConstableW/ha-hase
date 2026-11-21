@@ -13,7 +13,7 @@ There are two paths for a physical device:
 1. **Embedded in HASE (`domain=hase`):** Open **Settings → Devices & services → Add integration → HASE → Connect a CODE27 device**. Enter the local IP and port (usually `8081`), then confirm the six-digit code shown on the device. The HASE entry owns the runtime, device and entities.
 2. **Standalone CODE27 with HASE (`domain=code27`):** First pair the device through the standalone [CODE27 integration](https://github.com/ConstableW/ha-code27). Then choose **Add integration → HASE → Bind existing standalone CODE27** and select the loaded CODE27 entry. HASE creates only a binding entry. Runtime, device, entities and credentials remain with the `code27` entry; no second pairing takes place.
 
-In **either** case, open **Configure** on the corresponding **HASE hub**, enable **Assist Bridge** and select a Spellbook. A matching Spellbook trigger in the character chat needs no codeword. A codeword is only needed for the optional codeword/Assist path. Put custom books in `<config>/hase_spellbooks/`. You can enable device TTS or chat relay for replies. The standalone CODE27 entry does not carry the Spellbook setting; it belongs to the HASE binding.
+In **either** case, open **Configure** on the corresponding **HASE hub** and choose the *Conversation agent for Codie's sentences* (normally a HASE Spellbooker with your Spellbook; custom books live in `<config>/hase_spellbooks/`). Codie's own model then hands what you say to that agent - no codeword. The standalone CODE27 entry does not carry this setting; it belongs to the HASE binding.
 
 If a standalone CODE27 entry is deleted and recreated, HASE shows a repair issue for the old binding. Set up the device under CODE27, then use **Reconfigure** on the HASE binding to select the new entry ID, or delete the HASE binding if it is no longer needed. Binding changes neither CODE27 entry data nor registry ownership. The same identifiable `machine_id` cannot also be configured as an embedded HASE device.
 
@@ -137,6 +137,24 @@ The card stores no library data of its own: a subscription push deliberately doe
 
 A **Satellite** is an experimental Conversation subentry attached to one CODE27 device. It tries its local Spellbook first and falls back to that device's character backend on no match. Reply correlation during concurrent physical-device chat has not been verified; do not use it where a wrong or delayed reply matters.
 
-The CODE27 Assist Bridge can recognize codewords or Spellbook phrases in character chat, clean up phrasing, forward to Home Assistant Assist, relay responses and optionally speak through the device. CODE27 itself exposes no structured function-calling protocol; free-form character replies do not become trusted HASE actions.
-
 Known limitations include no capability-based feature gating, no proven dynamic voice list endpoint, backend-only image chat, read-only diary support, and some vacuum/device profiles that are examples rather than physically verified integrations. The classified internal CODE27 reports live in the internal index (`../../internal/INDEX.md`, a maintainer document that is not part of the public repository).
+
+## Firmware 1.6.0: Codie tools, device controls, events
+
+Only firmware 1.6.0 and newer is supported; the pre-1.6 fallbacks are gone.
+
+**Codie tool gateway.** HASE registers tools with the device and Codie's own model calls them over the device's tool WebSocket - HASE no longer reads the chat, uses no codeword and cleans no history. Two device options control it: *Conversation agent for Codie's sentences* adds `home_command`, *Codie tool bridge* (one MCP Bridge) adds `spell_cast` and `spell_list`. Leave both empty and no tools are registered.
+
+| Tool | Purpose |
+| --- | --- |
+| `home_command` | The user's sentence, unchanged, goes to the chosen conversation agent: exact and fuzzy trigger matching, area policy and clarification questions of a HASE Spellbooker. A question comes back as `QUESTION: ...`; Codie asks the user and calls again with the answer. Sentences without a Spellbook trigger fall back to Home Assistant's normal Assist. |
+| `spell_cast` | Cast a Spell: `spell` (id) and `args` (JSON object as a string). Runs through the same projection, area policy, Assist exposure and generation lease as MCP. |
+| `spell_list` | The Bridge's full Spell catalog with argument names. |
+
+The device allows 16 tools, 8 KiB per schema and about 512 characters per description; `spell_cast` inlines as many catalog lines as fit, `spell_list` has the rest. `home_command` has no catalog limit because the host does the matching, so it is the tool for everyday sentences.
+
+**Device controls.** *Display brightness* (number, 0-100), *Display* (switch) and *Device mode* (LIVE / MUSIC) are entities of the device and have their own *Device* section on the dashboard card (`show_device`); chat turns can carry `interrupt`, `retention` and `tools` (`create_chat_turn`).
+
+**Events.** The integration also listens to the device's status channel `/v1/ws/events`; a chat-history event triggers an immediate chat poll instead of waiting for the 3 s timer, which stays as the fallback.
+
+**Standalone CODE27.** Everything above except the HASE-backed dispatcher is shared device code and also runs in the standalone CODE27 integration (`scripts/sync_code27.py` regenerates it). Standalone alone registers no tools; HASE supplies the dispatcher, also for a device owned by a standalone entry (see `docs/code27/CODE27-SPLIT-EXTERNAL-HUB-CONTRACT-0.1.md`).

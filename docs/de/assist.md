@@ -10,4 +10,4 @@ Der gemeinsame Router erreicht Aktionen, einzelne und mehrquellige Abfragen, Com
 
 Spezifischere Trigger haben Vorrang; Aliase werden unterstützt. Bei nahezu gleichwertigen gegensätzlichen Ergebnissen fragt HASE nach, statt zu raten. Conversation- und Klärungszustand liegt nur im Speicher.
 
-Die CODE27 Assist-Bridge ist eine eigene Provider-Funktion: [CODE27](providers/code27.md).
+Mit Firmware 1.6.0+ reicht Codies eigenes Modell deine Sätze über das Tool `home_command` an einen HASE-Spellbooker weiter (mit Assist als Rückfall): [CODE27](providers/code27.md).

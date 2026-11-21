@@ -254,6 +254,7 @@ async def verify():
         async_config_entry_first_refresh=AsyncMock(),
         async_start_realtime=lambda: None,
         async_stop_realtime=AsyncMock(),
+        async_set_tool_dispatcher=AsyncMock(),
         async_request_refresh=AsyncMock(),
         async_trigger_notification=AsyncMock(),
         async_acknowledge_notification=AsyncMock(),
@@ -262,7 +263,7 @@ async def verify():
     with (
         patch.object(provider, "Code27Client", return_value=client),
         patch.object(provider, "Code27Coordinator", return_value=coordinator),
-        patch.object(provider, "async_setup_bridge"),
+        patch.object(provider, "async_setup_tool_bridge", AsyncMock()),
     ):
         assert await integration.async_setup_entry(hass, entry)
     assert hass.data["hase"][entry.entry_id] is coordinator

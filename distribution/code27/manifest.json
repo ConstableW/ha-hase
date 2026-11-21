@@ -1,0 +1,13 @@
+{
+  "domain": "code27",
+  "name": "CODE27",
+  "codeowners": ["@ConstableW"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
+  "documentation": "https://github.com/ConstableW/ha-code27",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ConstableW/ha-code27/issues",
+  "requirements": [],
+  "version": "2.0.0"
+}

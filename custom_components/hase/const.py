@@ -42,4 +42,3 @@ CONF_SPELLBOOKER_PROFILE_ID = "spellbooker_profile_id"
 
 # Shared by standalone Spellbookers and provider frontends. Kept in the
 # integration contract rather than imported from any optional provider.
-CONF_BRIDGE_AI_TASK_ENTITY_ID = "bridge_ai_task_entity_id"

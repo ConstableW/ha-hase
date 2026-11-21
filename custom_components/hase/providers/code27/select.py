@@ -45,6 +45,7 @@ async def async_setup_entry(
             Code27CharacterSlotSelect(coordinator),
             Code27CharacterOutfitSelect(coordinator),
             Code27AiLanguageSelect(coordinator),
+            Code27GameModeSelect(coordinator),
         ]
     )
 
@@ -243,4 +244,42 @@ class Code27AiLanguageSelect(Code27Entity, SelectEntity):
         if code is None:
             return
         await self.coordinator.client.set_ai_language(code)
+        await self.coordinator.async_request_refresh()
+
+
+class Code27GameModeSelect(Code27Entity, SelectEntity):
+    """Device mode LIVE / MUSIC (firmware >= 1.6.0, PUT /data/user/device/mode).
+    The current mode is device/state.game_mode; any other value the device
+    reports is shown as-is but cannot be selected."""
+
+    _attr_translation_key = "game_mode"
+    _attr_entity_category = EntityCategory.CONFIG
+    _MODES = ("LIVE", "MUSIC")
+
+    def __init__(self, coordinator: Code27Coordinator) -> None:
+        super().__init__(coordinator)
+        machine_id = coordinator.entry.unique_id or coordinator.entry.entry_id
+        self._attr_unique_id = f"{machine_id}_game_mode"
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool(self.coordinator.data.device_state.get("game_mode"))
+
+    @property
+    def options(self) -> list[str]:
+        options = list(self._MODES)
+        current = self.current_option
+        if current and current not in options:
+            options.append(current)
+        return options
+
+    @property
+    def current_option(self) -> str | None:
+        mode = self.coordinator.data.device_state.get("game_mode")
+        return str(mode).upper() if mode else None
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._MODES:
+            return
+        await self.coordinator.client.set_device_mode(option)
         await self.coordinator.async_request_refresh()

@@ -4,7 +4,7 @@ config_entry a SATELLITE subentry lives on, and how async_setup_entry
 turns each SUBENTRY_TYPE_SATELLITE subentry into its own entity with
 config_subentry_id set (the mechanism that makes it render nested
 under its owning entry's hub in the HA UI). Loaded via
-test_bridge_delivery's load_source (AST-stripped of
+test_harness_support's load_source (AST-stripped of
 homeassistant/relative imports) with real core/ classes as adapters
 plus small fakes for the HA-registry-touching pieces (spellbooker_ha.py,
 providers/code27/backend.py) - this file's own logic is what's under test, not
@@ -17,7 +17,7 @@ import types
 import unittest
 from pathlib import Path
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 HASE_ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "hase"
 
@@ -370,48 +370,6 @@ class ScopedPolicyMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(policy.queries.unrestricted)
 
 
-class AiTaskCleanupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_selected_ai_task_rewrites_input_before_spellbook_routing(self):
-        calls = []
-
-        async def cleanup(hass, command, task_entity_id):
-            calls.append((command, task_entity_id))
-            return "nichts passt hier", None, None
-
-        conversation = _load_conversation_module(
-            async_get_spellbook=AsyncStub(returns=_fake_book()),
-            async_cleanup_command=cleanup,
-        )
-        hass = N(data={}, config=N(language="de"))
-        entry = N(
-            entry_id="agent-1",
-            title="HASE-Agent",
-            data={"entry_kind": "spellbooker"},
-            options={
-                "spellbooker_book": "demo",
-                "spellbooker_unrestricted": True,
-                "spellbooker_queries_unrestricted": True,
-                "bridge_ai_task_entity_id": "ai_task.qwen",
-            },
-        )
-        entity = conversation.SpellbookerConversationEntity(hass, entry)
-        captured = {}
-        real_handle = entity._router.handle
-
-        async def spy_handle(request, config):
-            captured["text"] = request.text
-            return await real_handle(request, config)
-
-        entity._router.handle = spy_handle
-        user_input = N(
-            text="Kannst du das bitte machen?", language="de",
-            conversation_id=None, device_id=None, context=None,
-            agent_id="conversation.hase_agent",
-        )
-        await entity._async_handle_message(user_input, N(conversation_id="c-ai"))
-
-        self.assertEqual(calls, [("Kannst du das bitte machen?", "ai_task.qwen")])
-        self.assertEqual(captured["text"], "nichts passt hier")
 
 
 class SatelliteSessionIdentityTests(unittest.IsolatedAsyncioTestCase):

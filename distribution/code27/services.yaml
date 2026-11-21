@@ -1,0 +1,425 @@
+create_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    label:
+      selector:
+        text:
+    days:
+      selector:
+        select:
+          multiple: true
+          options:
+            - "mon"
+            - "tue"
+            - "wed"
+            - "thu"
+            - "fri"
+            - "sat"
+            - "sun"
+    enabled:
+      selector:
+        boolean:
+
+update_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    alarm_id:
+      required: true
+      selector:
+        text:
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    label:
+      selector:
+        text:
+    days:
+      selector:
+        select:
+          multiple: true
+          options:
+            - "mon"
+            - "tue"
+            - "wed"
+            - "thu"
+            - "fri"
+            - "sat"
+            - "sun"
+    enabled:
+      selector:
+        boolean:
+
+delete_alarm:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    alarm_id:
+      required: true
+      selector:
+        text:
+
+send_chat_message:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    message:
+      required: true
+      selector:
+        text:
+    slot:
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    language:
+      selector:
+        text:
+
+send_chat_image:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    filename:
+      required: true
+      selector:
+        text:
+    message:
+      selector:
+        text:
+    slot:
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    language:
+      selector:
+        text:
+
+update_memory_card:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    character_id:
+      required: true
+      selector:
+        text:
+    card_id:
+      required: true
+      selector:
+        text:
+    content:
+      selector:
+        text:
+          multiline: true
+    category:
+      selector:
+        text:
+
+get_memory_cards:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    character_id:
+      required: true
+      selector:
+        text:
+    page:
+      selector:
+        number:
+          min: 1
+          mode: box
+    page_size:
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+get_diary_entries:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    character_id:
+      required: true
+      selector:
+        text:
+    slot:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    date:
+      selector:
+        text:
+    page:
+      selector:
+        number:
+          min: 1
+          mode: box
+    page_size:
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+
+get_diary_entry:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    character_id:
+      required: true
+      selector:
+        text:
+    entry_id:
+      required: true
+      selector:
+        text:
+
+upload_music:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    filename:
+      required: true
+      selector:
+        text:
+    play:
+      selector:
+        boolean:
+
+delete_music_file:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    path:
+      required: true
+      selector:
+        text:
+
+set_music_play_mode:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    play_mode:
+      required: true
+      selector:
+        select:
+          options:
+            - list_loop
+            - single_loop
+            - shuffle
+            - sequence
+
+set_music_sound_effect:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    sound_effect:
+      required: true
+      selector:
+        text:
+
+play_playlist:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    playlist:
+      required: true
+      example: "Walter Moers - Die 13½ Leben des Käpt'n Blaubär"
+      selector:
+        text:
+    resume:
+      default: true
+      selector:
+        boolean:
+
+notify:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    message:
+      selector:
+        text:
+    rgb_color:
+      selector:
+        color_rgb:
+    speak_text:
+      selector:
+        text:
+
+notify_clear:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+
+create_memo:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    title:
+      required: true
+      selector:
+        text:
+    body:
+      selector:
+        text:
+          multiline: true
+    date:
+      selector:
+        text:
+    time:
+      selector:
+        time:
+
+update_memo:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    memo_id:
+      required: true
+      selector:
+        text:
+    title:
+      selector:
+        text:
+    body:
+      selector:
+        text:
+          multiline: true
+    date:
+      selector:
+        text:
+    time:
+      selector:
+        time:
+
+delete_memo:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    memo_id:
+      required: true
+      selector:
+        text:
+
+set_outfit:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    outfit:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 99
+          mode: box
+    slot:
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: box
+
+speak:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: code27
+    text:
+      required: true
+      selector:
+        text:

@@ -365,7 +365,7 @@ test("CODE27 card editor offers a switch for every section the card can hide", (
   const flagsInMarkup = new Set([...source.matchAll(/data-show="(show_[a-z_]+)"/g)].map((m) => m[1]));
   // Sections managed in code rather than through data-show:
   // show_scene decides whether the scenes appear in the one light dropdown.
-  for (const key of ["show_music", "show_outfit", "show_language", "show_chips", "show_chat", "show_feed", "show_scene"]) flagsInMarkup.add(key);
+  for (const key of ["show_music", "show_outfit", "show_language", "show_chips", "show_chat", "show_scene", "show_device"]) flagsInMarkup.add(key);
   assert.ok(flagsInMarkup.size >= 11);
   for (const key of flagsInMarkup) assert.ok(editorBlock.includes(`"${key}"`), `${key} missing in the editor`);
 });

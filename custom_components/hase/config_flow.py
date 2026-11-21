@@ -16,7 +16,6 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
-    CONF_BRIDGE_AI_TASK_ENTITY_ID,
     CONF_CODE27_EXTERNAL_ENTRY_ID,
     CONF_ENTRY_KIND,
     CONF_SPELLBOOKER_ALLOWED_AREAS,
@@ -198,9 +197,6 @@ class HaseConfigFlow(*_PROVIDER_FLOW_MIXINS, ConfigFlow, domain=DOMAIN):
                         CONF_SPELLBOOKER_NO_MATCH_RESPONSE: user_input.get(
                             CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""
                         ),
-                        CONF_BRIDGE_AI_TASK_ENTITY_ID: user_input.get(
-                            CONF_BRIDGE_AI_TASK_ENTITY_ID
-                        ),
                     },
                 )
 
@@ -227,9 +223,6 @@ class HaseConfigFlow(*_PROVIDER_FLOW_MIXINS, ConfigFlow, domain=DOMAIN):
                     CONF_SPELLBOOKER_QUERIES_UNRESTRICTED, default=False
                 ): bool,
                 vol.Optional(CONF_SPELLBOOKER_NO_MATCH_RESPONSE, default=""): str,
-                vol.Optional(CONF_BRIDGE_AI_TASK_ENTITY_ID): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="ai_task")
-                ),
             }
         )
         return self.async_show_form(
@@ -373,14 +366,6 @@ class SpellbookerOptionsFlow(OptionsFlow):
                     CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
                     default=options.get(CONF_SPELLBOOKER_NO_MATCH_RESPONSE, ""),
                 ): str,
-                vol.Optional(
-                    CONF_BRIDGE_AI_TASK_ENTITY_ID,
-                    description={
-                        "suggested_value": options.get(CONF_BRIDGE_AI_TASK_ENTITY_ID)
-                    },
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="ai_task")
-                ),
             }
         )
         return self.async_show_form(

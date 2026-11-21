@@ -40,7 +40,6 @@ See [Etappe 8](spellbook-engine/etappe-8-unified-spellbooks.md) for inventory, p
 Services: `hase.create_alarm`, `hase.update_alarm`, `hase.delete_alarm`, `hase.send_chat_message`, `hase.notify`, `hase.notify_clear`, `hase.speak`. All retain their existing parameter schemas and accept the new device config entry ID.
 
 Chat events: `hase_user_message`, `hase_assistant_message`; payload fields unchanged.
-Bridge activity uses HA's `logbook_entry` with domain `hase` and provider name `CODE27 Assist-Bridge`.
 
 The CODE27-specific dashboard keeps `custom:code27-card`, served from `/hase-cards/code27-card.js`. Its device and config-entry selection must be recreated after cutover.
 
@@ -57,6 +56,6 @@ CODE27 manufacturer names, authentication, firmware endpoints, local transport a
 ## Verification
 
 Run `python -m pip install -r requirements-test.txt`, then `python -B -m pytest -q -p no:cacheprovider`.
-The legacy behavioral suite is supplemented by package/resource boundary checks and an import smoke test that loads real HASE modules with only the external HA surface stubbed. This does not replace a real HA setup or the testzwerg checklist.
+The legacy behavioral suite is supplemented by package/resource boundary checks and an import smoke test that loads real HASE modules with only the external HA surface stubbed. This does not replace a real HA setup or a live-instance checklist.
 
 Historical stage-1 reports, audit bundles, screenshots and baseline archives describe the pre-HASE implementation. They are evidence, not current installation instructions.

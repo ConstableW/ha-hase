@@ -34,7 +34,6 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_BRIDGE_AI_TASK_ENTITY_ID,
     CONF_ENTRY_KIND,
     CONF_SPELLBOOKER_ALLOWED_AREAS,
     CONF_SPELLBOOKER_BOOK,
@@ -126,20 +125,7 @@ def intent_response_for(language: str, result) -> intent.IntentResponse:
     empty speech string (not skipping the call) keeps the response shape
     HA's own frontend expects, while being as close to "no output" as this
     layer supports.
-
-    This also bounds what CODE27's bridge (providers/code27/bridge.py) can
-    do with the SAME turn: it never sees a HASE ConversationResult
-    directly, only whatever this function put into the standard
-    intent.IntentResponse via conversation.async_converse() - the generic
-    HA API any agent is consumed through. Confirmed in bridge.py's
-    _forward_to_assist: an empty `speech` here (NONE) already short-circuits
-    before _output_speech() is ever called, so NONE correctly suppresses
-    both TTS and chat-relay with no bridge.py change needed - but
-    TEXT/SPEECH/TEXT_AND_SPEECH genuinely cannot reach the bridge as
-    distinct signals, same limitation as HA's own Assist frontend; CODE27's
-    own CONF_BRIDGE_TTS_ENABLED/CONF_BRIDGE_RELAY_RESPONSE options are the
-    only thing deciding TTS vs chat-relay for anything non-NONE, same as
-    before this feature existed."""
+    """
     response = intent.IntentResponse(language=language)
     if result.status is ConversationStatus.ERROR:
         response.async_set_error(
@@ -393,30 +379,6 @@ class SpellbookerConversationEntity(ConversationEntity):
             profile_id=profile_id,
         )
 
-        request_text = user_input.text
-        task_entity_id = settings.get(CONF_BRIDGE_AI_TASK_ENTITY_ID)
-        if task_entity_id:
-            # This compatibility helper still lives with the legacy satellite
-            # implementation. Its lazy boundary keeps the generic standalone
-            # path independent from that optional provider.
-            from .providers.code27.bridge import async_cleanup_command
-
-            request_text, failure, discarded = await async_cleanup_command(
-                self.hass,
-                request_text,
-                task_entity_id,
-            )
-            if failure is not None:
-                _LOGGER.warning(
-                    "HASE-Agent AI Task cleanup failed; using original input: %s",
-                    failure,
-                )
-            elif discarded is not None:
-                _LOGGER.warning(
-                    "HASE-Agent AI Task returned an unsafe rewrite %r; using original input",
-                    discarded,
-                )
-
         request = ConversationRequest(
             request_id=str(uuid.uuid4()),
             # A SATELLITE's own subentry_id, not the parent CODE27
@@ -429,7 +391,7 @@ class SpellbookerConversationEntity(ConversationEntity):
             # the parent), set separately below - only the SESSION
             # identity changes here. Found live (external audit).
             agent_entry_id=self._subentry.subentry_id if self._subentry is not None else self._config_entry.entry_id,
-            text=request_text,
+            text=user_input.text,
             language=language,
             source_namespace="ha_conversation",
             source_id=user_input.device_id,

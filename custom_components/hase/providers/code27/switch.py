@@ -35,6 +35,7 @@ async def async_setup_entry(
     # Assistant was not running) are cleaned up once at startup - but only
     # after a poll that really read the alarms, so a failed read can never
     # wipe live switches.
+    async_add_entities([Code27ScreenSwitch(coordinator)])
     registry = er.async_get(hass)
     machine_id = entry.unique_id or entry.entry_id
     prefix = f"{machine_id}_alarm_"
@@ -144,4 +145,32 @@ class Code27AlarmSwitch(Code27Entity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.client.disable_alarm(self._alarm_id)
+        await self.coordinator.async_request_refresh()
+
+
+class Code27ScreenSwitch(Code27Entity, SwitchEntity):
+    """Display on/off (firmware >= 1.6.0, PUT /data/user/device/screen).
+    State comes from device/state.screen_on."""
+
+    _attr_translation_key = "display_screen"
+
+    def __init__(self, coordinator: Code27Coordinator) -> None:
+        super().__init__(coordinator)
+        machine_id = coordinator.entry.unique_id or coordinator.entry.entry_id
+        self._attr_unique_id = f"{machine_id}_display_screen"
+
+    @property
+    def available(self) -> bool:
+        return super().available and isinstance(self.coordinator.data.device_state.get("screen_on"), bool)
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.device_state.get("screen_on"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.client.set_device_screen(True)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.client.set_device_screen(False)
         await self.coordinator.async_request_refresh()

@@ -1,0 +1,35 @@
+KLEMMBAUSTEIN-WEIHNACHTSBAUM
+
+Ein Weihnachtsbaum zum Zusammenstecken, komplett gedruckt und im echten Klemmbaustein-Raster gebaut. Er ist ca. 18 cm hoch (112 x 112 mm Grundfläche), steht auf einer runden Schneeplatte und besteht aus 11 Teilen. Alles hat Noppen, Anti-Noppen und Röhren im 8-mm-Raster. Du kannst also normale Steine, Figuren und Fahrzeuge dazustellen, und die gedruckten Teile klemmen auch auf Original-Noppen. Bei mir steht eine Minifigur auf der Schneeplatte, ohne zu kippen.
+
+DER BAUM
+- Brauner Sockel (rund, 2 Platten hoch) und weiße Schneeplatte (Ø 112 mm) mit Noppen für Steine, Figuren und Geschenke
+- Brauner Stamm
+- 7 grüne Ebenen mit Wellenrand. Jede klemmt auf der darunter und wird nach oben kleiner. Die Ebenen sind abwechselnd um 22,5° gedreht, die Noppen sitzen trotzdem immer im Raster.
+- Ein facettierter 3D-Stern auf einem Rundstab, mit rundem Noppenfuß für die Spitze
+- Optional: 1x1-Rundplatten als Schmuck. Auf den Ebenen 1-5 gibt es dafür Ringnoppen.
+
+DIE GESCHENKE
+Für die Geschenke gibt es drei Varianten, je nachdem was du zu Hause hast:
+1. Mit AMS: Körper und Schleife als fertiges 2-Farb-Objekt. Das habe ich am H2C gedruckt. Auf einem Drucker mit einer Düse und AMS dauert das wegen der vielen Farbwechsel deutlich länger.
+2. Clip-Variante für die 0,2er Düse: einfarbiger Körper mit Nut, dazu zwei dünne Bänder, die über Kreuz in die Nuten klemmen. Hält bei mir ohne Kleber. Die Bänder sind sehr dünn, deshalb die 0,2er Düse.
+3. Clip-Variante für die 0,4er Düse: für alle, die keine 0,2er Düse haben. Die Bänder sind dicker, und das zweite Band ist in zwei Hälften geteilt, damit nirgends etwas dünner als zwei Düsenbahnen wird. Ein Tropfen Kleber an den beiden Hälften hält alles zusammen.
+Die Clip-Varianten habe ich für meine Tochter gemacht, weil man damit die Geschenke auch ohne AMS einfarbig drucken und dann zusammenstecken kann. Die Körper sind bei beiden Clip-Varianten identisch.
+
+DRUCKEN
+- PLA, Schichthöhe 0,16-0,20 mm, 3 Wände, 10-15 % Infill reichen
+- Keine Stützen nötig: alle Teile liegen schon in Druckrichtung (Unterseite auf dem Bett, Noppen oben). Auch der Stern steht aufrecht.
+- Bei den großen Ebenen hilft ein Brim gegen Warping.
+- Die Ebenen 1-3 und 4-7 passen jeweils auf eine P1S-Platte.
+- Die Clip-Bänder drucken auf der Seite liegend, so verlaufen die Schichten entlang des Bandes und die Arme brechen nicht.
+
+WICHTIG ZU DEN MASSEN
+Bei meinem Drucker schrumpfen gedruckte Noppen um etwa 0,2 mm. Deshalb sind Noppen und Röhren im Modell absichtlich dicker als die Norm:
+- Noppen: Ø 5,06 mm im Modell, gedruckt ca. 4,85 mm (Original ca. 4,8-4,87 mm). Die Deckfläche der Noppe hat wegen einer kleinen Fase oben nur 4,76 mm. Wenn du in Bambu Studio die Deckfläche misst, siehst du diesen Wert, den Noppenkörper misst du an der Seitenwand.
+- Röhren: außen 6,65 mm, innen 5,05 mm
+Damit passt es bei mir sehr gut auf Original-Steinen. Bei einem anderen Drucker oder Filament kann das abweichen. Miss eine gedruckte Noppe nach und sag mir Bescheid, falls es nicht passt.
+
+DAS 3MF
+Es enthält 9 Platten: Sockel und Stamm, Ebene 1-3, Ebene 4-7, Schneeplatte, Sternspitze, Schmuck und drei Geschenke-Platten (AMS, Clip 0,2er Düse, Clip 0,4er Düse). Die Filamentfarben musst du auf deine Rollen legen. Die STLs liegen zusätzlich einzeln dabei.
+
+Ich habe KI genutzt, um mir zu helfen.

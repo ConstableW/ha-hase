@@ -618,7 +618,6 @@ class SpellbookStudio:
             CONF_SPELLBOOKER_QUERIES_UNRESTRICTED,
             CONF_SPELLBOOKER_UNRESTRICTED,
         )
-        from .providers.code27.const import CONF_BRIDGE_SPELLBOOK
 
         results = []
         for entry in self.hass.config_entries.async_entries("hase"):
@@ -627,7 +626,6 @@ class SpellbookStudio:
 
             for key, name, settings in candidates:
                 spellbooker_book = settings.get(CONF_SPELLBOOKER_BOOK)
-                bridge_book = settings.get(CONF_BRIDGE_SPELLBOOK)
 
                 if spellbooker_book:
                     action = AreaPolicy(
@@ -646,10 +644,6 @@ class SpellbookStudio:
                     results.append(
                         (key, name, ScopedAreaPolicy(action, query), spellbooker_book)
                     )
-                elif bridge_book:
-                    # Existing CODE27 owner policy, not an API-supplied permission.
-                    area = AreaPolicy(None, unrestricted=True)
-                    results.append((key, name, ScopedAreaPolicy(area, area), bridge_book))
 
         return results
 
@@ -684,16 +678,6 @@ class SpellbookStudio:
                 return policy
         area = AreaPolicy(frozenset())
         return ScopedAreaPolicy(area, area)
-
-    def operation_allowed(self, profile_id, operation):
-        from .providers.code27.const import (
-            CONF_BRIDGE_SPELLBOOK,
-            CONF_BRIDGE_VACUUM_ENABLED,
-        )
-        entry = next((e for e in self.hass.config_entries.async_entries("hase") if e.entry_id == profile_id), None)
-        if entry and entry.options.get(CONF_BRIDGE_SPELLBOOK) and operation == "vacuum.clean_area":
-            return entry.options.get(CONF_BRIDGE_VACUUM_ENABLED, False) is True
-        return True
 
     def areas(self):
         """Return the tiny area list used by Studio pickers."""
@@ -815,8 +799,7 @@ class SpellbookStudio:
             # just the same dry_run-vs-execute distinction execute()
             # already gives every single-action test.
             executor = ActionExecutor(HaTargetResolver(self.hass), HaServiceCaller(self.hass),
-                                      expert_allowed=lambda: self.expert_allowed(raw["id"]),
-                                      operation_allowed=lambda operation: self.operation_allowed(payload.get("profile_id"), operation))
+                                      expert_allowed=lambda: self.expert_allowed(raw["id"]))
             result = await executor.execute_steps(found.step_plan, self.studio_policy(payload.get("profile_id")),
                                                   source_area_id=payload.get("source_area_id"),
                                                   context=payload.get("context"), dry_run=not execute)
@@ -855,8 +838,7 @@ class SpellbookStudio:
         if preview_variant == "expert" or editor_expert:
             draft = replace(draft, user_fallback=None)
         executor = ActionExecutor(HaTargetResolver(self.hass), HaServiceCaller(self.hass),
-                                  expert_allowed=lambda: (not execute and preview_variant == "expert") or self.expert_allowed(raw["id"]),
-                                  operation_allowed=lambda operation: self.operation_allowed(payload.get("profile_id"), operation))
+                                  expert_allowed=lambda: (not execute and preview_variant == "expert") or self.expert_allowed(raw["id"]))
         result = await executor.execute(draft, self.studio_policy(payload.get("profile_id")),
                                         source_area_id=payload.get("source_area_id"),
                                         context=payload.get("context"), dry_run=not execute)

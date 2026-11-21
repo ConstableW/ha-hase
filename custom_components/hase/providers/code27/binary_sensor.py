@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -18,6 +19,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: Code27Coordinator = hass.data[DOMAIN][entry.entry_id]
+    # The screen state is the Display switch now; drop the retired sensor.
+    registry = er.async_get(hass)
+    machine_id = entry.unique_id or entry.entry_id
+    retired = registry.async_get_entity_id("binary_sensor", DOMAIN, f"{machine_id}_device_screen_on")
+    if retired:
+        registry.async_remove(retired)
     async_add_entities(
         [
             Code27MusicModeBinarySensor(coordinator),
@@ -25,7 +32,6 @@ async def async_setup_entry(
             Code27BluetoothConnectedBinarySensor(coordinator),
             Code27Use24HourTimeBinarySensor(coordinator),
             Code27ModelLoadingBinarySensor(coordinator),
-            Code27DeviceStateBinarySensor(coordinator, "screen_on"),
             Code27DeviceStateBinarySensor(coordinator, "locked"),
             Code27DeviceStateBinarySensor(coordinator, "conversation_blocked"),
         ]
@@ -141,8 +147,8 @@ class Code27ModelLoadingBinarySensor(Code27Entity, BinarySensorEntity):
 
 
 class Code27DeviceStateBinarySensor(Code27Entity, BinarySensorEntity):
-    """One flag of `GET /device/state` (firmware 1.5.3+): ``screen_on``,
-    ``locked`` or ``conversation_blocked``. While a block applies, the
+    """One flag of `GET /device/state`: ``locked`` or ``conversation_blocked``
+    (the screen state is the Display switch). While a block applies, the
     device's own ``block_reason`` / ``display_key`` are exposed as
     attributes. "On" always means the flag is true (so ``locked`` is on
     while the device is locked)."""

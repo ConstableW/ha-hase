@@ -2,14 +2,14 @@
 the new subentry-based way to add/reconfigure a SATELLITE agent
 (replacing an earlier top-level entry kind, see
 const.ENTRY_KIND_SPELLBOOKER_SATELLITE's own note on why). Loaded via
-test_bridge_delivery's load_source (AST-stripped of
+test_harness_support's load_source (AST-stripped of
 homeassistant/relative imports) with small fakes standing in for the
 ConfigSubentryFlow base class and the selector helpers - this file's
 own validation/data-shaping logic is what's under test, not those.
 """
 import unittest
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 N = support.N
 constants = support.constants

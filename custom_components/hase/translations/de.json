@@ -72,7 +72,6 @@
           "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
           "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
           "spellbooker_no_match_response": "Antwort bei Nicht-Treffer",
-          "bridge_ai_task_entity_id": "AI-Task-Entity",
           "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
           "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)"
         },
@@ -80,7 +79,6 @@
           "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf. Wird ignoriert, wenn \"Uneingeschränkt\" aktiviert ist.",
           "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
           "spellbooker_no_match_response": "Wird gesagt, wenn ein Satz keinem Spellbook-Kommando entspricht. Leer lassen für die Standardantwort.",
-          "bridge_ai_task_entity_id": "Optional. Wenn ausgewählt, bereinigt diese AI-Task jeden gesprochenen Satz, bevor der HASE-Agent ihn mit dem Spellbook abgleicht.",
           "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf (z. B. \"wie warm ist es in X\"). Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
           "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf."
         }
@@ -136,37 +134,16 @@
         "title": "CODE27-Optionen",
         "data": {
           "scan_interval": "Abfrageintervall (Sekunden)",
-          "bridge_enabled": "Assist-Bridge aktivieren",
-          "bridge_codeword": "Codewort(e)",
-          "bridge_spellbook": "Spellbook",
-          "bridge_spellbook_mode": "Spellbook-Modus",
-          "bridge_entity_correction_enabled": "Bei unbekanntem Namen \"Meintest du...?\" nachfragen",
-          "bridge_ack_phrase": "Quittier-Phrase(n)",
-          "bridge_agent_id": "Sprachassistent (Assist)",
-          "bridge_relay_response": "Assist-Antwort zurück in den Chat schicken",
-          "bridge_tts_enabled": "Assist-Antwort auf dem Gerät laut aussprechen",
-          "bridge_ai_cleanup_enabled": "Formulierung vor dem Senden an Assist per AI Task bereinigen",
-          "bridge_ai_task_entity_id": "AI-Task-Entity",
-          "bridge_vacuum_enabled": "Spellbook-Befehle dürfen einen bestimmten Raum saugen lassen. Standardmäßig deaktiviert. Unterstützte Saugroboter werden über die gemeinsamen Vacuum-Provider-Dateien konfiguriert.",
-          "bridge_history_cleanup_enabled": "Assist-Kommunikation aus Historie entfernen",
           "remote_recovery_enabled": "LAN-Adresse des Geräts nach einem DHCP-Wechsel über die CODE27-Cloud wiederfinden",
-          "alarm_switches": "Pro Wecker einen Schalter behalten"
+          "alarm_switches": "Pro Wecker einen Schalter behalten",
+          "codie_tool_bridge": "Codie-Tool-Bridge",
+          "codie_agent": "Konversations-Agent für Codies Sätze"
         },
         "data_description": {
-          "bridge_codeword": "Ein oder mehrere durch Komma getrennte Wörter, z. B. \"Homeassist, Computer\". Enthält eine Nachricht an deinen Charakter eines davon, wird alles danach als Befehl an Home Assistant Assist geschickt.",
-          "bridge_spellbook": "Optional. Ein Spellbook ordnet feste Zauberspruch-Trigger (z. B. \"Lumos Schreibtisch\") direkt einem Assist-Befehl zu, ganz ohne das Codewort oben. Mitgelieferte Spellbooks kommen mit der Integration; du kannst außerdem eigene YAML-Dateien in einen Ordner \"hase_spellbooks\" in deinem Home-Assistant-Konfigurationsverzeichnis legen - beide erscheinen hier. Auf \"kein Spellbook\" lassen, um dies zu deaktivieren und nur das Codewort oben zu nutzen.",
-          "bridge_spellbook_mode": "Wirkt sich nur aus, wenn oben ein Spellbook gewählt ist. \"Auf Codewort ausweichen\" prüft bei einer Nachricht ohne passenden Spellbook-Trigger zusätzlich den Codewort-Ablauf, genau wie ohne gewähltes Spellbook. \"Nur Spellbook\" ignoriert alles, was kein erkannter Spellbook-Trigger ist.",
-          "bridge_entity_correction_enabled": "Wenn ein aufgelöster Befehl ein Gerät/einen Bereich nennt, den Assist nicht kennt (Tippfehler, Verhören), wird per Fuzzy-Suche in deinen Entities (und, wo sinnvoll, Bereichen) nach einem passenden Namen gesucht und \"Meintest du X?\" gefragt, statt einfach aufzugeben. Du kannst mit \"ja\"/\"nein\" antworten, selbst einen anderen Namen nennen, oder einfach weiterreden, um den Dialog zu beenden (er läuft nach ein paar Minuten Stille auch von selbst ab). Standardmäßig aus - nur aktivieren, wenn die Bridge Rückfragen stellen soll.",
-          "bridge_ack_phrase": "Ein oder mehrere durch Komma getrennte Phrasen, z. B. \"Alarm quittieren, Hinweis quittieren\". Sagst/schreibst du eine davon zu deinem Charakter, wird ein aktiver Hinweis quittiert (wie der Quittieren-Button oder notify_clear) - geht nie an Assist. Wird vor dem Codewort oben geprüft und wirkt nur, wenn gerade ein Hinweis aktiv ist. Leer lassen zum Deaktivieren.",
-          "bridge_agent_id": "Leer lassen, um den eingebauten Home-Assistant-Sprachassistenten zu verwenden – nicht zwangsläufig dein unter Einstellungen → Sprachassistenten bevorzugter, den eine leere Auswahl hier nicht automatisch auflöst.",
-          "bridge_relay_response": "Assists Antwort wird so oder so immer geloggt (System-Log + Aktivität-Tab dieses Geräts). Aktivierst du das hier zusätzlich, wird sie außerdem als neue Nachricht in den Chat des Charakters geschickt – der Charakter reagiert dann eigenständig darauf, du bekommst also eine zweite, separate Antwort von ihm. Standardmäßig aus, um genau das zu vermeiden.",
-          "bridge_tts_enabled": "Spricht Assists Antwort mit der Stimme des Charakters laut aus, über die TTS-Vorschau-Funktion des Geräts. Unabhängig von \"Assist-Antwort zurück in den Chat schicken\" oben – beliebig einzeln, zusammen oder gar nicht aktivierbar.",
-          "bridge_ai_cleanup_enabled": "Ein einfacher eingebauter Filter entfernt schon gängige Floskeln (\"kannst du bitte fragen, ob...\") vor dem Senden an Assist. Mit dieser Option zusätzlich wird der Befehl vorher noch durch die unten gewählte AI-Task-Entity geschickt für eine klügere Umformulierung – eignet sich gut für ein lokales Modell z. B. über Ollama, keine Cloud nötig.",
-          "bridge_ai_task_entity_id": "Welche AI-Task-Entity für die optionale Umformulierung oben genutzt wird. Nur relevant, wenn die Bereinigung aktiviert ist.",
-          "bridge_vacuum_enabled": "Spellbook-Befehle dürfen einen bestimmten Raum saugen lassen. Standardmäßig deaktiviert. Unterstützte Saugroboter werden über die gemeinsamen Vacuum-Provider-Dateien konfiguriert.",
-          "bridge_history_cleanup_enabled": "Gilt nur für eine Nachricht, die tatsächlich als erkannter Codewort-/Spellbook-Befehl aufgelöst wurde (normale Unterhaltung wird nie angefasst). Nachdem der Befehl gelaufen ist (und ausgesprochen/in den Chat übertragen wurde, falls das aktiviert ist - unabhängig von dieser Option), wird der technische Austausch - dein Befehl und die automatische Reaktion des Charakters darauf - aus CODE27s Chat-Verlauf entfernt, sowohl auf dem Gerät als auch im Cloud-Backup. So sieht das Gedächtnis/der Kontext des Charakters nur echte Unterhaltung, nicht \"Küchenlicht an\", \"Erledigt\"-Kram. Best-effort: die Antwort des Charakters wird per Polling als nächste Nachricht nach deiner eigenen identifiziert - dadurch bleibt gelegentlich eine Nachricht stehen (z. B. wenn zeitgleich etwas anderes gesagt wurde), statt riskiert zu werden, die falsche zu löschen.",
           "remote_recovery_enabled": "Standardmäßig aus. Bekommt dein CODE27 eine neue LAN-IP (z.B. nach einem Router-Neustart) und diese Integration erreicht es nicht mehr, kann sie mit dieser Option einmalig die eigene Cloud von CODE27 (codie-remote.prod.code27.co – ein Drittanbieter, nicht von Home Assistant oder dieser Integration kontrolliert) nach der aktuellen Adresse des Geräts fragen, lokal prüfen, dass es wirklich dieses Gerät ist, und den gespeicherten Host automatisch aktualisieren. Chat, Bilder und alle anderen Funktionen bleiben davon unabhängig immer im lokalen Netzwerk – die Cloud wird ausschließlich gefragt \"wo steht mein Gerät gerade?\", sonst nichts.",
-          "alarm_switches": "An (Standard): jeder Wecker bekommt zusätzlich eine eigene Schalter-Entität. Aus: es bleiben keine Entitäten pro Wecker - vorhandene werden entfernt - und Wecker werden über die To-do-Liste 'Wecker' und die Dashboard-Karte bearbeitet. Schalter von Weckern, die gelöscht wurden, während Home Assistant aus war, werden beim Start aufgeräumt."
+          "alarm_switches": "An (Standard): jeder Wecker bekommt zusätzlich eine eigene Schalter-Entität. Aus: es bleiben keine Entitäten pro Wecker - vorhandene werden entfernt - und Wecker werden über die To-do-Liste 'Wecker' und die Dashboard-Karte bearbeitet. Schalter von Weckern, die gelöscht wurden, während Home Assistant aus war, werden beim Start aufgeräumt.",
+          "codie_tool_bridge": "MCP-Bridge, deren Spells Codie als Tools ausführen darf (Firmware 1.6.0+). Aus = keine Tools.",
+          "codie_agent": "Codie reicht den Satz des Nutzers an diesen Agenten weiter (Firmware 1.6.0+): wähle einen HASE-Spellbooker für deine eigenen Trigger-Sätze. Was er nicht kennt, beantwortet das normale Assist von Home Assistant. Leer = kein home_command-Tool."
         }
       },
       "spellbooker": {
@@ -176,7 +153,6 @@
           "spellbooker_allowed_areas": "Erlaubte Bereiche (Aktionen)",
           "spellbooker_unrestricted": "Aktionen uneingeschränkt (alle Bereiche erlauben)",
           "spellbooker_no_match_response": "Antwort bei Nicht-Treffer",
-          "bridge_ai_task_entity_id": "AI-Task-Entity",
           "spellbooker_queries_allowed_areas": "Erlaubte Bereiche (Abfragen)",
           "spellbooker_queries_unrestricted": "Abfragen uneingeschränkt (alle Bereiche erlauben)"
         },
@@ -184,7 +160,6 @@
           "spellbooker_allowed_areas": "In welchen Bereichen dieser Assistent Aktionen ausführen darf. Wird ignoriert, wenn \"Uneingeschränkt\" aktiviert ist.",
           "spellbooker_unrestricted": "Erlaubt Aktionen in allen Bereichen, unabhängig von der Auswahl oben. Nur aktivieren, wenn dieser Assistent bewusst keine Einschränkung haben soll.",
           "spellbooker_no_match_response": "Wird gesagt, wenn ein Satz keinem Spellbook-Kommando entspricht. Leer lassen für die Standardantwort.",
-          "bridge_ai_task_entity_id": "Optional. Wenn ausgewählt, bereinigt diese AI-Task jeden gesprochenen Satz, bevor der HASE-Agent ihn mit dem Spellbook abgleicht.",
           "spellbooker_queries_allowed_areas": "In welchen Bereichen dieser Assistent Statusabfragen beantworten darf (z. B. \"wie warm ist es in X\"). Unabhängig von den Aktions-Bereichen oben - wird ignoriert, wenn \"Abfragen uneingeschränkt\" aktiviert ist.",
           "spellbooker_queries_unrestricted": "Erlaubt Statusabfragen in allen Bereichen, unabhängig von der Auswahl oben. Hat keinen Einfluss darauf, in welchen Bereichen dieser Assistent Aktionen ausführen darf."
         }
@@ -198,14 +173,6 @@
         "data_description": {
           "mcp_server_port": "Der interne TCP-Port, auf dem der MCP-Streamable-HTTP-Endpunkt lauscht. Dieser bindet an alle Netzwerkschnittstellen dieses Geräts - jedes Gerät in deinem lokalen Netzwerk kann ihn erreichen, nicht nur dieses Gerät selbst. Der einzige Schutz vor unbefugten Geräten in deinem LAN ist das Bearer-Token der jeweiligen Bridge - behandle diese Tokens daher als Geheimnis und dein lokales Netzwerk als Sicherheitsgrenze. HASE gibt diesen Port selbst nicht öffentlich im Internet frei - route bei Bedarf über deinen eigenen Reverse Proxy (mit eigener Authentifizierung/TLS) einen externen Hostnamen/Pfad dorthin. Eine Änderung startet den Listener sofort auf dem neuen Port neu."
         }
-      }
-    }
-  },
-  "selector": {
-    "bridge_spellbook_mode": {
-      "options": {
-        "fallback": "Auf Codewort ausweichen",
-        "strict": "Nur Spellbook"
       }
     }
   },
@@ -225,9 +192,6 @@
       },
       "model_loading": {
         "name": "Charaktermodell wird geladen"
-      },
-      "device_screen_on": {
-        "name": "Bildschirm an"
       },
       "device_locked": {
         "name": "Gesperrt"
@@ -304,6 +268,9 @@
     "switch": {
       "alarm": {
         "name": "Alarm"
+      },
+      "display_screen": {
+        "name": "Display"
       }
     },
     "media_player": {
@@ -323,6 +290,13 @@
       },
       "ai_language_select": {
         "name": "KI-Sprache"
+      },
+      "game_mode": {
+        "name": "Gerätemodus",
+        "state": {
+          "LIVE": "Live",
+          "MUSIC": "Musik"
+        }
       }
     },
     "todo": {
@@ -342,6 +316,11 @@
       },
       "acknowledge_notification": {
         "name": "Hinweis quittieren"
+      }
+    },
+    "number": {
+      "display_brightness": {
+        "name": "Display-Helligkeit"
       }
     }
   },

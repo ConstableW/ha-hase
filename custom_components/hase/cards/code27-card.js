@@ -121,6 +121,11 @@ const STRINGS = {
     add: "Hinzufügen",
     outfit_title: "Outfit",
     language_title: "KI-Sprache",
+    device_title: "Gerät",
+    mode_live: "Live",
+    mode_music: "Musik",
+    display_label: "Display",
+    display_brightness: "Display-Helligkeit",
     outfit_loading: "lädt …",
     count_active: "aktiv",
     toggle_section: "Ein-/ausklappen",
@@ -147,7 +152,6 @@ const STRINGS = {
     chat_empty: "Noch keine Nachrichten",
     chat_you: "Du",
     chat_character: "Charakter",
-    feed_title: "Aktivität (Assist-Bridge)",
     chip_language: "Sprache",
     chip_timezone: "Zeitzone",
     chip_alarms: "Alarm(e)",
@@ -183,6 +187,11 @@ const STRINGS = {
     add: "Add",
     outfit_title: "Outfit",
     language_title: "AI language",
+    device_title: "Device",
+    mode_live: "Live",
+    mode_music: "Music",
+    display_label: "Display",
+    display_brightness: "Display brightness",
     outfit_loading: "loading …",
     count_active: "active",
     toggle_section: "Expand/collapse",
@@ -209,7 +218,6 @@ const STRINGS = {
     chat_empty: "No messages yet",
     chat_you: "You",
     chat_character: "Character",
-    feed_title: "Activity (Assist bridge)",
     chip_language: "Language",
     chip_timezone: "Timezone",
     chip_alarms: "alarm(s)",
@@ -275,6 +283,9 @@ const SUFFIX_TRANSLATION_KEYS = {
   "sensor.charakter_uebersicht": "character_overview",
   "select.outfit": "character_outfit",
   "select.ki_sprache": "ai_language_select",
+  "select.geratemodus": "game_mode",
+  "number.display_helligkeit": "display_brightness",
+  "switch.display": "display_screen",
   "binary_sensor.model_loading": "model_loading",
 };
 
@@ -464,6 +475,7 @@ class Code27Card extends HTMLElement {
             box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
           }
           .c27-swatch.is-active { border-color: var(--primary-text-color); }
+          .c27-btn.is-active { border-color: rgb(var(--c27-glow)); background:rgba(var(--c27-glow),0.14); }
           select.c27-select {
             flex:1; min-width:120px; background:var(--card-background-color, #1c1c1c);
             color:var(--primary-text-color); border:1px solid var(--divider-color,#444);
@@ -528,9 +540,6 @@ class Code27Card extends HTMLElement {
             flex:0 0 auto; font-size:12px; line-height:1;
           }
           .c27-del-btn:hover { opacity:1; border-color:#e05252; color:#e05252; }
-          .c27-feed { max-height:140px; overflow-y:auto; font-size:11px; font-family: var(--code-font-family, monospace); }
-          .c27-feed-line { padding:3px 0; opacity:.8; border-bottom:1px dashed rgba(255,255,255,0.06); }
-          .c27-feed-line .t { opacity:.45; margin-right:6px; }
           .c27-charlist { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; }
           .c27-char-chip {
             display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -662,6 +671,21 @@ class Code27Card extends HTMLElement {
             </div>
           </div>
 
+          <div class="c27-section" data-el="devicesection" hidden>
+            <div class="c27-row" style="justify-content:space-between;">
+              <div class="c27-label" style="margin-bottom:0;">${esc(this._t("device_title"))}</div>
+              <div class="c27-row" style="gap:6px;">
+                <button class="c27-btn" data-action="device-mode" data-mode="LIVE" data-el="modelive">${esc(this._t("mode_live"))}</button>
+                <button class="c27-btn" data-action="device-mode" data-mode="MUSIC" data-el="modemusic">${esc(this._t("mode_music"))}</button>
+                <button class="c27-btn" data-action="display-toggle" data-el="displaytoggle">${esc(this._t("display_label"))}</button>
+              </div>
+            </div>
+            <div class="c27-row" data-el="displaybrightnessrow">
+              <span style="font-size:11px;opacity:.6;">${esc(this._t("display_brightness"))}</span>
+              <input type="range" min="0" max="100" step="1" data-el="displaybrightness">
+            </div>
+          </div>
+
           <div class="c27-section" data-el="languagesection" hidden>
             <div class="c27-row" style="justify-content:space-between;">
               <div class="c27-label" style="margin-bottom:0;">${esc(this._t("language_title"))}</div>
@@ -715,10 +739,6 @@ class Code27Card extends HTMLElement {
           </div>
           `}
 
-          <div class="c27-section" data-el="feedsection" hidden>
-            <div class="c27-label">${esc(this._t("feed_title"))}</div>
-            <div class="c27-chat c27-feed" data-el="feed"></div>
-          </div>
         </div>
       </ha-card>
     `;
@@ -755,6 +775,23 @@ class Code27Card extends HTMLElement {
         this._setLight({ effect: value.slice("fx:".length) });
       }
     });
+    for (const btn of root.querySelectorAll('[data-action="device-mode"]')) {
+      btn.addEventListener("click", () =>
+        this._call("select", "select_option", {
+          entity_id: this._eid("select", "geratemodus"),
+          option: btn.dataset.mode,
+        })
+      );
+    }
+    root.querySelector('[data-el="displaytoggle"]').addEventListener("click", () =>
+      this._call("switch", "toggle", { entity_id: this._eid("switch", "display") })
+    );
+    root.querySelector('[data-el="displaybrightness"]').addEventListener("change", (ev) =>
+      this._call("number", "set_value", {
+        entity_id: this._eid("number", "display_helligkeit"),
+        value: Number(ev.target.value),
+      })
+    );
     root.querySelector('[data-el="language"]').addEventListener("change", (ev) =>
       this._call("select", "select_option", {
         entity_id: this._eid("select", "ki_sprache"),
@@ -778,7 +815,6 @@ class Code27Card extends HTMLElement {
     this._applySections();
     this._applyVisibility();
 
-    this._feedLines = [];
     this._startBackgroundWork();
   }
 
@@ -794,7 +830,6 @@ class Code27Card extends HTMLElement {
   _startBackgroundWork() {
     if (!this._progressTimer) this._progressTimer = setInterval(() => this._tickProgress(), 1000);
     if (!this._notesTimer) this._notesTimer = setInterval(() => this._updateNotes(), 5000);
-    if (!this._unsubFeed) this._subscribeFeed();
   }
 
   connectedCallback() {
@@ -806,8 +841,6 @@ class Code27Card extends HTMLElement {
     this._progressTimer = null;
     if (this._notesTimer) clearInterval(this._notesTimer);
     this._notesTimer = null;
-    if (this._unsubFeed) this._unsubFeed();
-    this._unsubFeed = null;
   }
 
   _onClick(ev) {
@@ -923,13 +956,10 @@ class Code27Card extends HTMLElement {
     const body = this.querySelector('[data-el="chatbody"]');
     const toggle = this.querySelector('[data-el="chattoggle"]');
     if (!section || !body || !toggle) return; // show_chat: false - nothing to toggle
-    // Chat and the music controls are mutually exclusive on screen - CODIE
-    // is either chatting or its music screen is open, never showing both
-    // as far as this card's layout goes - so music mode wins outright
-    // regardless of the user's own chat show/hide preference.
-    const musicOpen = this._musicOpen === true;
-    section.hidden = musicOpen;
-    toggle.disabled = musicOpen;
+    // The chat stays visible in music mode too (firmware >= 1.6.0 keeps
+    // tools and chat working there); only the user's own toggle hides it.
+    section.hidden = false;
+    toggle.disabled = false;
     body.hidden = !this._chatVisible;
     toggle.classList.toggle("is-on", this._chatVisible);
   }
@@ -1107,6 +1137,7 @@ class Code27Card extends HTMLElement {
 
     this._updateHistory();
     this._applyVisibility();
+    this._updateDevice();
     this._updateLanguage();
     this._updateAlarms();
     this._updateMemosFromSensor();
@@ -1115,7 +1146,6 @@ class Code27Card extends HTMLElement {
       this._notesLoaded = true;
       this._updateNotes();
     }
-    if (!this._unsubFeed) this._subscribeFeed();
   }
 
   _updateHistory() {
@@ -1292,6 +1322,36 @@ class Code27Card extends HTMLElement {
     if (!this.querySelectorAll) return;
     for (const el of this.querySelectorAll("[data-show]")) {
       el.hidden = !this._show(el.dataset.show);
+    }
+  }
+
+  // -- Device (firmware 1.6.0: mode LIVE/MUSIC, display on/off, display brightness) --
+
+  _updateDevice() {
+    const section = this.querySelector('[data-el="devicesection"]');
+    if (!section || !this._hass || !this._hass.states) return;
+    const mode = this._state(this._eid("select", "geratemodus"));
+    const screen = this._state(this._eid("switch", "display"));
+    const bright = this._state(this._eid("number", "display_helligkeit"));
+    const usable = (s) => s && s.state !== "unavailable" && s.state !== "unknown";
+    if (!this._show("show_device") || !(usable(mode) || usable(screen) || usable(bright))) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    for (const [el, value] of [["modelive", "LIVE"], ["modemusic", "MUSIC"]]) {
+      const btn = this.querySelector(`[data-el="${el}"]`);
+      btn.hidden = !usable(mode);
+      btn.classList.toggle("is-active", usable(mode) && mode.state === value);
+    }
+    const toggle = this.querySelector('[data-el="displaytoggle"]');
+    toggle.hidden = !usable(screen);
+    toggle.classList.toggle("is-active", usable(screen) && screen.state === "on");
+    const row = this.querySelector('[data-el="displaybrightnessrow"]');
+    row.hidden = !usable(bright);
+    const slider = this.querySelector('[data-el="displaybrightness"]');
+    if (usable(bright) && this.getRootNode().activeElement !== slider) {
+      slider.value = bright.state;
     }
   }
 
@@ -1789,59 +1849,6 @@ class Code27Card extends HTMLElement {
       )
       .join("");
   }
-
-  // -- live activity feed (Assist-Bridge logbook entries) ----------------------
-
-  _subscribeFeed() {
-    if (this._config.show_feed === false) return;
-    if (!this._hass || !this._hass.connection) return;
-    // domain/name alone don't identify *which* CODE27 device logged the
-    // entry - bridge.py uses the same "CODE27 Assist-Bridge" logbook name
-    // for every device, so two cards for two different devices used to
-    // both accept every entry (see the entity_id-less check this used to
-    // be). bridge.py attributes each entry to that device's own
-    // last-user-message sensor (_bridge_entity_id()), so filtering on
-    // that entity_id scopes the feed back to just this card's device.
-    let connected = true;
-    this._unsubFeed = () => {
-      connected = false;
-    };
-    const ownEntityId = this._eid("sensor", "zuletzt_gesagtes_du");
-    this._hass.connection
-      .subscribeEvents((event) => {
-        const data = event.data || {};
-        if (data.domain !== "hase" || data.name !== "CODE27 Assist-Bridge") return;
-        if (data.entity_id !== ownEntityId) return;
-        this._feedLines.push({ t: new Date(), msg: data.message });
-        if (this._feedLines.length > 30) this._feedLines.shift();
-        this._renderFeed();
-      }, "logbook_entry")
-      .then((unsub) => {
-        // The subscription can resolve after disconnectedCallback already
-        // ran (e.g. the card was removed from the DOM while this promise
-        // was still in flight) - unsubscribe immediately instead of
-        // leaving a live subscription this card can no longer track or
-        // stop, rather than overwriting the no-op set by disconnect.
-        if (!connected) {
-          unsub();
-          return;
-        }
-        this._unsubFeed = unsub;
-      });
-    this.querySelector('[data-el="feedsection"]').hidden = false;
-  }
-
-  _renderFeed() {
-    const el = this.querySelector('[data-el="feed"]');
-    if (!el) return;
-    el.innerHTML = this._feedLines
-      .map(
-        (l) =>
-          `<div class="c27-feed-line"><span class="t">${l.t.toLocaleTimeString()}</span>${esc(l.msg)}</div>`
-      )
-      .join("");
-    el.scrollTop = el.scrollHeight;
-  }
 }
 
 function fmtTime(seconds) {
@@ -1866,10 +1873,10 @@ const EDITOR_SHOW_FLAGS = [
   { key: "show_characters", label: "Show character picker" },
   { key: "show_outfit", label: "Show outfit picker (firmware 1.5.3)" },
   { key: "show_language", label: "Show AI language selector (firmware 1.5.3)" },
+  { key: "show_device", label: "Show device controls (mode, display, display brightness)" },
   { key: "show_alarms", label: "Show alarms" },
   { key: "show_notes", label: "Show notes and reminders" },
   { key: "show_chat", label: "Show chat section" },
-  { key: "show_feed", label: "Show activity feed (Assist bridge log)" },
 ];
 
 class Code27CardEditor extends HTMLElement {

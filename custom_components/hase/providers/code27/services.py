@@ -18,7 +18,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...const import DOMAIN
 from .api import Code27Error, Code27SlotMismatchError
-from .bridge import async_speak_text
+from .speech import async_speak_text
 from .const import ALARM_DAY_BITS
 from .coordinator import Code27Coordinator
 

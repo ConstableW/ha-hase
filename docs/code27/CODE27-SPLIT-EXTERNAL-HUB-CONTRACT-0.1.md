@@ -41,18 +41,20 @@ Die öffentliche Oberfläche muss die heute tatsächlich benötigten Operationen
 
 | Fähigkeit | Bedarf im aktuellen HASE-Code |
 | --- | --- |
-| Entry-ID, geladen/verfügbar, Zustands-Snapshot und Update-Subscription | `bridge.py`, `backend.py`, `conversation.py`; aktueller Slot, Sprache, Charakter-/Voice-Daten, Notification-Status |
-| User- und Assistant-Chat-Nachrichten mit Entry-ID, Slot, Text, Chat-ID und Zeit; abmeldbare Subscription | Bridge in `bridge.py`; Antwortkorrelation in `backend.py` |
-| Chat-Antwort senden, mit bestehender Echo-Unterdrückung; optional Bild senden und erkannte Assist-Exchange bereinigen | `bridge.py`, `backend.py`, bestehende HASE-Services |
-| TTS für aktiven Charakter mit optionaler Prüfung des erwarteten Slots; Notification auslösen/bestätigen | `bridge.py`, `hase.speak`, `hase.notify`, `hase.notify_clear` |
+| Entry-ID, geladen/verfügbar, Zustands-Snapshot und Update-Subscription | `backend.py`, `conversation.py`; aktueller Slot, Sprache, Charakter-/Voice-Daten, Notification-Status |
+| User- und Assistant-Chat-Nachrichten mit Entry-ID, Slot, Text, Chat-ID und Zeit; abmeldbare Subscription | HASE-Events `hase_user_message`/`hase_assistant_message`; Antwortkorrelation in `backend.py` |
+| Chat-Antwort senden, mit bestehender Echo-Unterdrückung; optional Bild senden | `backend.py`, bestehende HASE-Services |
+| TTS für aktiven Charakter mit optionaler Prüfung des erwarteten Slots; Notification auslösen/bestätigen | `hase.speak`, `hase.notify`, `hase.notify_clear` |
 
 Das ist eine **fähigkeitsbezogene** Schnittstelle, keine Freigabe des gesamten veränderbaren Coordinators oder der Credentials als allgemeine HASE-API. Namen und Typen der Python-Methoden werden bei der Implementierung festgelegt; die obigen Semantiken sind der stabile Contract. Insbesondere darf ein fehlender/unloadender CODE27-Entry nicht durch heimliche Neuerzeugung einer HASE-Geräte-Runtime ersetzt werden.
 
-HASEs `PendingCorrection`, `bridge_lock`, Spellbook- und Assist-Logik dürfen nicht als Voraussetzung in der standalone CODE27-Runtime verbleiben. Sie gehören an das HASE-Binding. Die aktuellen direkten Zugriffe in `bridge.py` auf diese Coordinator-Felder sind deshalb konkrete Anpassungsstellen.
+**Optionale Erweiterung (Firmware ≥ 1.6.0, Contract bleibt Version 1):** Ein Hub darf zusätzlich `async set_tool_dispatcher(dispatcher | None)` anbieten. Der Dispatcher ist ein host-eigenes Objekt mit `async async_list_spells() -> list[dict]` und `async async_cast_spell(spell_id, arguments) -> (ok, text)`; die Standalone-Runtime besitzt dann das Codie-Tool-Gateway (Registrierung unter `tool-integrations`, Executor-WebSocket) und ruft nur den Dispatcher auf. HASE reicht einen MCP-Bridge-gestützten Dispatcher hinein (Option `codie_tool_bridge` am HASE-Binding-Entry; eine Änderung lädt den Entry neu) und zieht ihn beim Stoppen mit `None` zurück. Fehlt die Methode, bindet der Hub wie bisher und hat keine Tools; ein Fehler im Setter bricht das Binding nicht. Die Standalone-Runtime importiert nichts aus HASE oder MCP.
+
+HASEs Spellbook- und Assist-Logik darf nicht als Voraussetzung in der standalone CODE27-Runtime verbleiben; sie gehört an das HASE-Binding. Die frühere Assist-Bridge (`bridge.py`, `PendingCorrection`, `bridge_lock`, `cleanup_assist_exchange`) ist entfernt - `cleanup_assist_exchange` ist deshalb nicht mehr Teil des Contracts.
 
 ## 5. Binding-Abläufe
 
-**HASE-Owner (`domain=hase`):** Der vorhandene HASE-Provider-Flow und Entry bleiben gültig. HASE richtet seinen CODE27-Client und Coordinator wie bisher ein und bindet seine Bridge daran. Vorhandene Entry-ID, Credentials, Device-Identifier und Entity-Registry-Einträge werden durch den Split nicht umgeschrieben.
+**HASE-Owner (`domain=hase`):** Der vorhandene HASE-Provider-Flow und Entry bleiben gültig. HASE richtet seinen CODE27-Client und Coordinator wie bisher ein und bindet sein Tool-Gateway daran. Vorhandene Entry-ID, Credentials, Device-Identifier und Entity-Registry-Einträge werden durch den Split nicht umgeschrieben.
 
 **Standalone-Owner (`domain=code27`):** `code27` richtet Client, Coordinator und CODE27-Entities ein. HASE erkennt den Entry, liest ausschließlich dessen veröffentlichte Runtime und hängt seine eigenen Fähigkeiten daran. HASE-Setup darf diesen CODE27-Entry weder pairen noch seine CODE27-Plattformen forwarden. HASE- und CODE27-Unload/Reload lösen Listener sauber und binden bei erneut geladener Runtime wieder an.
 

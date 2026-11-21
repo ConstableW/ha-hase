@@ -1,0 +1,49 @@
+datei,farbe,anzahl,volumen_massiv_cm3
+20_braun/sockel_braun.stl,braun,1,32.3
+20_braun/stamm_braun.stl,braun,1,1.9
+30_weiss/schneeplatte_weiss.stl,weiss,1,25.8
+40_gelb/stern_gelb.stl,gelb,1,2.9
+10_gruen_ebenen/ebene_1.stl,gruen,1,74.9
+10_gruen_ebenen/ebene_2.stl,gruen,1,57.3
+10_gruen_ebenen/ebene_3.stl,gruen,1,44.7
+10_gruen_ebenen/ebene_4.stl,gruen,1,27.9
+10_gruen_ebenen/ebene_5.stl,gruen,1,17.3
+10_gruen_ebenen/ebene_6.stl,gruen,1,9.3
+10_gruen_ebenen/ebene_7.stl,gruen,1,4.7
+50_geschenke/geschenk_A_rot_gelb_komplett.stl,rot (einfarbig),1,1.1
+50_geschenke/geschenk_A_rot_gelb_koerper.stl,rot,1,0.8
+50_geschenke/geschenk_A_rot_gelb_schleife.stl,gelb,1,0.3
+50_geschenke/geschenk_B_gruen_gelb_komplett.stl,gruen (einfarbig),1,1.6
+50_geschenke/geschenk_B_gruen_gelb_koerper.stl,gruen,1,1.2
+50_geschenke/geschenk_B_gruen_gelb_schleife.stl,gelb,1,0.4
+50_geschenke/geschenk_C_weiss_rot_komplett.stl,weiss (einfarbig),1,0.9
+50_geschenke/geschenk_C_weiss_rot_koerper.stl,weiss,1,0.6
+50_geschenke/geschenk_C_weiss_rot_schleife.stl,rot,1,0.2
+50_geschenke/geschenk_D_rot_weiss_komplett.stl,rot (einfarbig),1,1.4
+50_geschenke/geschenk_D_rot_weiss_koerper.stl,rot,1,1.0
+50_geschenke/geschenk_D_rot_weiss_schleife.stl,weiss,1,0.4
+50_geschenke/clip/geschenk_A_rot_gelb_clip_koerper_rot.stl,rot,1,1.1
+50_geschenke/clip/geschenk_A_rot_gelb_clip_band_A_gelb.stl,gelb,1,0.1
+50_geschenke/clip/geschenk_A_rot_gelb_clip_band_B1_gelb.stl,gelb,1,0.0
+50_geschenke/clip/geschenk_A_rot_gelb_clip_band_B2_gelb.stl,gelb,1,0.0
+50_geschenke/clip_0.2mm_Duese/geschenk_A_rot_gelb_clip_band_A_gelb.stl,gelb,1,0.1
+50_geschenke/clip_0.2mm_Duese/geschenk_A_rot_gelb_clip_band_B_gelb.stl,gelb,1,0.1
+50_geschenke/clip/geschenk_B_gruen_gelb_clip_koerper_gruen.stl,gruen,1,1.6
+50_geschenke/clip/geschenk_B_gruen_gelb_clip_band_A_gelb.stl,gelb,1,0.1
+50_geschenke/clip/geschenk_B_gruen_gelb_clip_band_B1_gelb.stl,gelb,1,0.0
+50_geschenke/clip/geschenk_B_gruen_gelb_clip_band_B2_gelb.stl,gelb,1,0.0
+50_geschenke/clip_0.2mm_Duese/geschenk_B_gruen_gelb_clip_band_A_gelb.stl,gelb,1,0.1
+50_geschenke/clip_0.2mm_Duese/geschenk_B_gruen_gelb_clip_band_B_gelb.stl,gelb,1,0.1
+50_geschenke/clip/geschenk_C_weiss_rot_clip_koerper_weiss.stl,weiss,1,0.8
+50_geschenke/clip/geschenk_C_weiss_rot_clip_band_A_rot.stl,rot,1,0.1
+50_geschenke/clip/geschenk_C_weiss_rot_clip_band_B1_rot.stl,rot,1,0.0
+50_geschenke/clip/geschenk_C_weiss_rot_clip_band_B2_rot.stl,rot,1,0.0
+50_geschenke/clip_0.2mm_Duese/geschenk_C_weiss_rot_clip_band_A_rot.stl,rot,1,0.1
+50_geschenke/clip_0.2mm_Duese/geschenk_C_weiss_rot_clip_band_B_rot.stl,rot,1,0.1
+50_geschenke/clip/geschenk_D_rot_weiss_clip_koerper_rot.stl,rot,1,1.4
+50_geschenke/clip/geschenk_D_rot_weiss_clip_band_A_weiss.stl,weiss,1,0.1
+50_geschenke/clip/geschenk_D_rot_weiss_clip_band_B1_weiss.stl,weiss,1,0.0
+50_geschenke/clip/geschenk_D_rot_weiss_clip_band_B2_weiss.stl,weiss,1,0.0
+50_geschenke/clip_0.2mm_Duese/geschenk_D_rot_weiss_clip_band_A_weiss.stl,weiss,1,0.1
+50_geschenke/clip_0.2mm_Duese/geschenk_D_rot_weiss_clip_band_B_weiss.stl,weiss,1,0.1
+60_schmuck/schmuck_12x_rundplatte_1x1.stl,rot/weiss/gelb,12,1.8

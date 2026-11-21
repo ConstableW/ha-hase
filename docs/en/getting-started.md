@@ -6,7 +6,7 @@ This path needs only Home Assistant and HASE. CODE27 hardware and an MCP client 
 
 ## 1. Install HASE
 
-Copy `custom_components/hase` into `<config>/custom_components/hase`, then fully restart Home Assistant. In **Settings → Devices & services → Add integration**, search for **HASE**.
+Install HASE through HACS (search for “HASE”, download it; alternatively add it as a custom repository) or copy `custom_components/hase` into `<config>/custom_components/hase` manually. Then fully restart Home Assistant. In **Settings → Devices & services → Add integration**, search for **HASE**.
 
 ## 2. Create a standalone HASE-Agent
 

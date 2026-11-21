@@ -14,12 +14,11 @@ import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 N = support.N
 api = support.api
 coord = support.coordinator_module
-bridge = support.bridge
 
 
 # ---------------------------------------------------------------------------

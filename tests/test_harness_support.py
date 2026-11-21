@@ -23,7 +23,7 @@ def load_source(name, **adapters):
     provider = ROOT / "providers" / "code27"
     mcp_provider = ROOT / "providers" / "mcp"
     source_path = ROOT / f"{name}.py"
-    if name in {"api", "coordinator", "bridge", "entity_correction", "frontend", "websocket_client", "entity", "media_player"}:
+    if name in {"api", "coordinator", "websocket_client", "entity", "media_player", "speech"}:
         source_path = provider / f"{name}.py"
     paths = [source_path]
     if name == "const":
@@ -183,10 +183,6 @@ def load_source(name, **adapters):
             return fake_registry
 
         adapters["get_provider_registry"] = get_provider_registry
-    if name == "bridge" and "engine" in globals():
-        module.__dict__.update(spellbook_loader=loader, spellbook_engine=engine,
-                               ActionDraft=models.ActionDraft, ActionTarget=models.ActionTarget,
-                               ExecutionStatus=models.ExecutionStatus, effective_catchphrase=models.effective_catchphrase)
     module.__dict__.update(adapters)
     sys.modules[module.__name__] = module
     exec(compile(tree, module.__file__, "exec"), module.__dict__)  # noqa: S102 - trusted repository source in isolated test harness.
@@ -380,30 +376,8 @@ if core_spec.name not in sys.modules:
 engine = importlib.import_module("hase_spellbook_core.spellbook_engine")
 matching = importlib.import_module("hase_spellbook_core.matching")
 models = importlib.import_module("hase_spellbook_core.models")
-spellbook = load_source("entity_correction", fuzzy_threshold=matching.fuzzy_threshold,
-                        tokenize_with_spans=matching.tokenize_with_spans)
 loader = load_source("spellbook_loader", EngineSpellbook=engine.EngineSpellbook,
                      load_spellbook_from_path=engine.load_spellbook_from_path)
-
-class _FakeDeviceRegistry:
-    """Minimal HA device-registry adapter for bridge source-area resolution."""
-
-    def async_get_device(self, *, identifiers=None, connections=None):
-        return None
-
-
-_fake_device_registry = _FakeDeviceRegistry()
-_fake_dr = N(async_get=lambda hass: _fake_device_registry)
-
-
-bridge = load_source(
-    "bridge", **constants, spellbook=spellbook, callback=lambda f: f,
-    PendingCorrection=coordinator_module.PendingCorrection,
-    EVENT_USER_MESSAGE=coordinator_module.EVENT_USER_MESSAGE,
-    intent=N(IntentResponseType=N(ERROR="error", ACTION_DONE="done")),
-    dr=_fake_dr,
-)
-
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -414,7 +388,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             async_create_task=lambda coro, **kwargs: asyncio.create_task(coro),
         )
         self.entry = N(entry_id="device-a", options={
-            "bridge_enabled": True, "bridge_codeword": "Computer",
+            "codie_agent": "conversation.agent",
         }, data={})
         self.client = N(
             get_chat_history_snapshot=AsyncMock(return_value=("2026-09-09", [])),
@@ -540,144 +514,13 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         await self.poll(self.messages("own-1"))
         self.assertEqual(self.events, [])
 
-    async def test_new_codeword_command_replaces_pending_action(self):
-        self.c.pending_correction = coordinator_module.PendingCorrection("Kuche ausschalten", "Kuche")
-        forward = AsyncMock(return_value=(None, None, "Buero einschalten"))
-        with patch.object(bridge, "_forward_to_assist", forward), patch.object(bridge, "_log_activity"):
-            await bridge._handle_bridge_message(
-                self.hass, self.entry, self.c, "Computer Buero einschalten", None
-            )
-        self.assertIsNone(self.c.pending_correction)
-        self.assertEqual(forward.call_args.args[3], "Buero einschalten")
 
-    async def test_new_spell_cancels_correction(self):
-        self.c.pending_correction = coordinator_module.PendingCorrection("old off", "old")
-        self.entry.options["bridge_spellbook"] = "test"
-        book = N(name="test")
-        match = N(output="Licht Buero einschalten", catchphrase=None, trigger_text="lumos",
-                  matched_text="lumos", is_exact=True, captures={}, action_draft=None, step_plan=None,
-                  query_plan=None, command=N(assist_redirect=True))
-        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
-             patch.object(engine, "find_command", return_value=match), \
-             patch.object(bridge, "_forward_to_assist", AsyncMock(return_value=(None, None, "new"))) as forward, \
-             patch.object(bridge, "_log_activity"):
-            await bridge._handle_bridge_message(self.hass, self.entry, self.c, "lumos Buero", None)
-        self.assertIsNone(self.c.pending_correction)
-        self.assertEqual(forward.call_args.args[3], "Licht Buero einschalten")
 
-    async def test_combined_spell_trigger_executes_steps_directly_not_via_assist_relay(self):
-        # A spellbook trigger that resolves to a step_plan (Combined
-        # Spells) used to fall through to the generic _forward_to_assist
-        # text relay below - which only ever had a plain output/
-        # catchphrase string to forward, never a step_plan. That path
-        # produced no usable command text ("None"), which the relay then
-        # choked on trying to process further. Combined Spells must
-        # execute directly, the same way a single typed action already
-        # does, and never reach _forward_to_assist at all.
-        self.entry.options["bridge_spellbook"] = "test"
-        book = N(name="test")
-        plan = N(steps=(N(), N()))
-        match = N(output=None, catchphrase=None, trigger_text="zwergstadt abendmodus",
-                  matched_text="zwergstadt abendmodus", is_exact=True, captures={},
-                  action_draft=None, step_plan=plan)
-        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
-             patch.object(engine, "find_command", return_value=match), \
-             patch.object(bridge, "_handle_typed_steps", AsyncMock()) as handle_steps, \
-             patch.object(bridge, "_forward_to_assist", AsyncMock()) as forward, \
-             patch.object(bridge, "_log_activity"):
-            await bridge._handle_bridge_message(
-                self.hass, self.entry, self.c, "zwergstadt abendmodus", None,
-            )
-        handle_steps.assert_awaited_once_with(self.hass, self.entry, self.c, plan, None)
-        forward.assert_not_awaited()
 
-    async def test_flat_query_trigger_executes_directly_not_via_assist_relay(self):
-        # A spellbook trigger that resolves to a query_plan (a flat
-        # multi-source query - e.g. "average temperature in {area}", no
-        # operation/steps) had the EXACT SAME gap the Combined Spell fix
-        # above already documents for step_plan, just never given the
-        # same treatment: match.output is never computed for a query-only
-        # match (core.spellbook_engine.find_command's own text-only branch
-        # requires "not command.sources"), so it fell through to
-        # _forward_to_assist(command=None, ...), which
-        # conversation.async_converse(text=None) then chokes on -
-        # silently caught, producing no reply at all. Flat queries must
-        # execute directly, the same way Combined Spells and a single
-        # typed action already do, and never reach _forward_to_assist.
-        self.entry.options["bridge_spellbook"] = "test"
-        book = N(name="test")
-        plan = N(sources=(N(),))
-        match = N(output=None, catchphrase=None, trigger_text="average temperature in {area}",
-                  matched_text="average temperature in buero", is_exact=True, captures={"area": "Buero"},
-                  action_draft=None, step_plan=None, query_plan=plan)
-        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=book)), \
-             patch.object(engine, "find_command", return_value=match), \
-             patch.object(bridge, "_handle_typed_query", AsyncMock()) as handle_query, \
-             patch.object(bridge, "_forward_to_assist", AsyncMock()) as forward, \
-             patch.object(bridge, "_log_activity"):
-            await bridge._handle_bridge_message(
-                self.hass, self.entry, self.c, "average temperature in buero", None,
-            )
-        handle_query.assert_awaited_once_with(self.hass, self.entry, self.c, plan, None)
-        forward.assert_not_awaited()
 
-    async def test_missing_configured_spellbook_warns_instead_of_silent_fallback(self):
-        # Second-round audit: a spellbook_id that no longer resolves
-        # (removed/renamed file, like the unused star_trek.yaml this
-        # was found while removing) used to fail silently and fall
-        # straight through to the codeword path with nothing in the
-        # log explaining why every spellbook command for this entry
-        # stopped working.
-        self.entry.options["bridge_spellbook"] = "ghost_book"
-        with patch.object(loader, "async_get_spellbook", AsyncMock(return_value=None)), \
-             patch.object(bridge, "_LOGGER") as logger, \
-             patch.object(bridge, "_log_activity"):
-            await bridge._handle_bridge_message(self.hass, self.entry, self.c, "Computer test", None)
-        self.assertTrue(logger.warning.called)
-        self.assertTrue(
-            any("ghost_book" in call.args for call in logger.warning.call_args_list),
-            f"expected a warning mentioning 'ghost_book', got: {logger.warning.call_args_list}",
-        )
 
-    async def test_unrelated_sentence_is_not_a_correction_candidate(self):
-        self.c.pending_correction = coordinator_module.PendingCorrection("Kuche ausschalten", "Kuche")
-        with patch.object(spellbook, "_registry_names", return_value=["Buero"]), \
-             patch.object(bridge, "_retry_with_candidate", AsyncMock()) as retry, \
-             patch.object(bridge, "_output_speech", AsyncMock()):
-            await bridge._handle_correction_reply(self.hass, self.entry, self.c, "Buero einschalten", None)
-        retry.assert_not_awaited()
 
-    async def test_name_wrapper_and_abort_still_work(self):
-        self.c.pending_correction = coordinator_module.PendingCorrection("Kuche ausschalten", "Kuche")
-        with patch.object(spellbook, "_registry_names", return_value=["Buero"]), \
-             patch.object(bridge, "_retry_with_candidate", AsyncMock()) as retry:
-            await bridge._handle_correction_reply(self.hass, self.entry, self.c, "ich meinte Buero", None)
-            retry.assert_awaited_once()
-        with patch.object(bridge, "_log_activity"):
-            await bridge._handle_correction_reply(self.hass, self.entry, self.c, "Abbruch", None)
-        self.assertIsNone(self.c.pending_correction)
 
-    async def test_unload_cancels_ai_before_assist(self):
-        entered, cancelled = asyncio.Event(), asyncio.Event()
-
-        async def cleanup(*args):
-            entered.set()
-            try:
-                await asyncio.Event().wait()
-            finally:
-                cancelled.set()
-
-        with patch.object(bridge, "_ai_cleanup", cleanup), \
-             patch.object(bridge, "_ask_assist", AsyncMock()) as assist:
-            self.c.async_create_owned_task(
-                bridge._forward_to_assist(self.hass, self.entry, self.c, "test", None), "test"
-            )
-            await entered.wait()
-            await self.c.async_stop_realtime()
-            self.assertTrue(cancelled.is_set())
-            assist.assert_not_awaited()
-            await self.c.async_stop_realtime()  # cleanup is idempotent
-            self.assertFalse(self.c._owned_tasks)
 
     async def test_unload_cancels_inflight_poll(self):
         entered = asyncio.Event()
@@ -693,65 +536,8 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task.cancelled())
         self.assertEqual(self.events, [])
 
-    async def test_device_queues_are_independent(self):
-        other = coordinator_module.Code27Coordinator(self.hass, N(entry_id="b"), self.client, 15)
-        other.data = coordinator_module.Code27Data(current_slot={"slot_number": 1})
-        entered, release = asyncio.Event(), asyncio.Event()
 
-        async def handle(hass, entry, coordinator, *args):
-            if coordinator is self.c:
-                entered.set()
-                await release.wait()
 
-        with patch.object(bridge, "_handle_bridge_message", handle):
-            task = asyncio.create_task(bridge._process_bridge_message(self.hass, self.entry, self.c, "a", None))
-            await entered.wait()
-            await asyncio.wait_for(bridge._process_bridge_message(self.hass, self.entry, other, "b", None), 1)
-            release.set()
-            await task
-
-    async def test_same_device_requests_are_serialized(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-        calls = []
-
-        async def handle(hass, entry, coordinator, text, entity_id):
-            calls.append(text)
-            if text == "first":
-                entered.set()
-                await release.wait()
-
-        with patch.object(bridge, "_handle_bridge_message", handle):
-            first = asyncio.create_task(bridge._process_bridge_message(self.hass, self.entry, self.c, "first", None))
-            await entered.wait()
-            second = asyncio.create_task(bridge._process_bridge_message(self.hass, self.entry, self.c, "second", None))
-            await asyncio.sleep(0)
-            self.assertEqual(calls, ["first"])
-            release.set()
-            await asyncio.gather(first, second)
-            self.assertEqual(calls, ["first", "second"])
-
-    async def test_event_listener_filters_device_and_tracks_work(self):
-        listeners, cleanups = {}, []
-        self.entry.async_on_unload = cleanups.append
-        self.hass.bus.async_listen = lambda kind, handler: listeners.setdefault(kind, handler) and (lambda: None)
-        entered = asyncio.Event()
-
-        async def process(*args):
-            entered.set()
-            await asyncio.Event().wait()
-
-        with patch.object(bridge, "_bridge_entity_id", return_value=None), \
-             patch.object(bridge, "_process_bridge_message", process):
-            bridge.async_setup_bridge(self.hass, self.entry, self.c)
-            handler = listeners[coordinator_module.EVENT_USER_MESSAGE]
-            handler(N(data={"config_entry_id": "other", "text": "Computer test"}))
-            self.assertFalse(self.c._owned_tasks)
-            handler(N(data={"config_entry_id": "device-a", "text": "Computer test"}))
-            await entered.wait()
-            self.assertEqual(len(self.c._owned_tasks), 1)
-            await self.c.async_stop_realtime()
-            handler(N(data={"config_entry_id": "device-a", "text": "Computer test"}))
-            self.assertFalse(self.c._owned_tasks)
 
     async def test_stop_waits_for_websocket_cleanup(self):
         websocket = load_source("websocket_client", **constants)
@@ -779,7 +565,10 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         client.get_chat_history_dates = AsyncMock(return_value=["2026-09-09"])
         recent = [{"chat_id": str(i)} for i in range(21, 51)]
         full = [{"chat_id": str(i)} for i in range(51)]
-        client._call = AsyncMock(side_effect=[{"data": recent}, {"data": full}])
+        client._call = AsyncMock(side_effect=[
+            {"data": {"items": recent, "has_more": False}},
+            {"data": {"items": full, "has_more": False}},
+        ])
         _, messages = await client.get_chat_history_snapshot(1, "2026-09-09", "0")
         self.assertEqual(len(messages), 51)
         self.assertIn("/chat/history?", client._call.call_args.args[1])
@@ -787,31 +576,13 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_midnight_includes_previous_day(self):
         client = api.Code27Client(None, "device", 8081)
         client.get_chat_history_dates = AsyncMock(return_value=["2026-09-09", "2026-09-10"])
-        client._call = AsyncMock(side_effect=[{"data": [{"chat_id": "late"}]}, {"data": [{"chat_id": "new"}]}])
+        client._call = AsyncMock(side_effect=[
+            {"data": {"items": [{"chat_id": "late"}], "has_more": False}},
+            {"data": {"items": [{"chat_id": "new"}], "has_more": False}},
+        ])
         date, messages = await client.get_chat_history_snapshot(1, "2026-09-09", "old")
         self.assertEqual(date, "2026-09-10")
         self.assertEqual([m["chat_id"] for m in messages], ["late", "new"])
-
-    @staticmethod
-    def _pre_153_device(responses):
-        """`_call` double for a firmware older than 1.5.3: the 1.5.3 chat
-        endpoints answer 404, everything else is looked up by path prefix."""
-        async def call(method, path, body=None, **_):
-            if path.startswith("/data/user/chat/turns"):
-                raise api.Code27NotFoundError("http_404")
-            for prefix, value in responses.items():
-                if path.startswith(prefix):
-                    return value
-            raise api.Code27NotFoundError("http_404")
-
-        return AsyncMock(side_effect=call)
-
-    async def test_send_returns_server_message_id(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call = self._pre_153_device(
-            {"/data/user/chat/text": {"success": True, "chat_id": "sent"}}
-        )
-        self.assertEqual(await client.send_chat_text("text", 2), "sent")
 
     async def test_send_chat_text_uses_chat_turns_on_1_5_3(self):
         client = api.Code27Client(None, "device", 8081)
@@ -830,16 +601,6 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(body["request_id"]), 36)
         self.assertNotIn("language", body)
 
-    async def test_legacy_fallback_is_remembered(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call = self._pre_153_device(
-            {"/data/user/chat/text": {"success": True, "chat_id": "sent"}}
-        )
-        await client.send_chat_text("a", 1)
-        await client.send_chat_text("b", 1)
-        paths = [c.args[1] for c in client._call.mock_calls]
-        self.assertEqual(paths.count("/data/user/chat/turns"), 1)
-
     async def test_normal_poll_keeps_small_window(self):
         client = api.Code27Client(None, "device", 8081)
         client.get_chat_history_dates = AsyncMock(return_value=["2026-09-09"])
@@ -853,19 +614,6 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(path.startswith("/data/user/chat/history?"))
         self.assertIn("limit=30", path)
         self.assertNotIn("/latest", path)
-
-    async def test_normal_poll_falls_back_to_latest_before_1_5_3(self):
-        client = api.Code27Client(None, "device", 8081)
-        client.get_chat_history_dates = AsyncMock(return_value=["2026-09-09"])
-
-        async def call(method, path, body=None, **_):
-            if path.startswith("/data/user/chat/history/latest"):
-                return {"data": [{"chat_id": "old"}, {"chat_id": "new"}]}
-            raise api.Code27NotFoundError("http_404")
-
-        client._call = AsyncMock(side_effect=call)
-        _, messages = await client.get_chat_history_snapshot(1, "2026-09-09", "old")
-        self.assertEqual(len(messages), 2)
 
     async def test_full_day_follows_cursor_pages(self):
         client = api.Code27Client(None, "device", 8081)
@@ -885,27 +633,12 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_initially_empty_history_recovers_multiple_new_days(self):
         client = api.Code27Client(None, "device", 8081)
         client.get_chat_history_dates = AsyncMock(return_value=["2026-09-09", "2026-09-10"])
-        client._call = AsyncMock(side_effect=[{"data": [{"chat_id": "first-day"}]}, {"data": [{"chat_id": "second-day"}]}])
+        client._call = AsyncMock(side_effect=[
+            {"data": {"items": [{"chat_id": "first-day"}], "has_more": False}},
+            {"data": {"items": [{"chat_id": "second-day"}], "has_more": False}},
+        ])
         _, messages = await client.get_chat_history_snapshot(1, "")
         self.assertEqual(len(messages), 2)
-
-    async def test_send_chat_text_omits_language_by_default(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call = self._pre_153_device(
-            {"/data/user/chat/text": {"success": True, "chat_id": "sent"}}
-        )
-        await client.send_chat_text("hi", 2)
-        legacy = [c for c in client._call.mock_calls if c.args[1] == "/data/user/chat/text"][0]
-        self.assertNotIn("language", legacy.kwargs["body"])
-
-    async def test_send_chat_text_includes_language_when_given(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call = self._pre_153_device(
-            {"/data/user/chat/text": {"success": True, "chat_id": "sent"}}
-        )
-        await client.send_chat_text("hi", 2, "de")
-        legacy = [c for c in client._call.mock_calls if c.args[1] == "/data/user/chat/text"][0]
-        self.assertEqual(legacy.kwargs["body"]["language"], "de")
 
     async def test_music_control_raises_on_device_reported_failure(self):
         # Live-confirmed device response shape: HTTP 200, envelope
@@ -1026,16 +759,6 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(api.Code27Error):
             await client._call_binary("/resources/user/chat-images?uuid=missing")
 
-    async def test_get_chat_history_count_returns_data_list(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call = self._pre_153_device({"/data/user/chat/history/count": {
-            "success": True,
-            "data": [{"slot": 1, "slot_id": "Lilya", "messages": [{"content": "hi"}]}],
-        }})
-        result = await client.get_chat_history_count()
-        self.assertEqual(result[0]["slot_id"], "Lilya")
-        self.assertIn("/chat/history/count", client._call.call_args.args[1])
-
     async def test_get_chat_history_count_reads_latest_turn_per_slot_on_1_5_3(self):
         client = api.Code27Client(None, "device", 8081)
 
@@ -1052,46 +775,12 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["messages"][0]["content"], "hi 1")
         self.assertIn("limit=1", client._call.mock_calls[0].args[1])
 
-    async def test_get_chat_history_count_accepts_real_device_response_shape(self):
-        # Regression test: this goes through the REAL _call() (not a mocked
-        # one), so it also exercises _validate_response_data - which once
-        # rejected this exact, live-confirmed shape as "unexpected data
-        # shape" because /chat/history/count wasn't in the shared
-        # list-vs-dict allowlist, breaking setup against a real device.
-        client = api.Code27Client(None, "device", 8081, user_id="u1", local_secret="s3cr3t")
-        body = json.dumps({
-            "success": True,
-            "data": [{"slot": 1, "slot_id": "Lilya", "messages": [{"content": "hi"}]}],
-        })
-        async def request(method, url, **_):
-            if "/chat/history/count" in url:
-                return N(status=200, text=AsyncMock(return_value=body))
-            return N(status=404, text=AsyncMock(return_value="404 page not found"))
-
-        client._session = N(request=request)
-        result = await client.get_chat_history_count()
-        self.assertEqual(result, [{"slot": 1, "slot_id": "Lilya", "messages": [{"content": "hi"}]}])
-
     async def test_send_chat_image_rejects_oversized_image_without_calling_device(self):
         client = api.Code27Client(None, "device", 8081)
         client._call_multipart = AsyncMock()
         with self.assertRaises(api.Code27Error):
             await client.send_chat_image(b"x" * (client._MAX_CHAT_IMAGE_BYTES + 1), "a.jpg", "image/jpeg")
         client._call_multipart.assert_not_awaited()
-
-    async def test_send_chat_image_sends_multipart_fields_and_file(self):
-        client = api.Code27Client(None, "device", 8081)
-        client._call_multipart = AsyncMock(side_effect=[
-            api.Code27NotFoundError("http_404"),
-            {"chat_id": "c1", "image_chat_id": "c2", "success": True},
-        ])
-        chat_id, image_chat_id = await client.send_chat_image(
-            b"bytes", "a.jpg", "image/jpeg", text="hi", slot=2, language="de"
-        )
-        self.assertEqual((chat_id, image_chat_id), ("c1", "c2"))
-        _, _, kwargs = client._call_multipart.mock_calls[1]
-        self.assertEqual(kwargs["fields"], {"text": "hi", "slot": "2", "language": "de"})
-        self.assertEqual(kwargs["files"], [("image", b"bytes", "a.jpg", "image/jpeg")])
 
     async def test_send_chat_image_uses_chat_turns_on_1_5_3(self):
         client = api.Code27Client(None, "device", 8081)
@@ -1109,18 +798,12 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["output"], {"speech": "device"})
         self.assertEqual(kwargs["files"], [("image", b"bytes", "a.jpg", "image/jpeg")])
 
-    async def test_alarm_toggle_patches_on_1_5_3_and_posts_before(self):
+    async def test_alarm_toggle_patches(self):
         client = api.Code27Client(None, "device", 8081)
         client._call = AsyncMock(return_value={"success": True})
         await client.disable_alarm("a1")
         client._call.assert_awaited_once_with(
             "PATCH", "/data/user/alarm/a1", body={"enabled": False}
-        )
-        old = api.Code27Client(None, "device", 8081)
-        old._call = AsyncMock(side_effect=[api.Code27NotFoundError("404"), {"success": True}])
-        await old.enable_alarm("a1")
-        self.assertEqual(
-            old._call.mock_calls[1].args, ("POST", "/data/user/alarm/a1/enable")
         )
 
     async def test_sound_control_uses_single_endpoint_on_1_5_3(self):
@@ -1162,8 +845,8 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_character_portrait_prefers_custom_thumbnail(self):
         client = api.Code27Client(None, "device", 8081)
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[
-            {"slot_number": 1, "cloth_id": 2, "filename": "Lylia.vrm"},
+        client.list_character_settings = AsyncMock(return_value=[
+            {"slot_number": 1, "custom_cloths": "\nLylia.vrm"},
         ])
         client._call_binary = AsyncMock(return_value=("image/png", b"portrait"))
         result = await client.get_character_portrait(1, 2)
@@ -1185,7 +868,6 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_character_portrait_falls_back_to_stock_portrait(self):
         client = api.Code27Client(None, "device", 8081)
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[])
         client._call_binary = AsyncMock(return_value=("image/png", b"stock"))
         result = await client.get_character_portrait(3, 1)
         self.assertEqual(result, ("image/png", b"stock"))
@@ -1193,7 +875,6 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_character_portrait_returns_none_when_nothing_exists(self):
         client = api.Code27Client(None, "device", 8081)
-        client.get_cloth_uploaded_models = AsyncMock(return_value=[])
         client._call_binary = AsyncMock(side_effect=api.Code27Error("http_404"))
         self.assertIsNone(await client.get_character_portrait(4, 1))
 

@@ -19,7 +19,7 @@ from ...const import (
 )
 from ..provider import ProviderConfigFlow, ProviderDescriptor
 from .api import Code27Client
-from .bridge import async_setup_bridge
+from .tool_bridge import async_setup_tool_bridge
 from .const import (
     CONF_LOCAL_SECRET,
     CONF_MACHINE_ID,
@@ -46,6 +46,7 @@ PLATFORMS: list[Platform] = [
     Platform.IMAGE,
     Platform.LIGHT,
     Platform.MEDIA_PLAYER,
+    Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
@@ -54,7 +55,7 @@ PLATFORMS: list[Platform] = [
 
 
 async def async_setup_code27_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Start a CODE27 device, its bridge and satellite platforms."""
+    """Start a CODE27 device, its Codie tool gateway and satellite platforms."""
     session = async_get_clientsession(hass)
     client = Code27Client(
         session,
@@ -82,7 +83,7 @@ async def async_setup_code27_entry(hass: HomeAssistant, entry: ConfigEntry) -> b
     coordinator.async_start_realtime()
     entry.async_on_unload(coordinator.async_stop_realtime)
 
-    async_setup_bridge(hass, entry, coordinator)
+    await async_setup_tool_bridge(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

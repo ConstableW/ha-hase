@@ -72,7 +72,6 @@
           "spellbooker_allowed_areas": "Allowed areas (actions)",
           "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
           "spellbooker_no_match_response": "No-match response",
-          "bridge_ai_task_entity_id": "AI Task entity",
           "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
           "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
         },
@@ -80,7 +79,6 @@
           "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
           "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
           "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
-          "bridge_ai_task_entity_id": "Optional. If selected, this AI Task cleans up each spoken phrase before the HASE-Agent matches it against the spellbook.",
           "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
           "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
         }
@@ -136,37 +134,16 @@
         "title": "CODE27 options",
         "data": {
           "scan_interval": "Polling interval (seconds)",
-          "bridge_enabled": "Enable Assist bridge",
-          "bridge_codeword": "Codeword(s)",
-          "bridge_spellbook": "Spellbook",
-          "bridge_spellbook_mode": "Spellbook mode",
-          "bridge_entity_correction_enabled": "Ask \"Did you mean...?\" on an unrecognized name",
-          "bridge_ack_phrase": "Acknowledge phrase(s)",
-          "bridge_agent_id": "Conversation agent",
-          "bridge_relay_response": "Send Assist's reply back into the chat",
-          "bridge_tts_enabled": "Speak Assist's reply out loud on the device",
-          "bridge_ai_cleanup_enabled": "Clean up phrasing with an AI Task before sending to Assist",
-          "bridge_ai_task_entity_id": "AI Task entity",
-          "bridge_vacuum_enabled": "Allow spellbook commands to vacuum a specific room. Disabled by default. Supported vacuums are configured through the shared vacuum provider files.",
-          "bridge_history_cleanup_enabled": "Remove Assist communication from history",
           "remote_recovery_enabled": "Recover the device's LAN address via CODE27's cloud after a DHCP change",
-          "alarm_switches": "Keep one switch per alarm"
+          "alarm_switches": "Keep one switch per alarm",
+          "codie_tool_bridge": "Codie tool bridge",
+          "codie_agent": "Conversation agent for Codie's sentences"
         },
         "data_description": {
-          "bridge_codeword": "One or more comma-separated words, e.g. \"Homeassist, Computer\". When a message you type to your character contains any of them, everything after it is sent to Home Assistant's Assist as a command.",
-          "bridge_spellbook": "Optional. A spellbook maps fixed trigger phrases (e.g. \"Lumos Schreibtisch\") straight onto an Assist command, without needing the codeword above. Bundled spellbooks ship with the integration; you can also drop your own YAML files into a \"hase_spellbooks\" folder inside your Home Assistant config directory - both show up here. Leave as \"no spellbook\" to disable this and use only the codeword above.",
-          "bridge_spellbook_mode": "Only matters if a spellbook is selected above. \"Fall back to the codeword\" also checks the codeword flow when a message doesn't match any spellbook trigger, same as if no spellbook were selected. \"Spellbook only\" ignores everything that isn't a recognized spellbook trigger.",
-          "bridge_entity_correction_enabled": "When a resolved command names a device/area Assist doesn't recognize (a typo, a mishearing), fuzzy-search your entities (and areas, where that makes sense) for a likely match and ask \"Did you mean X?\" instead of just giving up. You can reply \"yes\"/\"no\", name a different device yourself, or just keep talking to end the dialog (it also times out on its own after a couple of minutes of silence). Off by default - only turn this on if you want the bridge to ask clarifying questions.",
-          "bridge_ack_phrase": "One or more comma-separated phrases, e.g. \"Alarm quittieren, Hinweis quittieren\". Saying/typing one of these to your character clears an active notification (same as the acknowledge button or notify_clear) - it is never sent to Assist. Checked before the codeword above, and only does anything while a notification is active. Leave empty to disable.",
-          "bridge_agent_id": "Leave empty to use Home Assistant's built-in conversation agent - not necessarily your preferred/favorite one in Settings → Voice assistants, which an empty selection here does not resolve.",
-          "bridge_relay_response": "Assist's response is always logged (System Log + this device's Activity feed) either way. If you also enable this, it's additionally sent into the character's chat as a new message - which the character will then react to on its own, so you'll get a second, separate reply from it. Off by default to avoid that.",
-          "bridge_tts_enabled": "Speaks Assist's reply out loud through the character's own voice, using the device's TTS preview feature. Independent of \"Send Assist's reply back into the chat\" above - enable either, both, or neither.",
-          "bridge_ai_cleanup_enabled": "A simple built-in filter already strips common filler phrases (\"can you please ask it to...\") before sending to Assist. Enabling this additionally runs the command through the AI Task entity below first for a smarter rewrite - useful for a local model via e.g. Ollama, no cloud required.",
-          "bridge_ai_task_entity_id": "Which AI Task entity to use for the optional rewrite above. Only used if the cleanup option is enabled.",
-          "bridge_vacuum_enabled": "Allow spellbook commands to vacuum a specific room. Disabled by default. Supported vacuums are configured through the shared vacuum provider files.",
-          "bridge_history_cleanup_enabled": "Only applies to a message that actually resolved to a recognized codeword/spellbook command (plain conversation is never touched). After the command has run (and been spoken/relayed, if those are enabled - independent of this option), removes the technical exchange - your command and the character's own automatic reaction to it - from CODE27's chat history, on-device and in its cloud backup. So the character's memory/context only ever sees real conversation, not \"Kitchen light on\", \"Done\" clutter. Best-effort: it identifies the character's reply by polling for the next message after yours, so it can occasionally leave one in place (e.g. if something else was said at the same moment) rather than risk deleting the wrong message.",
           "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else.",
-          "alarm_switches": "On (default): every alarm also gets its own switch entity. Off: no per-alarm entities are kept - the existing ones are removed - and alarms are edited through the 'Alarms' to-do list and the dashboard card instead. Switches of alarms deleted while Home Assistant was off are cleaned up on startup."
+          "alarm_switches": "On (default): every alarm also gets its own switch entity. Off: no per-alarm entities are kept - the existing ones are removed - and alarms are edited through the 'Alarms' to-do list and the dashboard card instead. Switches of alarms deleted while Home Assistant was off are cleaned up on startup.",
+          "codie_tool_bridge": "MCP Bridge whose Spells Codie may cast as tools (firmware 1.6.0+). Off = no tools.",
+          "codie_agent": "Codie hands the user's sentence to this agent (firmware 1.6.0+): choose a HASE Spellbooker for your own trigger phrases. Anything it does not know goes to Home Assistant's normal Assist. Empty = no home_command tool."
         }
       },
       "spellbooker": {
@@ -176,7 +153,6 @@
           "spellbooker_allowed_areas": "Allowed areas (actions)",
           "spellbooker_unrestricted": "Unrestricted actions (allow every area)",
           "spellbooker_no_match_response": "No-match response",
-          "bridge_ai_task_entity_id": "AI Task entity",
           "spellbooker_queries_allowed_areas": "Allowed areas (queries)",
           "spellbooker_queries_unrestricted": "Unrestricted queries (allow every area)"
         },
@@ -184,7 +160,6 @@
           "spellbooker_allowed_areas": "Which areas this assistant may act in. Ignored if \"Unrestricted\" is on.",
           "spellbooker_unrestricted": "Allows actions in every area, regardless of the selection above. Only enable this if this assistant is deliberately meant to have no restriction.",
           "spellbooker_no_match_response": "Said when a sentence doesn't match any spellbook command. Leave empty for the default response.",
-          "bridge_ai_task_entity_id": "Optional. If selected, this AI Task cleans up each spoken phrase before the HASE-Agent matches it against the spellbook.",
           "spellbooker_queries_allowed_areas": "Which areas this assistant may answer status queries about (e.g. \"what's the temperature in X\"). Independent of the actions areas above - ignored if \"Unrestricted queries\" is on.",
           "spellbooker_queries_unrestricted": "Allows status queries in every area, regardless of the selection above. Does not affect which areas this assistant may act in."
         }
@@ -198,14 +173,6 @@
         "data_description": {
           "mcp_server_port": "The internal TCP port the MCP Streamable HTTP endpoint listens on. This binds on every network interface of this machine, so any device on your local network can reach it, not just this machine itself - the only thing stopping an unauthorized device on your LAN is each Bridge's own bearer token, so keep those secret and treat your local network as the security boundary. HASE does not expose this port to the internet itself - route an external hostname/path to it through your own reverse proxy, with its own authentication/TLS, if you want that. Changing this restarts the listener on the new port immediately."
         }
-      }
-    }
-  },
-  "selector": {
-    "bridge_spellbook_mode": {
-      "options": {
-        "fallback": "Fall back to the codeword",
-        "strict": "Spellbook only"
       }
     }
   },
@@ -225,9 +192,6 @@
       },
       "model_loading": {
         "name": "Character model loading"
-      },
-      "device_screen_on": {
-        "name": "Screen on"
       },
       "device_locked": {
         "name": "Locked"
@@ -304,6 +268,9 @@
     "switch": {
       "alarm": {
         "name": "Alarm"
+      },
+      "display_screen": {
+        "name": "Display"
       }
     },
     "media_player": {
@@ -323,6 +290,13 @@
       },
       "ai_language_select": {
         "name": "AI language"
+      },
+      "game_mode": {
+        "name": "Device mode",
+        "state": {
+          "LIVE": "Live",
+          "MUSIC": "Music"
+        }
       }
     },
     "todo": {
@@ -342,6 +316,11 @@
       },
       "acknowledge_notification": {
         "name": "Acknowledge notification"
+      }
+    },
+    "number": {
+      "display_brightness": {
+        "name": "Display brightness"
       }
     }
   },

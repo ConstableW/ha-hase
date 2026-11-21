@@ -1,0 +1,655 @@
+{
+  "issues": {
+    "code27_music_mode_recovery": {
+      "title": "CODE27 music mode may be out of sync after a reboot",
+      "description": "This device just recovered from being unavailable and immediately reported its music page as open. This has been seen live to be unreliable right after a device reboot - a suspected CODE27 firmware issue, not something Home Assistant can resolve on its own.\n\nOn the device itself, switch into music mode and back once to force a real resync, then this issue clears on its own."
+    },
+    "code27_music_chat_conflict": {
+      "title": "CODE27 mode conflicts with chat activity",
+      "description": "CODE27 reports Music Mode, but a new user chat message was observed. Its reported mode may be out of sync. Select the intended mode again on the device; this issue clears when CODE27 reports that the music page is closed."
+    }
+  },
+  "config": {
+    "step": {
+      "verify": {
+        "title": "Verify device",
+        "description": "Pairing succeeded. Submit to retry device verification."
+      },
+      "reconfigure": {
+        "title": "Update CODE27 address",
+        "description": "Update the host or port if the device moved to a new IP address. The device identity is verified — pointing this entry at a different physical device will abort the change.",
+        "data": {
+          "host": "Host / IP address",
+          "port": "Port"
+        }
+      },
+      "pair": {
+        "title": "Pair with CODE27",
+        "description": "A 6-digit pairing code should now be shown on the CODE27's own screen. Enter it below to authorize Home Assistant.",
+        "data": {
+          "pairing_code": "Pairing code"
+        }
+      },
+      "user": {
+        "title": "Connect to CODE27",
+        "description": "Enter the local network address of your CODE27 device.",
+        "data": {
+          "host": "Host / IP address",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the device. Check the host/IP and that it's powered on.",
+      "unknown": "Unexpected error.",
+      "pairing_request_failed": "Could not request a pairing code from the device.",
+      "invalid_pairing_code": "That pairing code was not accepted. Check the code shown on the device and try again."
+    },
+    "abort": {
+      "wrong_device": "This address belongs to a different device. The existing entry was not changed.",
+      "invalid_identity": "The device did not provide a valid identity.",
+      "already_configured": "This CODE27 device is already managed by {owner} ({name}).",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CODE27 options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "remote_recovery_enabled": "Recover the device's LAN address via CODE27's cloud after a DHCP change",
+          "alarm_switches": "Keep one switch per alarm"
+        },
+        "data_description": {
+          "remote_recovery_enabled": "Off by default. If your CODE27 gets a new LAN IP (e.g. after a router restart) and this integration can no longer reach it, enabling this lets it ask CODE27's own cloud (codie-remote.prod.code27.co - a third party, not something Home Assistant or this integration controls) once for the device's current address, verify locally that it's really this device, and update the stored host automatically. Chat, images and all other features always stay on your local network either way - the cloud is only ever asked \"where is my device right now?\", nothing else.",
+          "alarm_switches": "On (default): every alarm also gets its own switch entity. Off: no per-alarm entities are kept - the existing ones are removed - and alarms are edited through the 'Alarms' to-do list and the dashboard card instead. Switches of alarms deleted while Home Assistant was off are cleaned up on startup."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "music_mode_active": {
+        "name": "Music mode active"
+      },
+      "notification_active": {
+        "name": "Notification active"
+      },
+      "bluetooth_connected": {
+        "name": "Bluetooth connected"
+      },
+      "use_24_hour_time": {
+        "name": "24-hour time format"
+      },
+      "model_loading": {
+        "name": "Character model loading"
+      },
+      "device_locked": {
+        "name": "Locked"
+      },
+      "device_conversation_blocked": {
+        "name": "Conversation blocked"
+      }
+    },
+    "sensor": {
+      "ai_language": {
+        "name": "Assistant language"
+      },
+      "timezone": {
+        "name": "Timezone"
+      },
+      "build_type": {
+        "name": "Build type"
+      },
+      "active_character": {
+        "name": "Active character"
+      },
+      "active_alarms": {
+        "name": "Active alarms"
+      },
+      "memo_count": {
+        "name": "Memos"
+      },
+      "last_user_message": {
+        "name": "Last message you said"
+      },
+      "last_assistant_message": {
+        "name": "Last message the character said"
+      },
+      "last_tts_message": {
+        "name": "Last message the character said (TTS)"
+      },
+      "character_overview": {
+        "name": "Character overview"
+      },
+      "music_storage": {
+        "name": "Music storage used"
+      },
+      "capabilities": {
+        "name": "Enabled capabilities"
+      },
+      "conversation_state": {
+        "name": "Conversation state"
+      }
+    },
+    "image": {
+      "character_portrait": {
+        "name": "Character {slot} portrait"
+      },
+      "outfit_preview": {
+        "name": "Outfit {cloth} preview"
+      }
+    },
+    "light": {
+      "preview_light": {
+        "name": "Ambient color",
+        "state_attributes": {
+          "effect": {
+            "state": {
+              "static": "Static",
+              "breathe": "Breathe",
+              "pulse": "Pulse",
+              "blink": "Blink",
+              "chase": "Chase"
+            }
+          }
+        }
+      }
+    },
+    "switch": {
+      "alarm": {
+        "name": "Alarm"
+      },
+      "display_screen": {
+        "name": "Display"
+      }
+    },
+    "media_player": {
+      "music": {
+        "name": "Music"
+      }
+    },
+    "select": {
+      "light_project": {
+        "name": "Light scene"
+      },
+      "character_slot": {
+        "name": "Active character"
+      },
+      "character_outfit": {
+        "name": "Outfit"
+      },
+      "ai_language_select": {
+        "name": "AI language"
+      },
+      "game_mode": {
+        "name": "Device mode",
+        "state": {
+          "LIVE": "Live",
+          "MUSIC": "Music"
+        }
+      }
+    },
+    "todo": {
+      "memos": {
+        "name": "Notes & reminders"
+      },
+      "alarms_list": {
+        "name": "Alarms"
+      }
+    },
+    "button": {
+      "play_sound": {
+        "name": "Play test sound"
+      },
+      "stop_sound": {
+        "name": "Stop sound"
+      },
+      "acknowledge_notification": {
+        "name": "Acknowledge notification"
+      }
+    },
+    "number": {
+      "display_brightness": {
+        "name": "Display brightness"
+      }
+    }
+  },
+  "services": {
+    "create_alarm": {
+      "name": "Create alarm",
+      "description": "Creates a new alarm on the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to add the alarm to."
+        },
+        "hour": {
+          "name": "Hour",
+          "description": "Hour (0-23)."
+        },
+        "minute": {
+          "name": "Minute",
+          "description": "Minute (0-59)."
+        },
+        "label": {
+          "name": "Label",
+          "description": "Optional label for the alarm."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Days of the week the alarm repeats on. Leave empty for a one-off alarm."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the alarm is enabled right away."
+        }
+      }
+    },
+    "update_alarm": {
+      "name": "Update alarm",
+      "description": "Changes an existing alarm on the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry the alarm belongs to."
+        },
+        "alarm_id": {
+          "name": "Alarm ID",
+          "description": "The alarm's id, e.g. from the alarm switch entity's \"alarm_id\" attribute."
+        },
+        "hour": {
+          "name": "Hour",
+          "description": "Hour (0-23)."
+        },
+        "minute": {
+          "name": "Minute",
+          "description": "Minute (0-59)."
+        },
+        "label": {
+          "name": "Label",
+          "description": "Optional label for the alarm."
+        },
+        "days": {
+          "name": "Days",
+          "description": "Days of the week the alarm repeats on. Leave empty for a one-off alarm."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the alarm is enabled."
+        }
+      }
+    },
+    "delete_alarm": {
+      "name": "Delete alarm",
+      "description": "Removes an alarm from the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry the alarm belongs to."
+        },
+        "alarm_id": {
+          "name": "Alarm ID",
+          "description": "The alarm's id, e.g. from the alarm switch entity's \"alarm_id\" attribute."
+        }
+      }
+    },
+    "send_chat_message": {
+      "name": "Send chat message",
+      "description": "Sends a text message into the CODE27 character's chat, as if you had typed it yourself.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to send the message to."
+        },
+        "message": {
+          "name": "Message",
+          "description": "The text to send."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Optional: which character slot to message. Defaults to the currently active character."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Optional: language code (e.g. 'en', 'de') the character should reply in. Defaults to the device's own setting."
+        }
+      }
+    },
+    "send_chat_image": {
+      "name": "Send chat image",
+      "description": "Sends an image (e.g. a camera snapshot), with an optional caption, into the CODE27 character's chat. The device rejects images over 1MB.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to send the image to."
+        },
+        "filename": {
+          "name": "File path",
+          "description": "Full path to the image file on this Home Assistant instance (e.g. from a camera.snapshot action). Must be under an allowed directory."
+        },
+        "message": {
+          "name": "Caption",
+          "description": "Optional text to send alongside the image."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Optional: which character slot to message. Defaults to the currently active character."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Optional: language code (e.g. 'en', 'de') the character should reply in."
+        }
+      }
+    },
+    "update_memory_card": {
+      "name": "Update memory card",
+      "description": "Edits a memory card's content or category. Warning: the device permanently marks the card as user-edited as soon as this is called, even if you set it back to its original content - there is no way to undo that marker.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to edit the memory card on."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "card_id": {
+          "name": "Card ID",
+          "description": "The memory card's id, from get_memory_cards."
+        },
+        "content": {
+          "name": "Content",
+          "description": "New content. Leave empty to only change the category."
+        },
+        "category": {
+          "name": "Category",
+          "description": "New category. Leave empty to only change the content."
+        }
+      }
+    },
+    "get_memory_cards": {
+      "name": "Get memory cards",
+      "description": "Reads a page of a character's memory cards. Returns response data - call with \"Response variable\" set, e.g. in a script or Developer Tools.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read memory cards from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "page": {
+          "name": "Page",
+          "description": "Page number, starting at 1."
+        },
+        "page_size": {
+          "name": "Page size",
+          "description": "Cards per page."
+        }
+      }
+    },
+    "get_diary_entries": {
+      "name": "Get diary entries",
+      "description": "Reads a page of a character's diary entries (read-only on this firmware). Returns response data - call with \"Response variable\" set.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read diary entries from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "slot": {
+          "name": "Character slot",
+          "description": "Required by the device alongside the character ID."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Optional: only entries for this date (YYYY-MM-DD)."
+        },
+        "page": {
+          "name": "Page",
+          "description": "Page number, starting at 1."
+        },
+        "page_size": {
+          "name": "Page size",
+          "description": "Entries per page."
+        }
+      }
+    },
+    "get_diary_entry": {
+      "name": "Get diary entry",
+      "description": "Reads one diary entry in full. Returns response data - call with \"Response variable\" set.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to read the diary entry from."
+        },
+        "character_id": {
+          "name": "Character ID",
+          "description": "The character's cloud_id (from its character settings), not the slot number."
+        },
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The diary entry's id, from get_diary_entries."
+        }
+      }
+    },
+    "upload_music": {
+      "name": "Upload music",
+      "description": "Uploads an audio file to the TF card, optionally playing it right away. Confirmed live to accept more than MP3 (e.g. WAV). Requires the device's music mode to be open on-screen to actually play.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to upload to."
+        },
+        "filename": {
+          "name": "File path",
+          "description": "Full path to the audio file on this Home Assistant instance. Must be under an allowed directory."
+        },
+        "play": {
+          "name": "Play after upload",
+          "description": "Start playing the uploaded file immediately once it's on the device."
+        }
+      }
+    },
+    "delete_music_file": {
+      "name": "Delete music file",
+      "description": "Removes a file from the TF card by its path. Confirmed live: deleting the file currently playing does not interrupt playback (the device streams from an already-loaded buffer) - useful for a rolling upload/play/delete workflow (e.g. an RFID-triggered automation) without growing storage use over time.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to delete the file from."
+        },
+        "path": {
+          "name": "Path",
+          "description": "The file's path on the device, e.g. from upload_music's response or the music storage sensor's file list."
+        }
+      }
+    },
+    "set_music_play_mode": {
+      "name": "Set music play mode",
+      "description": "Sets the playback mode for the music player (loop all, loop one, shuffle, or sequential).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to configure."
+        },
+        "play_mode": {
+          "name": "Play mode",
+          "description": "Playback mode: list_loop (repeat all), single_loop (repeat one), shuffle, or sequence (play through once)."
+        }
+      }
+    },
+    "set_music_sound_effect": {
+      "name": "Set music sound effect",
+      "description": "Sets the sound effect (equalizer preset) for music playback.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to configure."
+        },
+        "sound_effect": {
+          "name": "Sound effect",
+          "description": "The sound effect / EQ preset name as accepted by the device."
+        }
+      }
+    },
+    "play_playlist": {
+      "name": "Play playlist",
+      "description": "Starts a stored playlist on the device, or continues it where it was last played. For buttons and tag (RFID/NFC) automations. The music screen must be open on the device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry whose playlist to play."
+        },
+        "playlist": {
+          "name": "Playlist",
+          "description": "The exact name of a stored playlist."
+        },
+        "resume": {
+          "name": "Resume",
+          "description": "Continue at the remembered track and position. A playlist that was never played - or resume off - starts from its first track."
+        }
+      }
+    },
+    "notify": {
+      "name": "Notify (blink LEDs)",
+      "description": "Blinks the LEDs in the given color until acknowledged (via the button entity or notify_clear). Useful for a persistent visual alert, e.g. from Node-RED.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to notify."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Optional note, only shown in the notification's attributes and the log - not spoken or displayed on the device."
+        },
+        "rgb_color": {
+          "name": "Color",
+          "description": "RGB color to blink in, defaults to red."
+        },
+        "speak_text": {
+          "name": "Speak text",
+          "description": "Optional: also speak this text out loud on the device (same as the speak action), right when the LEDs start blinking."
+        }
+      }
+    },
+    "notify_clear": {
+      "name": "Clear notification",
+      "description": "Stops the blinking started by the notify action, same as pressing the acknowledge button.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to clear the notification on."
+        }
+      }
+    },
+    "create_memo": {
+      "name": "Create note or reminder",
+      "description": "Creates a note on the CODE27 device. With a date it becomes a reminder that fires once at that date and time.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry."
+        },
+        "title": {
+          "name": "Title",
+          "description": "The title of the note."
+        },
+        "body": {
+          "name": "Text",
+          "description": "The text of the note."
+        },
+        "date": {
+          "name": "Date",
+          "description": "YYYY-MM-DD. Makes the note a reminder."
+        },
+        "time": {
+          "name": "Time",
+          "description": "HH:MM for the reminder (default 09:00)."
+        }
+      }
+    },
+    "update_memo": {
+      "name": "Update note or reminder",
+      "description": "Changes a note or reminder. Only the fields you set are changed; an empty date turns a reminder back into a plain note.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry."
+        },
+        "memo_id": {
+          "name": "Note ID",
+          "description": "The id of the note (shown in the memos attribute of the notes sensor)."
+        },
+        "title": {
+          "name": "Title",
+          "description": "The title of the note."
+        },
+        "body": {
+          "name": "Text",
+          "description": "The text of the note."
+        },
+        "date": {
+          "name": "Date",
+          "description": "YYYY-MM-DD. Makes the note a reminder."
+        },
+        "time": {
+          "name": "Time",
+          "description": "HH:MM for the reminder (default 09:00)."
+        }
+      }
+    },
+    "delete_memo": {
+      "name": "Delete note or reminder",
+      "description": "Deletes a note or reminder from the CODE27 device.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry."
+        },
+        "memo_id": {
+          "name": "Note ID",
+          "description": "The id of the note (shown in the memos attribute of the notes sensor)."
+        }
+      }
+    },
+    "set_outfit": {
+      "name": "Set outfit",
+      "description": "Switches the outfit of a character on the CODE27 device (firmware 1.5.3 or newer). The device reloads the character model for about two seconds afterwards.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to switch the outfit on."
+        },
+        "outfit": {
+          "name": "Outfit",
+          "description": "The outfit number (1, 2, 3 ...) as listed in the Outfit select."
+        },
+        "slot": {
+          "name": "Slot",
+          "description": "Character slot (1-5). Defaults to the active character."
+        }
+      }
+    },
+    "speak": {
+      "name": "Speak",
+      "description": "Speaks text out loud on the CODE27 device using the active character's voice, via the device's TTS preview feature. Does not touch the chat - use send_chat_message for that.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The CODE27 config entry to speak on."
+        },
+        "text": {
+          "name": "Text",
+          "description": "The text to speak."
+        }
+      }
+    }
+  }
+}

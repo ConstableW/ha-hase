@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import test_bridge_delivery as harness
+import test_harness_support as harness
 
 PROVIDER = Path(__file__).resolve().parents[1] / "custom_components" / "hase" / "providers" / "code27"
 

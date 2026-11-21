@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace as N
 from unittest.mock import AsyncMock, Mock, patch
 
-import test_bridge_delivery as delivery
+import test_harness_support as delivery
 import test_code27_music as music
 
 # Reuse the existing isolated core package. Several legacy harnesses alias it
@@ -393,19 +393,3 @@ class ExternalHubFlowTests(unittest.IsolatedAsyncioTestCase):
 class TimeoutAuditTests(unittest.IsolatedAsyncioTestCase):
     setUp = delivery.DeliveryTests.setUp
 
-    async def test_timeout_after_side_effect_is_not_retried_or_announced_as_success(self):
-        effects = []
-        async def action_then_stall(*args, **kwargs):
-            effects.append("already executed")
-            await asyncio.Event().wait()
-        self.entry.options["bridge_enabled"] = True
-        with patch.object(delivery.bridge, "Context", lambda: None, create=True), \
-             patch.object(delivery.bridge, "conversation", N(async_converse=action_then_stall), create=True), \
-             patch.object(delivery.bridge, "_ASSIST_TIMEOUT_SEC", 0.01), \
-             patch.object(delivery.bridge, "_output_speech", AsyncMock()) as output:
-            result = await delivery.bridge._forward_to_assist(
-                self.hass, self.entry, self.c, "licht an", None, skip_ai_cleanup=True,
-            )
-        self.assertEqual(effects, ["already executed"])
-        self.assertEqual(result, (None, None, "licht an"))
-        output.assert_not_awaited()

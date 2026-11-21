@@ -18,41 +18,16 @@ MAX_SCAN_INTERVAL = 120
 
 CONF_SCAN_INTERVAL = "scan_interval"
 
-CONF_BRIDGE_ENABLED = "bridge_enabled"
-
-CONF_BRIDGE_CODEWORD = "bridge_codeword"
-
-CONF_BRIDGE_ACK_PHRASE = "bridge_ack_phrase"
-
-CONF_BRIDGE_AGENT_ID = "bridge_agent_id"
-
-CONF_BRIDGE_RELAY_RESPONSE = "bridge_relay_response"
-
-CONF_BRIDGE_TTS_ENABLED = "bridge_tts_enabled"
-
-CONF_BRIDGE_AI_CLEANUP_ENABLED = "bridge_ai_cleanup_enabled"
-
-CONF_BRIDGE_AI_TASK_ENTITY_ID = "bridge_ai_task_entity_id"
-
-CONF_BRIDGE_SPELLBOOK = "bridge_spellbook"
-
-CONF_BRIDGE_SPELLBOOK_MODE = "bridge_spellbook_mode"
-
-CONF_BRIDGE_ENTITY_CORRECTION_ENABLED = "bridge_entity_correction_enabled"
-
-CONF_BRIDGE_VACUUM_ENABLED = "bridge_vacuum_enabled"
-
-CONF_BRIDGE_HISTORY_CLEANUP_ENABLED = "bridge_history_cleanup_enabled"
-
 CONF_REMOTE_RECOVERY_ENABLED = "remote_recovery_enabled"
 
-SPELLBOOK_MODE_STRICT = "strict"
+# Firmware >= 1.6.0: MCP Bridge ("<entry_id>:<subentry_id>") whose Spells
+# Codie may cast through the tool gateway; "" / unset = tools off.
+CONF_CODIE_TOOL_BRIDGE = "codie_tool_bridge"
 
-SPELLBOOK_MODE_FALLBACK = "fallback"
-
-DEFAULT_SPELLBOOK_MODE = SPELLBOOK_MODE_FALLBACK
-
-CORRECTION_TIMEOUT_SECONDS = 120
+# Firmware >= 1.6.0: conversation agent that receives the user's sentence
+# from Codie's ``home_command`` tool (normally a HASE Spellbooker agent; HA's
+# default Assist answers whatever it does not know). Unset = no home_command.
+CONF_CODIE_AGENT = "codie_agent"
 
 MUSIC_SOURCE_LOCAL_TF = "LOCAL_TF"
 

@@ -1,5 +1,5 @@
 """Regression coverage for spellbooker_ha.py's pure-logic helpers.
-Loaded via test_bridge_delivery's load_source (AST-stripped of
+Loaded via test_harness_support's load_source (AST-stripped of
 homeassistant/relative imports) - none of these functions actually
 touch homeassistant at module-exec time (all real HA imports inside
 them are function-local, gated behind TYPE_CHECKING, or simply unused
@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import test_bridge_delivery as support
+import test_harness_support as support
 
 HASE_ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "hase"
 

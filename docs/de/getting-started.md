@@ -4,7 +4,7 @@
 
 Dieser Weg benötigt nur Home Assistant und HASE. CODE27-Hardware und MCP-Client sind optional.
 
-1. Kopiere `custom_components/hase` nach `<config>/custom_components/hase` und starte Home Assistant vollständig neu.
+1. Installiere HASE über HACS (nach „HASE“ suchen, herunterladen; alternativ als benutzerdefiniertes Repository) oder kopiere `custom_components/hase` manuell nach `<config>/custom_components/hase`. Starte Home Assistant danach vollständig neu.
 2. Wähle **Einstellungen → Geräte & Dienste → Integration hinzufügen → HASE → Spellbook-Sprachassistent erstellen**.
 3. Wähle das mitgelieferte Spellbook `demo`. Erlaube mindestens einen Bereich für Aktionen und Abfragen oder aktiviere bewusst die jeweilige uneingeschränkte Option.
 4. Wähle die neue `conversation.*`-Entität in einer Assist-Pipeline.

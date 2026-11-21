@@ -25,6 +25,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from ...const import (
     CONF_ENTRY_KIND,
+    DOMAIN,
     CONF_SPELLBOOKER_ALLOWED_AREAS,
     CONF_SPELLBOOKER_BOOK,
     CONF_SPELLBOOKER_NO_MATCH_RESPONSE,
@@ -34,23 +35,13 @@ from ...const import (
     CONF_SPELLBOOKER_UNRESTRICTED,
     ENTRY_KIND_CODE27_DEVICE,
     ENTRY_KIND_CODE27_EXTERNAL_HUB,
+    SUBENTRY_TYPE_MCP_BRIDGE,
 )
 from ...spellbook_loader import async_discover_spellbooks
 from .api import Code27Client, Code27ConnectionError, Code27Error
 from .const import (
-    CONF_BRIDGE_ACK_PHRASE,
-    CONF_BRIDGE_AGENT_ID,
-    CONF_BRIDGE_AI_CLEANUP_ENABLED,
-    CONF_BRIDGE_AI_TASK_ENTITY_ID,
-    CONF_BRIDGE_CODEWORD,
-    CONF_BRIDGE_ENABLED,
-    CONF_BRIDGE_ENTITY_CORRECTION_ENABLED,
-    CONF_BRIDGE_HISTORY_CLEANUP_ENABLED,
-    CONF_BRIDGE_RELAY_RESPONSE,
-    CONF_BRIDGE_SPELLBOOK,
-    CONF_BRIDGE_SPELLBOOK_MODE,
-    CONF_BRIDGE_TTS_ENABLED,
-    CONF_BRIDGE_VACUUM_ENABLED,
+    CONF_CODIE_AGENT,
+    CONF_CODIE_TOOL_BRIDGE,
     CONF_LOCAL_SECRET,
     CONF_MACHINE_ID,
     CONF_ALARM_SWITCHES,
@@ -59,11 +50,8 @@ from .const import (
     CONF_USER_ID,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SPELLBOOK_MODE,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
-    SPELLBOOK_MODE_FALLBACK,
-    SPELLBOOK_MODE_STRICT,
 )
 from .duplicate import find_existing_device_entry
 
@@ -471,6 +459,16 @@ class SatelliteSubentryFlow(ConfigSubentryFlow):
         )
 
 
+def _mcp_bridge_choices(hass) -> list[selector.SelectOptionDict]:
+    """Every configured MCP Bridge, value "<entry_id>:<subentry_id>"."""
+    out: list[selector.SelectOptionDict] = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        for sub_id, sub in entry.subentries.items():
+            if sub.subentry_type == SUBENTRY_TYPE_MCP_BRIDGE:
+                out.append(selector.SelectOptionDict(value=f"{entry.entry_id}:{sub_id}", label=sub.title))
+    return out
+
+
 class Code27OptionsFlow(OptionsFlow):
     """Options for CODE27: polling interval."""
 
@@ -484,99 +482,30 @@ class Code27OptionsFlow(OptionsFlow):
             return self.async_create_entry(data=user_input)
 
         options = self._config_entry.options
-        spellbook_choices = await async_discover_spellbooks(self.hass)
-        none_label = (
-            "— Kein Spellbook —"
-            if (self.hass.config.language or "en").lower().startswith("de")
-            else "— No spellbook —"
-        )
-        spellbook_options = [selector.SelectOptionDict(value="", label=none_label)] + [
-            selector.SelectOptionDict(value=book_id, label=name)
-            for book_id, name in spellbook_choices
-        ]
+        bridge_none = "— Aus —" if (self.hass.config.language or "en").lower().startswith("de") else "— Off —"
+        tool_bridge_options = [selector.SelectOptionDict(value="", label=bridge_none)] + _mcp_bridge_choices(self.hass)
         schema = vol.Schema(
             {
+                vol.Optional(
+                    CONF_CODIE_TOOL_BRIDGE,
+                    default=options.get(CONF_CODIE_TOOL_BRIDGE, ""),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=tool_bridge_options, mode=selector.SelectSelectorMode.DROPDOWN
+                    )
+                ),
                 vol.Required(
                     CONF_SCAN_INTERVAL,
                     default=options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 ): vol.All(
                     int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)
                 ),
-                vol.Required(
-                    CONF_BRIDGE_ENABLED,
-                    default=options.get(CONF_BRIDGE_ENABLED, False),
-                ): bool,
                 vol.Optional(
-                    CONF_BRIDGE_CODEWORD,
-                    description={
-                        "suggested_value": options.get(CONF_BRIDGE_CODEWORD, "")
-                    },
-                ): str,
-                vol.Optional(
-                    CONF_BRIDGE_SPELLBOOK,
-                    default=options.get(CONF_BRIDGE_SPELLBOOK, ""),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=spellbook_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(
-                    CONF_BRIDGE_SPELLBOOK_MODE,
-                    default=options.get(
-                        CONF_BRIDGE_SPELLBOOK_MODE, DEFAULT_SPELLBOOK_MODE
-                    ),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[SPELLBOOK_MODE_FALLBACK, SPELLBOOK_MODE_STRICT],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                        translation_key="bridge_spellbook_mode",
-                    )
-                ),
-                vol.Required(
-                    CONF_BRIDGE_ENTITY_CORRECTION_ENABLED,
-                    default=options.get(CONF_BRIDGE_ENTITY_CORRECTION_ENABLED, False),
-                ): bool,
-                vol.Optional(
-                    CONF_BRIDGE_ACK_PHRASE,
-                    description={
-                        "suggested_value": options.get(CONF_BRIDGE_ACK_PHRASE, "")
-                    },
-                ): str,
-                vol.Optional(
-                    CONF_BRIDGE_AGENT_ID,
-                    description={"suggested_value": options.get(CONF_BRIDGE_AGENT_ID)},
+                    CONF_CODIE_AGENT,
+                    description={"suggested_value": options.get(CONF_CODIE_AGENT)},
                 ): selector.ConversationAgentSelector(
                     selector.ConversationAgentSelectorConfig()
                 ),
-                vol.Required(
-                    CONF_BRIDGE_RELAY_RESPONSE,
-                    default=options.get(CONF_BRIDGE_RELAY_RESPONSE, False),
-                ): bool,
-                vol.Required(
-                    CONF_BRIDGE_TTS_ENABLED,
-                    default=options.get(CONF_BRIDGE_TTS_ENABLED, False),
-                ): bool,
-                vol.Required(
-                    CONF_BRIDGE_AI_CLEANUP_ENABLED,
-                    default=options.get(CONF_BRIDGE_AI_CLEANUP_ENABLED, False),
-                ): bool,
-                vol.Optional(
-                    CONF_BRIDGE_AI_TASK_ENTITY_ID,
-                    description={
-                        "suggested_value": options.get(CONF_BRIDGE_AI_TASK_ENTITY_ID)
-                    },
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="ai_task")
-                ),
-                vol.Required(
-                    CONF_BRIDGE_VACUUM_ENABLED,
-                    default=options.get(CONF_BRIDGE_VACUUM_ENABLED, False),
-                ): bool,
-                vol.Required(
-                    CONF_BRIDGE_HISTORY_CLEANUP_ENABLED,
-                    default=options.get(CONF_BRIDGE_HISTORY_CLEANUP_ENABLED, False),
-                ): bool,
                 vol.Required(
                     CONF_REMOTE_RECOVERY_ENABLED,
                     default=options.get(CONF_REMOTE_RECOVERY_ENABLED, False),

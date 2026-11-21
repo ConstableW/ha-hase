@@ -17,8 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 EXPECTED_CONTRACT_VERSION = 1
 _REQUIRED = (
     "snapshot", "subscribe_updates", "subscribe_chat", "send_chat_reply",
-    "cleanup_assist_exchange", "speak_text", "trigger_notification",
-    "acknowledge_notification",
+    "speak_text", "trigger_notification", "acknowledge_notification",
 )
 _CALLABLE = tuple(member for member in _REQUIRED if member != "snapshot")
 _SNAPSHOT_FIELDS = (
@@ -39,8 +38,6 @@ class Code27ExternalBinding:
         self.hub: Any | None = None
         self.observed_contract_version: Any | None = None
         self.reason = "not_loaded"
-        self.pending_correction = None
-        self.bridge_lock = asyncio.Lock()
         self._rebind_lock = asyncio.Lock()
         self._subscriptions: list[Any] = []
         self._state_unsubscribe = None
@@ -97,7 +94,6 @@ class Code27ExternalBinding:
             unsubscribe()
         self._subscriptions.clear()
         self.hub = None
-        self.pending_correction = None
 
     async def async_rebind(self) -> None:
         async with self._rebind_lock:
@@ -144,6 +140,29 @@ class Code27ExternalBinding:
             self._subscriptions.append(hub.subscribe_updates(lambda: None))
             self.reason = "bound"
             self._set_issue(None)
+            await self._apply_tool_dispatcher(hub)
+
+    async def _apply_tool_dispatcher(self, hub: Any, *, clear: bool = False) -> None:
+        """Hand HASE's Spell-gateway dispatcher to the standalone-owned device.
+
+        Optional addition to contract v1: a hub that has ``set_tool_dispatcher``
+        owns the Codie tool gateway (firmware >= 1.6.0) and gets a dispatcher
+        built from HASE's ``codie_agent`` / ``codie_tool_bridge`` options; a hub
+        without it simply has no tools. The option lives on this HASE entry;
+        changing it reloads the entry (see _async_external_update_listener), so
+        this runs again with the new value."""
+        setter = getattr(hub, "set_tool_dispatcher", None)
+        if not callable(setter):
+            return
+        from .providers.code27.tool_bridge import dispatcher_from_options
+
+        dispatcher = None if clear else dispatcher_from_options(
+            self.hass, self.entry.entry_id, self.entry.options
+        )
+        try:
+            await setter(dispatcher)
+        except Exception:  # noqa: BLE001 - tools are optional, never break the binding
+            _LOGGER.exception("External CODE27 hub %s rejected the tool dispatcher", self.target_entry_id)
 
     async def async_start(self) -> None:
         target = self.hass.config_entries.async_get_entry(self.target_entry_id)
@@ -155,6 +174,8 @@ class Code27ExternalBinding:
 
     async def async_stop(self) -> None:
         self._stopping = True
+        if self.hub is not None:
+            await self._apply_tool_dispatcher(self.hub, clear=True)
         self._unbind()
         if self._state_unsubscribe is not None:
             self._state_unsubscribe()
@@ -171,11 +192,6 @@ class Code27ExternalBinding:
         if self.hub is None:
             raise RuntimeError(self.reason)
         return await self.hub.send_chat_reply(text, slot, language)
-
-    async def async_cleanup_assist_exchange(self, slot: int, chat_ids: list[str]):
-        if self.hub is None:
-            raise RuntimeError(self.reason)
-        return await self.hub.cleanup_assist_exchange(slot, chat_ids)
 
     async def async_speak_text(self, text: str, *, expected_slot: int | None = None) -> None:
         if self.hub is None:
